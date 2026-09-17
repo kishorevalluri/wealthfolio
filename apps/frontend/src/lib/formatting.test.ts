@@ -50,6 +50,14 @@ describe("locale formatting", () => {
     expect(formatter.formatDecimal(1234.56)).toBe("1.234,56");
   });
 
+  it("formats Indian numbers with Lakh and Crore groupings and INR currency", () => {
+    const locale = resolveFormattingLocale("IN", "en");
+    expect(locale).toBe("en-IN");
+    const formatter = createFormatter(locale, "UTC");
+    expect(formatter.formatDecimal(1234567.89)).toBe("12,34,567.89");
+    expect(formatter.formatAmount(1234567.89, "INR")).toMatch(/^₹\s*12,34,567\.89/);
+  });
+
   it.each(["en", "ja", "ko", "zh"])(
     "keeps German conventions authoritative with a %s UI",
     (uiLocale) => {

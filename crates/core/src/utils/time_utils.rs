@@ -75,17 +75,40 @@ pub fn activity_date_in_user_timezone(activity_instant: DateTime<Utc>, tz_raw: &
     activity_date_in_tz(activity_instant, parse_user_timezone_or_default(tz_raw))
 }
 
-/// Returns UTC boundaries for a local calendar year in a timezone.
+/// Returns UTC boundaries for a local financial year in a timezone.
+/// If `start_month` is 1, this corresponds to the calendar year (Jan 1 to Jan 1 next year).
+/// If `start_month` is 4 (e.g. India FY), this runs from April 1 of `fy_start_year` to April 1 of `fy_start_year + 1`.
 /// The returned range is [start_utc, end_utc_exclusive).
-pub fn local_year_utc_bounds(year: i32, tz: Tz) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
-    let start_local = resolve_local_datetime(tz.with_ymd_and_hms(year, 1, 1, 0, 0, 0), year)?;
-    let end_exclusive_local =
-        resolve_local_datetime(tz.with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0), year + 1)?;
+pub fn local_financial_year_utc_bounds(
+    fy_start_year: i32,
+    start_month: u32,
+    tz: Tz,
+) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
+    let valid_start_month = if (1..=12).contains(&start_month) {
+        start_month
+    } else {
+        1
+    };
+
+    let start_local = resolve_local_datetime(
+        tz.with_ymd_and_hms(fy_start_year, valid_start_month, 1, 0, 0, 0),
+        fy_start_year,
+    )?;
+    let end_exclusive_local = resolve_local_datetime(
+        tz.with_ymd_and_hms(fy_start_year + 1, valid_start_month, 1, 0, 0, 0),
+        fy_start_year + 1,
+    )?;
 
     Ok((
         start_local.with_timezone(&Utc),
         end_exclusive_local.with_timezone(&Utc),
     ))
+}
+
+/// Returns UTC boundaries for a local calendar year in a timezone.
+/// The returned range is [start_utc, end_utc_exclusive).
+pub fn local_year_utc_bounds(year: i32, tz: Tz) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
+    local_financial_year_utc_bounds(year, 1, tz)
 }
 
 /// Returns UTC boundaries for an inclusive local date range in a timezone.
@@ -333,6 +356,23 @@ mod tests {
         assert_eq!(
             end_exclusive_utc,
             Some(Utc.with_ymd_and_hms(2024, 1, 4, 5, 0, 0).unwrap())
+        );
+    }
+
+    #[test]
+    fn local_financial_year_utc_bounds_matches_indian_financial_year() {
+        let tz = chrono_tz::Asia::Kolkata; // UTC+5:30
+        let (start_utc, end_exclusive_utc) =
+            local_financial_year_utc_bounds(2024, 4, tz).unwrap();
+        // 2024-04-01 00:00:00 IST is 2024-03-31 18:30:00 UTC
+        assert_eq!(
+            start_utc,
+            Utc.with_ymd_and_hms(2024, 3, 31, 18, 30, 0).unwrap()
+        );
+        // 2025-04-01 00:00:00 IST is 2025-03-31 18:30:00 UTC
+        assert_eq!(
+            end_exclusive_utc,
+            Utc.with_ymd_and_hms(2025, 3, 31, 18, 30, 0).unwrap()
         );
     }
 }

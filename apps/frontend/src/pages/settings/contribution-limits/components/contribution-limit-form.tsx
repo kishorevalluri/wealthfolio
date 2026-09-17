@@ -40,11 +40,46 @@ interface ContributionLimitFormProps {
   onSuccess?: () => void;
 }
 
+interface LimitPreset {
+  name: string;
+  label: string;
+  amount: number;
+  isFinancialYear?: boolean;
+  category?: "in" | "us" | "ca";
+}
+
+const LIMIT_PRESETS: LimitPreset[] = [
+  // India (Income Tax Act & CG Exemptions)
+  { name: "Section 80C (PPF/ELSS/EPF)", label: "80C (₹1.5L)", amount: 150000, isFinancialYear: true, category: "in" },
+  { name: "Section 80CCD(1B) NPS", label: "80CCD(1B) NPS (₹50k)", amount: 50000, isFinancialYear: true, category: "in" },
+  { name: "Section 80D Self & Family Health", label: "80D Health (₹25k)", amount: 25000, isFinancialYear: true, category: "in" },
+  { name: "Section 80D Senior Citizen Parents", label: "80D Parents (₹50k)", amount: 50000, isFinancialYear: true, category: "in" },
+  { name: "Section 80CCD(2) Employer NPS", label: "80CCD(2) Corp NPS", amount: 100000, isFinancialYear: true, category: "in" },
+  { name: "Section 24(b) Home Loan Interest", label: "24(b) Home Loan (₹2L)", amount: 200000, isFinancialYear: true, category: "in" },
+  { name: "Section 80TTA Savings Interest", label: "80TTA Interest (₹10k)", amount: 10000, isFinancialYear: true, category: "in" },
+  { name: "Section 80TTB Senior Interest", label: "80TTB Sr Interest (₹50k)", amount: 50000, isFinancialYear: true, category: "in" },
+  { name: "Section 80E Education Loan", label: "80E Edu Loan", amount: 50000, isFinancialYear: true, category: "in" },
+  { name: "Section 80G Donations", label: "80G Donations", amount: 25000, isFinancialYear: true, category: "in" },
+  { name: "Section 112A LTCG Equity Exemption", label: "112A LTCG Exemption (₹1.25L)", amount: 125000, isFinancialYear: true, category: "in" },
+  { name: "Section 54EC Capital Gains Bonds", label: "54EC CG Bonds (₹50L)", amount: 5000000, isFinancialYear: true, category: "in" },
+
+  // US & Others
+  { name: "Traditional / Roth IRA", label: "IRA ($7k)", amount: 7000, category: "us" },
+  { name: "401(k)", label: "401(k) ($23k)", amount: 23000, category: "us" },
+  { name: "HSA Individual", label: "HSA ($4.15k)", amount: 4150, category: "us" },
+  { name: "TFSA", label: "TFSA ($7k)", amount: 7000, category: "ca" },
+  { name: "RRSP", label: "RRSP ($31.5k)", amount: 31560, category: "ca" },
+];
+
+import { useSettingsContext } from "@/lib/settings-provider";
+
 export function ContributionLimitForm({
   defaultValues,
   onSuccess = () => {},
 }: ContributionLimitFormProps) {
   const { t } = useTranslation();
+  const { settings } = useSettingsContext();
+  const isIndia = settings?.formattingRegion === "IN" || settings?.baseCurrency === "INR";
   const { addContributionLimitMutation, updateContributionLimitMutation } =
     useContributionLimitMutations();
 
@@ -57,16 +92,67 @@ export function ContributionLimitForm({
     },
   });
 
+  const sortedPresets = [
+    ...LIMIT_PRESETS.filter((p) => (isIndia ? p.category === "in" : p.category !== "in")),
+    ...LIMIT_PRESETS.filter((p) => (isIndia ? p.category !== "in" : p.category === "in")),
+  ];
+
+  const currentStartDate = useWatch({
+    control: form.control,
+    name: "startDate",
+  });
+  const isCurrentlyFinancialYear =
+    currentStartDate instanceof Date && currentStartDate.getUTCMonth() === 3;
+
   // Function to update dates based on year
   const updateDatesBasedOnYear = (year: number) => {
     if (!year || isNaN(year)) return;
+    const currentStart = form.getValues("startDate");
+    const isFY = currentStart instanceof Date && currentStart.getUTCMonth() === 3;
 
-    // Set time to noon to avoid timezone issues
-    const startDate = new Date(Date.UTC(year, 0, 1, 12, 0, 0));
-    const endDate = new Date(Date.UTC(year, 11, 31, 12, 0, 0));
+    if (isFY) {
+      const startDate = new Date(Date.UTC(year, 3, 1, 12, 0, 0));
+      const endDate = new Date(Date.UTC(year + 1, 2, 31, 12, 0, 0));
+      form.setValue("startDate", startDate);
+      form.setValue("endDate", endDate);
+    } else {
+      const startDate = new Date(Date.UTC(year, 0, 1, 12, 0, 0));
+      const endDate = new Date(Date.UTC(year, 11, 31, 12, 0, 0));
+      form.setValue("startDate", startDate);
+      form.setValue("endDate", endDate);
+    }
+  };
 
-    form.setValue("startDate", startDate);
-    form.setValue("endDate", endDate);
+  const setPeriodType = (type: "calendar" | "financial") => {
+    const yr = form.getValues("contributionYear") || new Date().getFullYear();
+    if (type === "financial") {
+      const startDate = new Date(Date.UTC(yr, 3, 1, 12, 0, 0));
+      const endDate = new Date(Date.UTC(yr + 1, 2, 31, 12, 0, 0));
+      form.setValue("startDate", startDate);
+      form.setValue("endDate", endDate);
+    } else {
+      const startDate = new Date(Date.UTC(yr, 0, 1, 12, 0, 0));
+      const endDate = new Date(Date.UTC(yr, 11, 31, 12, 0, 0));
+      form.setValue("startDate", startDate);
+      form.setValue("endDate", endDate);
+    }
+  };
+
+  const applyPreset = (preset: LimitPreset) => {
+    form.setValue("groupName", preset.name);
+    form.setValue("limitAmount", preset.amount);
+    const yr = form.getValues("contributionYear") || new Date().getFullYear();
+    if (preset.isFinancialYear) {
+      const startDate = new Date(Date.UTC(yr, 3, 1, 12, 0, 0));
+      const endDate = new Date(Date.UTC(yr + 1, 2, 31, 12, 0, 0));
+      form.setValue("startDate", startDate);
+      form.setValue("endDate", endDate);
+    } else {
+      const startDate = new Date(Date.UTC(yr, 0, 1, 12, 0, 0));
+      const endDate = new Date(Date.UTC(yr, 11, 31, 12, 0, 0));
+      form.setValue("startDate", startDate);
+      form.setValue("endDate", endDate);
+    }
   };
 
   // Watch for changes to contributionYear
@@ -125,6 +211,46 @@ export function ContributionLimitForm({
           <Card className="border-border/40 w-full overflow-hidden rounded-lg border shadow-sm">
             <CardContent className="p-6">
               <div className="space-y-6">
+                <div className="space-y-2">
+                  <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
+                    <span>{t("settings:limits_form_presets_label", { defaultValue: "Presets" })}</span>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={isCurrentlyFinancialYear ? "secondary" : "ghost"}
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setPeriodType("financial")}
+                      >
+                        FY (Apr–Mar)
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={!isCurrentlyFinancialYear ? "secondary" : "ghost"}
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setPeriodType("calendar")}
+                      >
+                        CY (Jan–Dec)
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {sortedPresets.map((preset) => (
+                      <Button
+                        key={preset.name}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs font-normal"
+                        onClick={() => applyPreset(preset)}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
                 <FormField
                   control={form.control}
                   name="groupName"

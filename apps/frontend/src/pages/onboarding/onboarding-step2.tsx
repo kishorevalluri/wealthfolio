@@ -91,9 +91,10 @@ const formattingRegions = [
   ["JP", "japan"],
   ["KR", "southKorea"],
   ["IT", "italy"],
+  ["IN", "india"],
 ] as const;
 
-const popularFormattingRegions = ["system", "US", "CA", "GB"];
+const popularFormattingRegions = ["system", "US", "CA", "GB", "IN"];
 
 const TIMEZONE_FALLBACKS = [
   "UTC",

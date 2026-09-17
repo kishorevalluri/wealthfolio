@@ -63,7 +63,7 @@ export default defineConfig({
   server: {
     port: Number.isFinite(devPort) ? devPort : 1420,
     strictPort: true,
-    host: host ? "0.0.0.0" : false,
+    host: host ? "0.0.0.0" : "0.0.0.0",
     headers: {
       "Access-Control-Allow-Origin": "*",
     },

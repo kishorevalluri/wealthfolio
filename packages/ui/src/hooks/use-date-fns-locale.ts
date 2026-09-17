@@ -55,6 +55,7 @@ const REGION_LOCALES: Record<string, Locale> = {
   CN: zhCN,
   JP: ja,
   KR: ko,
+  IN: enGB,
 };
 
 const generatedLocales = new Map<string, Locale>();
