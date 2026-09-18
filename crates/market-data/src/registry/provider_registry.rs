@@ -627,7 +627,9 @@ impl ProviderRegistry {
         }
 
         let mut last_error: Option<MarketDataError> = None;
-        let mut fallback_results: Option<Vec<SearchResult>> = None;
+        let mut aggregated_results: Vec<SearchResult> = Vec::new();
+        let mut seen_keys: std::collections::HashSet<(String, Option<String>, Option<String>)> =
+            std::collections::HashSet::new();
 
         for (i, provider) in providers.iter().enumerate() {
             let provider_id: ProviderId = Cow::Borrowed(provider.id());
@@ -638,8 +640,8 @@ impl ProviderRegistry {
             }
 
             // Primary provider: wait for rate limit token.
-            // Fallback providers: skip if rate-limited (avoids multi-second stalls
-            // when the primary returns empty for a speculative candidate).
+            // Secondary providers: skip if rate-limited (avoids multi-second stalls
+            // when speculative candidates run against rate-limited backends).
             if i == 0 {
                 self.rate_limiter.acquire(&provider_id).await;
             } else if !self.rate_limiter.try_acquire(&provider_id) {
@@ -653,14 +655,16 @@ impl ProviderRegistry {
             match provider.search(query).await {
                 Ok(results) if !results.is_empty() => {
                     self.circuit_breaker.record_success(&provider_id);
-                    // If any result has MIC, return immediately
-                    if results.iter().any(|r| r.exchange_mic.is_some())
-                        || fallback_results.is_some()
-                    {
-                        return Ok(results);
+                    for item in results {
+                        let key = (
+                            item.symbol.clone(),
+                            item.exchange_mic.clone(),
+                            item.data_source.clone(),
+                        );
+                        if seen_keys.insert(key) {
+                            aggregated_results.push(item);
+                        }
                     }
-                    // Save as fallback, try next provider for MIC-enriched results
-                    fallback_results = Some(results);
                 }
                 Ok(_) => {
                     debug!(
@@ -688,8 +692,8 @@ impl ProviderRegistry {
             }
         }
 
-        if let Some(results) = fallback_results {
-            return Ok(results);
+        if !aggregated_results.is_empty() {
+            return Ok(aggregated_results);
         }
 
         Err(last_error.unwrap_or(MarketDataError::AllProvidersFailed))

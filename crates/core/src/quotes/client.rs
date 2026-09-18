@@ -43,7 +43,7 @@ use wealthfolio_market_data::{
     ExchangeMap, FinnhubProvider, FixtureProvider, MarketDataAppProvider, MetalPriceApiProvider,
     OpenFigiProvider, ProviderId, ProviderRegistry, Quote as MarketQuote, QuoteContext,
     QuoteIdentifiers, ResolverChain, SearchResult as MarketSearchResult, SplitEvent,
-    UsTreasuryCalcProvider, YahooProvider,
+    UsTreasuryCalcProvider, YahooProvider, AmfiProvider,
 };
 
 /// Market data error types.
@@ -212,6 +212,10 @@ impl MarketDataClient {
                 fixture_dir,
                 DATA_SOURCE_BOERSE_FRANKFURT,
             )))),
+            DATA_SOURCE_AMFI => Ok(Some(Arc::new(FixtureProvider::new_for_provider(
+                fixture_dir,
+                DATA_SOURCE_AMFI,
+            )))),
             DATA_SOURCE_MARKET_DATA_APP
             | DATA_SOURCE_ALPHA_VANTAGE
             | DATA_SOURCE_METAL_PRICE_API
@@ -297,6 +301,10 @@ impl MarketDataClient {
             DATA_SOURCE_BOERSE_FRANKFURT => {
                 // European bond pricing via Börse Frankfurt (no API key)
                 Ok(Some(Arc::new(BoerseFrankfurtProvider::new())))
+            }
+            DATA_SOURCE_AMFI => {
+                // Indian Mutual Funds via AMFI/mfapi (no API key)
+                Ok(Some(Arc::new(AmfiProvider::new())))
             }
             _ => {
                 warn!("Unknown provider ID: {}", provider_id);

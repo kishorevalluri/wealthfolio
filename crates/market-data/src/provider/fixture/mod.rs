@@ -546,6 +546,18 @@ impl MarketDataProvider for FixtureProvider {
             };
         }
 
+        if self.provider_id == "AMFI" {
+            return ProviderCapabilities {
+                instrument_kinds: &[InstrumentKind::Equity],
+                coverage: Coverage::indian_market(),
+                supports_latest: true,
+                supports_historical: true,
+                supports_search: true,
+                supports_profile: true,
+                supports_dividends: false,
+            };
+        }
+
         ProviderCapabilities {
             instrument_kinds: &[
                 InstrumentKind::Equity,

@@ -150,6 +150,17 @@ impl Coverage {
             metal_quote_ccy_allow: Some(&["USD"]),
         }
     }
+
+    /// Indian mutual funds and equities (AMFI, NSE, BSE).
+    /// Accepts mic=None so AMFI codes (6-digit numeric) without exchange MIC can be handled.
+    pub const fn indian_market() -> Self {
+        Self {
+            equity_mic_allow: Some(&["XNSE", "XBOM"]),
+            equity_mic_deny: None,
+            allow_unknown_mic: true,
+            metal_quote_ccy_allow: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -260,9 +271,32 @@ mod tests {
     }
 
     #[test]
+    fn test_indian_market_coverage() {
+        let coverage = Coverage::indian_market();
+        let mf_amfi = InstrumentId::Equity {
+            ticker: Arc::from("120503"),
+            mic: None,
+        };
+        assert!(coverage.supports(&mf_amfi));
+
+        let nse_stock = InstrumentId::Equity {
+            ticker: Arc::from("INFY"),
+            mic: Some(Cow::Borrowed("XNSE")),
+        };
+        assert!(coverage.supports(&nse_stock));
+
+        let us_stock = InstrumentId::Equity {
+            ticker: Arc::from("AAPL"),
+            mic: Some(Cow::Borrowed("XNAS")),
+        };
+        assert!(!coverage.supports(&us_stock));
+    }
+
+    #[test]
     fn test_coverage_is_const() {
         const _: Coverage = Coverage::us_only_strict();
         const _: Coverage = Coverage::global_best_effort();
         const _: Coverage = Coverage::metals_usd_only();
+        const _: Coverage = Coverage::indian_market();
     }
 }

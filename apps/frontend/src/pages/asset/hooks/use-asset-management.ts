@@ -18,6 +18,8 @@ export const useAssetManagement = () => {
     queryClient.invalidateQueries({ queryKey: [QueryKeys.HOLDINGS] });
     queryClient.invalidateQueries({ queryKey: [QueryKeys.ACTIVITY_DATA] });
     queryClient.invalidateQueries({ queryKey: [QueryKeys.CURRENT_VALUATION] });
+    queryClient.invalidateQueries({ queryKey: [QueryKeys.ASSETS, QueryKeys.LATEST_QUOTES] });
+    queryClient.invalidateQueries({ queryKey: [QueryKeys.LATEST_QUOTES] });
   };
 
   const createAssetMutation = useMutation({

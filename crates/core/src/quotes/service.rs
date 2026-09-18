@@ -1570,10 +1570,18 @@ where
         merged.extend(existing_summaries);
         merged.extend(new_provider_results);
 
-        // 7. Sort results: existing first, then by exchange relevance (if currency), then by score
+        // 7. Sort results: existing first, then by exchange relevance (if currency), then by provider priority, then by score
         let preferred_exchanges = account_currency
             .map(exchanges_for_currency)
             .unwrap_or_default();
+
+        let provider_priorities: HashMap<String, i32> = self
+            .provider_settings_store
+            .get_all_providers()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.id, p.priority))
+            .collect();
 
         merged.sort_by(|a, b| {
             // Existing assets always come first
@@ -1600,6 +1608,25 @@ where
                     std::cmp::Ordering::Equal => {}
                     other => return other,
                 }
+            }
+
+            // Then sort by configured provider priority (lower number = higher priority)
+            let a_priority = a
+                .data_source
+                .as_ref()
+                .and_then(|ds| provider_priorities.get(ds))
+                .copied()
+                .unwrap_or(i32::MAX);
+            let b_priority = b
+                .data_source
+                .as_ref()
+                .and_then(|ds| provider_priorities.get(ds))
+                .copied()
+                .unwrap_or(i32::MAX);
+
+            match a_priority.cmp(&b_priority) {
+                std::cmp::Ordering::Equal => {}
+                other => return other,
             }
 
             // Finally sort by provider score (descending, higher score first)

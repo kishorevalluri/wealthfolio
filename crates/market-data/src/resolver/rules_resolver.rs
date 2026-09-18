@@ -51,6 +51,9 @@ impl RulesResolver {
         mic: &Option<std::borrow::Cow<'static, str>>,
         provider: &ProviderId,
     ) -> Option<Currency> {
+        if provider.as_ref() == "AMFI" {
+            return Some("INR".into());
+        }
         let mic = mic.as_ref()?;
         self.exchange_map
             .get_currency(mic, provider)
@@ -73,6 +76,15 @@ impl RulesResolver {
             return Some((
                 ProviderInstrument::EquitySymbol {
                     symbol: Arc::from(format!("{}:{}", mic, ticker)),
+                },
+                ResolutionSource::Rules,
+            ));
+        }
+
+        if provider.as_ref() == "AMFI" {
+            return Some((
+                ProviderInstrument::EquitySymbol {
+                    symbol: ticker.clone(),
                 },
                 ResolutionSource::Rules,
             ));
@@ -426,6 +438,26 @@ mod tests {
             }
             _ => panic!("Expected EquitySymbol"),
         }
+    }
+
+    #[test]
+    fn test_resolve_amfi_mutual_fund() {
+        let resolver = RulesResolver::new();
+        let context = make_equity_context("120503", None);
+
+        let result = resolver.resolve(&"AMFI".into(), &context);
+        assert!(result.is_some());
+        let resolved = result.unwrap().unwrap();
+        assert_eq!(resolved.source, ResolutionSource::Rules);
+        match resolved.instrument {
+            ProviderInstrument::EquitySymbol { symbol } => {
+                assert_eq!(symbol.as_ref(), "120503");
+            }
+            _ => panic!("Expected EquitySymbol"),
+        }
+
+        let ccy = resolver.get_equity_currency(&None, &"AMFI".into());
+        assert_eq!(ccy, Some("INR".into()));
     }
 
     #[test]

@@ -50,6 +50,7 @@ common task playbooks.
 - **Desktop**: Tauri/Rust with SQLite (`apps/tauri/`, `crates/`)
 - **Web mode**: Axum HTTP server (`apps/server/`)
 - **Packages**: `@wealthfolio/ui`, addon-sdk, addon-dev-tools (`packages/`)
+- **Architecture & Subsystems Reference**: [`docs/architecture/codebase-reference.md`](docs/architecture/codebase-reference.md) (consult this before repo-wide searches)
 
 ## Code Layout
 

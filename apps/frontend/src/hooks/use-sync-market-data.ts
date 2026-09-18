@@ -15,6 +15,7 @@ export function useSyncMarketDataMutation(refetchAll = false, refetchRecentDays?
     onSuccess: (_data, assetIds) => {
       queryClient.invalidateQueries({ queryKey: [QueryKeys.QUOTE_HISTORY] });
       queryClient.invalidateQueries({ queryKey: [QueryKeys.LATEST_QUOTES] });
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.ASSETS, QueryKeys.LATEST_QUOTES] });
       for (const assetId of assetIds) {
         queryClient.invalidateQueries({ queryKey: [QueryKeys.ASSET_DATA, assetId] });
       }
