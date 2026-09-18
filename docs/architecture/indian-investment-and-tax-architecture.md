@@ -173,11 +173,11 @@ destabilizing existing desktop/web parity or US workflows, we adopt a
 
 ### Phase 3: Indian Capital Gains & Exemption Engine
 
-- [ ] Add asset tax classification and `disposal_date` rate splitting (July 23,
+- [x] Add asset tax classification and `disposal_date` rate splitting (July 23,
       2024 boundary) in
       [`crates/core/src/lots/mod.rs`](file:///Users/kishore/Workspace/wealthfolio/crates/core/src/lots/mod.rs).
-- [ ] Implement Section 112A ₹1,25,000 exemption bucket tracking.
-- [ ] Implement Section 55(2)(ac) grandfathering formula.
+- [x] Implement Section 112A ₹1,25,000 exemption bucket tracking.
+- [x] Implement Section 55(2)(ac) grandfathering formula.
 - **Gate 3**: Core unit tests validating exact STCG/LTCG disaggregation and
   grandfathering edge cases pass.
 
