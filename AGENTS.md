@@ -42,6 +42,11 @@ common task playbooks.
 - Use structured formats (lists, tables, code blocks).
 - Include absolute file paths—never relative.
 
+### 6. Maintain Knowledge Base
+
+- Whenever learning new architecture patterns, debugging subtleties, query keys, or changing/invalidating an existing flow, update [`docs/architecture/codebase-reference.md`](docs/architecture/codebase-reference.md).
+- Always consult [`docs/architecture/codebase-reference.md`](docs/architecture/codebase-reference.md) before performing wide scans of the codebase.
+
 ---
 
 ## Overview
@@ -186,6 +191,7 @@ Before completing any task:
 - [ ] Tests pass: `pnpm test` and/or `cargo test`
 - [ ] Both desktop and web compile if touching shared code
 - [ ] Changes are minimal and surgical
+- [ ] [`docs/architecture/codebase-reference.md`](docs/architecture/codebase-reference.md) updated if architecture, query keys, or data flows were modified
 
 ---
 
