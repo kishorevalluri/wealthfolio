@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use log::{debug, info};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ use wealthfolio_core::{
     health::HealthServiceTrait,
     holdings::{Holding, HoldingListItem},
     income::IncomeSummary,
-    lots::AssetLotView,
+    lots::{compute_indian_tax_summary, AssetLotView, IndianTaxYearSummary},
     performance::{
         calculate_performance_summary_batch_for_accounts, empty_performance_metrics,
         performance_account_ids_from_map, performance_account_tracking_modes_from_map,
@@ -1728,6 +1728,51 @@ pub async fn delete_snapshot(
     emit_portfolio_trigger_recalculate(&handle, payload);
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_indian_tax_summary(
+    state: State<'_, DatabaseRuntime>,
+    filter: Option<AccountScopeInput>,
+    financial_year: Option<i32>,
+) -> Result<IndianTaxYearSummary, String> {
+    let context = state.context()?;
+    debug!("Fetching Indian tax summary...");
+    let account_ids: Vec<String> = if let Some(input) = filter {
+        let af = input.into_account_filter()?;
+        let resolved = resolve_scope(&af, &context).await?;
+        resolved.account_ids
+    } else {
+        context
+            .account_service()
+            .get_active_accounts()
+            .map_err(|e| format!("Failed to fetch active accounts: {}", e))?
+            .into_iter()
+            .map(|account| account.id)
+            .collect()
+    };
+
+    if account_ids.is_empty() {
+        return Ok(IndianTaxYearSummary::default());
+    }
+
+    let fy = financial_year.unwrap_or_else(|| {
+        let now = chrono::Utc::now();
+        if now.month() >= 4 {
+            now.year()
+        } else {
+            now.year() - 1
+        }
+    });
+
+    compute_indian_tax_summary(
+        context.lots_repository.as_ref(),
+        context.asset_service().as_ref(),
+        &account_ids,
+        fy,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

@@ -522,6 +522,31 @@ describe("scope-based routing — get_income_summary", () => {
   });
 });
 
+describe("scope-based routing — get_indian_tax_summary", () => {
+  it("all → POST /tax/indian/summary/query", async () => {
+    const mock = stubFetch();
+    await invoke("get_indian_tax_summary", { filter: { type: "all" }, financialYear: 2024 });
+    const { url, method, body } = lastCall(mock);
+    expect(url).toBe("/api/v1/tax/indian/summary/query");
+    expect(method).toBe("POST");
+    expect(JSON.parse(body as string)).toEqual({
+      filter: { type: "all" },
+      financialYear: 2024,
+    });
+  });
+
+  it("account → GET /tax/indian/summary?accountId=...&financialYear=...", async () => {
+    const mock = stubFetch();
+    await invoke("get_indian_tax_summary", {
+      filter: { type: "account", accountId: "acc_1" },
+      financialYear: 2024,
+    });
+    const { url, method } = lastCall(mock);
+    expect(url).toBe("/api/v1/tax/indian/summary?accountId=acc_1&financialYear=2024");
+    expect(method).toBe("GET");
+  });
+});
+
 describe("scope-based routing — performance filters", () => {
   const commands = [
     { command: "calculate_performance_history", path: "/api/v1/performance/history" },

@@ -2785,3 +2785,52 @@ export interface RebalancePlan {
   warnings: RebalanceWarning[];
   afterBpsByCategory: Record<string, number>;
 }
+
+// ── Indian Tax Types ──────────────────────────────────────────────────────────
+
+export type IndianAssetTaxClassification =
+  | "equity_listed"
+  | "equity_mf"
+  | "reit_invit"
+  | "debt_mf_post_2023"
+  | "unlisted_debenture_post_2024"
+  | "other_capital_asset"
+  | "gold_sgb";
+
+export type HoldingPeriodCategory = "short_term" | "long_term";
+
+export interface IndianCapitalGainCalculation {
+  disposalId: string;
+  lotId: string;
+  assetId: string;
+  classification: IndianAssetTaxClassification;
+  acquisitionDate: string;
+  disposalDate: string;
+  holdingPeriod: HoldingPeriodCategory;
+  actualCost: string;
+  deemedCost: string;
+  proceeds: string;
+  grossGain: string;
+  taxableGain: string;
+  applicableTaxRate: string;
+  estimatedTax: string;
+}
+
+export interface IndianTaxYearSummary {
+  stcg111aPreBudget: string;
+  stcg111aPostBudget: string;
+  stcgSlabTotal: string;
+  stcgTotal: string;
+  ltcg112aPreBudget: string;
+  ltcg112aPostBudget: string;
+  sec112aLtcgGross: string;
+  sec112aExemptionApplied: string;
+  sec112aLtcgTaxable: string;
+  ltcgOtherTotal: string;
+  ltcgTotal: string;
+  stclCarriedForward: string;
+  ltclCarriedForward: string;
+  estimatedStcgTax: string;
+  estimatedLtcgTax: string;
+  calculations: IndianCapitalGainCalculation[];
+}

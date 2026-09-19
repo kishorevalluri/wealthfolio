@@ -72,6 +72,7 @@ export const COMMANDS: CommandMap = {
   calculate_performance_summary: { method: "POST", path: "/performance/summary" },
   get_performance_summaries: { method: "POST", path: "/performance/summaries" },
   get_income_summary: { method: "POST", path: "/income/summary/query" },
+  get_indian_tax_summary: { method: "POST", path: "/tax/indian/summary/query" },
   // Goals
   get_goals: { method: "GET", path: "/goals" },
   get_goal: { method: "GET", path: "/goals" },
@@ -761,6 +762,23 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
         method = "GET";
       } else {
         body = JSON.stringify({ filter: p?.filter ?? null });
+      }
+      break;
+    }
+    case "get_indian_tax_summary": {
+      const p = payload as {
+        filter?: { type: string; accountId?: string };
+        financialYear?: number;
+      };
+      if (p?.filter?.type === "account" && p.filter.accountId) {
+        const fyParam = p.financialYear ? `&financialYear=${p.financialYear}` : "";
+        url = `${API_PREFIX}/tax/indian/summary?accountId=${encodeURIComponent(p.filter.accountId)}${fyParam}`;
+        method = "GET";
+      } else {
+        body = JSON.stringify({
+          filter: p?.filter ?? null,
+          financialYear: p?.financialYear ?? null,
+        });
       }
       break;
     }

@@ -3,6 +3,7 @@ import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { getAddonNavPinKey, useAddonNavigationPins } from "./addon-navigation-pins";
+import { useSettingsContext } from "@/lib/settings-provider";
 
 export interface NavLink {
   id?: string;
@@ -108,7 +109,30 @@ export function useNavigation() {
 
   // Spending lives entirely on the dashboard tab (and its deep-linked pages);
   // no top-level nav entry. Combine static navigation items with addons.
-  const primary = [...staticNavigation.primary];
+  const { settings } = useSettingsContext();
+  const isIndia = settings?.formattingRegion === "IN" || settings?.baseCurrency === "INR";
+
+  const primary = useMemo(() => {
+    const items = [...staticNavigation.primary];
+    if (isIndia) {
+      // Insert Tax before Assistant
+      const assistantIndex = items.findIndex((item) => item.href === "/assistant");
+      const taxItem: NavLink = {
+        icon: <Icons.Receipt className="size-6" />,
+        title: t("common:tax"),
+        href: "/tax",
+        keywords: ["tax", "itr", "capital gains", "harvesting", "stcg", "ltcg", "india"],
+        label: t("common:nav.label_tax"),
+      };
+      if (assistantIndex !== -1) {
+        items.splice(assistantIndex, 0, taxItem);
+      } else {
+        items.push(taxItem);
+      }
+    }
+    return items;
+  }, [staticNavigation.primary, isIndia, t]);
+
   const addons = useMemo(() => dynamicItems ?? [], [dynamicItems]);
 
   useEffect(() => {

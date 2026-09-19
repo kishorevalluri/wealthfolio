@@ -24,6 +24,9 @@ use std::str::FromStr;
 use crate::errors::Result;
 use crate::portfolio::snapshot::AccountStateSnapshot;
 
+pub mod tax_service;
+pub use tax_service::{classify_asset_for_indian_tax, compute_indian_tax_summary, extract_fmv_2018};
+
 // ── Repository trait ──────────────────────────────────────────────────────────
 
 /// Records a lot that was fully disposed (remaining_quantity → 0).
@@ -743,6 +746,7 @@ pub fn determine_holding_period_category(
 
 /// Individual lot disposal tax calculation result
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IndianCapitalGainCalculation {
     pub disposal_id: String,
     pub lot_id: String,
@@ -762,6 +766,7 @@ pub struct IndianCapitalGainCalculation {
 
 /// Annual Indian Tax Summary with Section 112A exemption pooling, loss set-offs, and pre/post Budget 2024 pools
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IndianTaxYearSummary {
     /// Pre-July 23, 2024 Section 111A STCG (@ 15%)
     pub stcg_111a_pre_budget: Decimal,

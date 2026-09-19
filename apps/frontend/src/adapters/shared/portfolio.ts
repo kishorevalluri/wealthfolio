@@ -17,6 +17,7 @@ import type {
   CheckHoldingsImportResult,
   SnapshotInfo,
   AssetLotView,
+  IndianTaxYearSummary,
 } from "@/lib/types";
 
 import { invoke, logger } from "./platform";
@@ -45,6 +46,16 @@ export const getHoldingsList = async (
 
 export const getIncomeSummary = async (filter?: AccountScope): Promise<IncomeSummary[]> => {
   return invoke<IncomeSummary[]>("get_income_summary", { filter });
+};
+
+export const getIndianTaxSummary = async (
+  filter?: AccountScope,
+  financialYear?: number,
+): Promise<IndianTaxYearSummary> => {
+  return invoke<IndianTaxYearSummary>("get_indian_tax_summary", {
+    filter,
+    financialYear,
+  });
 };
 
 export const getHistoricalValuations = async (

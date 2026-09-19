@@ -97,12 +97,14 @@
   "assistant": "助理",
   "connect": "Connect",
   "addons": "擴充功能",
+  "tax": "稅務與報稅",
   "nav": {
     "label_dashboard": "檢視儀表板",
     "label_insights": "檢視分析",
     "label_holdings": "檢視持有部位",
     "label_activities": "檢視交易紀錄",
     "label_goals": "目標",
+    "label_tax": "稅務與報稅",
     "label_assistant": "AI 助理"
   },
   "layout": {

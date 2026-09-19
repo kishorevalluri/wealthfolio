@@ -190,6 +190,7 @@ export {
   getHoldingsList,
   getHoldingsByAllocation,
   getIncomeSummary,
+  getIndianTaxSummary,
   getCurrentValuation,
   getLatestValuations,
   getPortfolioAllocations,

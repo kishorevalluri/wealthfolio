@@ -152,12 +152,12 @@ destabilizing existing desktop/web parity or US workflows, we adopt a
 
 ### Phase 1: Core Foundation (Locale, Financial Year & Section 80 Presets)
 
-- [ ] Add `"IN"` (`"en-IN"`) to
+- [x] Add `"IN"` (`"en-IN"`) to
       [`packages/ui/src/lib/formatting.ts`](file:///Users/kishore/Workspace/wealthfolio/packages/ui/src/lib/formatting.ts)
       & settings UI.
-- [ ] Implement `local_financial_year_utc_bounds` in
+- [x] Implement `local_financial_year_utc_bounds` in
       [`crates/core/src/utils/time_utils.rs`](file:///Users/kishore/Workspace/wealthfolio/crates/core/src/utils/time_utils.rs).
-- [ ] Add Indian limit presets (80C, 80CCD, 80D, 112A) in
+- [x] Add Indian limit presets (80C, 80CCD, 80D, 112A) in
       [`contribution-limit-edit-modal.tsx`](file:///Users/kishore/Workspace/wealthfolio/apps/frontend/src/pages/settings/contribution-limits/components/contribution-limit-edit-modal.tsx).
 - **Gate 1**: `pnpm test packages/ui` passes; unit test for April 1 - March 31
   timezone bounds passes.
@@ -183,20 +183,22 @@ destabilizing existing desktop/web parity or US workflows, we adopt a
 
 ### Phase 4: Dedicated "Tax & ITR" Page & Dual-Regime Optimizer
 
-- [ ] Add `/tax` route in
+- [x] Add `/tax` route in
       [`apps/frontend/src/routes.tsx`](file:///Users/kishore/Workspace/wealthfolio/apps/frontend/src/routes.tsx).
-- [ ] Build Schedule CG summary table & Section 112A harvest progress bar.
-- [ ] Build Dual-Regime Optimizer card comparing Old vs New Regime (Budget 2024
+- [x] Build Schedule CG summary table & Section 112A harvest progress bar.
+- [x] Build Dual-Regime Optimizer card comparing Old vs New Regime (Budget 2024
       slabs & ₹75k standard deduction).
 - **Gate 4**: End-to-end frontend typecheck and tests pass with matching
   official tax calculator outputs.
 
 ### Phase 5: Statement Importers (CAMS/KFintech & Zerodha)
 
-- [ ] Add Zerodha Kite and Groww tradebook CSV mapping profiles in
-      [`activity-import-profile.ts`](file:///Users/kishore/Workspace/wealthfolio/apps/frontend/src/pages/activity/import/utils/activity-import-profile.ts).
-- [ ] Implement CAMS/KFintech CAS statement parser.
-- **Gate 5**: Import roundtrip tests for Zerodha and CAMS sample files pass.
+- [x] Add Zerodha Kite and Groww tradebook CSV mapping profiles and templates in
+      [`crates/storage-sqlite/migrations/2026-09-19-000001_indian_broker_templates/`](crates/storage-sqlite/migrations/2026-09-19-000001_indian_broker_templates/)
+      and [`use-import-mapping.ts`](apps/frontend/src/pages/activity/import/hooks/use-import-mapping.ts).
+- [x] Implement CAMS/KFintech CAS statement parser mappings and auto-detection.
+- **Gate 5**: Import roundtrip tests for Zerodha, Groww, and CAMS sample files pass
+  ([`indian-broker-import.test.ts`](apps/frontend/src/pages/activity/import/utils/indian-broker-import.test.ts)).
 
 ---
 

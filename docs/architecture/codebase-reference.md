@@ -64,3 +64,62 @@ Search merging in `crates/core/src/quotes/service.rs`:
 - `assets`: Securities / instruments (`id`, `symbol`, `name`, `quote_provider`, `quote_symbol`, `asset_sub_class`, etc.)
 - `quotes`: Historical prices (`asset_id`, `timestamp`, `price`, `open`, `high`, `low`, `volume`)
 - `provider_settings`: Market data provider configuration (`provider`, `priority`, `enabled`)
+
+## Indian Capital Gains Tax / ITR Subsystem
+
+### Overview
+Phase 4 feature: compute Indian capital gains summaries for ITR filing. Visible only when `settings.formattingRegion === "IN"` or `settings.baseCurrency === "INR"`.
+
+### Data Flow
+```
+Frontend /tax route → TaxPage
+  → getIndianTaxSummary(filter?, financialYear?)       [apps/frontend/src/adapters/shared/portfolio.ts]
+  → invoke("get_indian_tax_summary", { filter, financialYear })
+  → [Desktop] Tauri IPC → commands::portfolio::get_indian_tax_summary
+  → [Web]     POST /tax/indian/summary/query           [apps/server/src/api/tax.rs]
+  → compute_indian_tax_summary()                       [crates/core/src/lots/tax_service.rs]
+  → lots_repo.get_lot_disposals_for_accounts_in_date_range()
+  → lots_repo.get_all_lots()
+  → asset_service.get_assets()
+  → classify_asset_for_indian_tax() per asset
+  → calculate_indian_capital_gains()                   [crates/core/src/lots/mod.rs]
+  → IndianTaxYearSummary
+```
+
+### Key Files
+| File | Purpose |
+|---|---|
+| `crates/core/src/lots/tax_service.rs` | `classify_asset_for_indian_tax`, `extract_fmv_2018`, `compute_indian_tax_summary` |
+| `crates/core/src/lots/mod.rs` | `IndianAssetTaxClassification`, `IndianTaxYearSummary`, `calculate_indian_capital_gains` |
+| `apps/tauri/src/commands/portfolio.rs` | `get_indian_tax_summary` Tauri IPC command |
+| `apps/server/src/api/tax.rs` | `GET /tax/indian/summary` and `POST /tax/indian/summary/query` |
+| `apps/frontend/src/pages/tax/tax-page.tsx` | UI: FY selector, metric cards, Section 112A harvest monitor, disposal table, Dual-Regime Optimizer |
+| `apps/frontend/src/pages/tax/components/dual-regime-optimizer.tsx` | Dual-Regime Optimizer: Old vs New Tax Regime with Budget 2024 slabs & ₹75k standard deduction |
+| `apps/frontend/src/adapters/shared/portfolio.ts` | `getIndianTaxSummary` command wrapper |
+| `apps/frontend/src/lib/types.ts` | `IndianTaxYearSummary`, `IndianCapitalGainCalculation` TS types |
+| `apps/frontend/src/pages/layouts/navigation/app-navigation.tsx` | Conditional Tax & ITR nav item (India only) |
+
+### Query Key
+`QueryKeys.INDIAN_TAX_SUMMARY` / `QueryKeys.indianTaxSummary(filter, financialYear?)`
+
+### Asset Tax Classification
+`classify_asset_for_indian_tax` reads metadata key `taxClassification` first, then falls back to `instrument_type` + MIC heuristics. FMV (for grandfathering Sec 55(2)(ac)) is read from metadata keys: `fmv20180131`, `fmv_2018_01_31`, or `fmv2018`.
+
+### Financial Year
+FY start year passed as `financial_year: i32` (e.g. 2024 → FY 2024-25). Defaults to current FY based on April cutoff if not supplied.
+
+## Indian Broker & Statement Import Subsystem
+
+### Pre-seeded System Templates (`crates/storage-sqlite/migrations/2026-09-19-000001_indian_broker_templates/`)
+- **`system_zerodha`** (Zerodha Kite Tradebook):
+  - Field mappings: `trade_date`, `trade_type`, `symbol`, `isin`, `quantity`, `price`, `trade_id`, `segment`.
+  - Activities: `buy` -> BUY, `sell` -> SELL.
+- **`system_groww`** (Groww Tradebook):
+  - Field mappings: `Execution Date`, `Type`, `Symbol`, `ISIN`, `Quantity`, `Price`, `Order Value`, `Order Status`.
+  - Activities: `BUY` -> BUY, `SELL` -> SELL.
+- **`system_cams_cas`** (CAMS / KFintech Consolidated Account Statement):
+  - Field mappings: `Date`, `Transaction Description`, `Scheme Name`, `ISIN`, `Units`, `NAV`, `Amount`, `Folio No`.
+  - Activities: `PURCHASE`/`SIP`/`ADDITIONAL PURCHASE`/`SWITCH IN`/`REINVESTMENT` -> BUY, `REDEMPTION`/`SWITCH OUT`/`SWP` -> SELL, `DIVIDEND PAYOUT` -> DIVIDEND, `STAMP DUTY`/`STT`/`TDS` -> TAX, `BROKERAGE`/`CHARGES` -> FEE.
+
+### CSV Auto-detection
+Configured in `apps/frontend/src/pages/activity/import/hooks/use-import-mapping.ts` (`COLUMN_ALIASES`). Supports Indian tradebook/CAS column titles like `Execution Date`, `Transaction Description`, `Scheme Name`, `Order Value`, `Folio No`, `NAV`, etc.
