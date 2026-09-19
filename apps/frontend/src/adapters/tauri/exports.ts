@@ -32,3 +32,27 @@ export const exportDataFile = async (
     filename: result.filename,
   };
 };
+
+export const exportIndianScheduleCg = async (
+  filter?: unknown,
+  financialYear?: number,
+): Promise<DataExportResult> => {
+  const result = await invoke<BackendDataExportResult>("export_indian_schedule_cg", {
+    filter,
+    financialYear,
+  });
+
+  if (result.status === "pending") {
+    if (!result.relativePath || !result.filename) {
+      throw new Error("Export did not return a pending file path");
+    }
+
+    const saved = await saveAppDataFileViaPicker(result.relativePath, result.filename);
+    return saved ? { status: "saved", filename: result.filename } : { status: "canceled" };
+  }
+
+  return {
+    status: result.status,
+    filename: result.filename,
+  };
+};

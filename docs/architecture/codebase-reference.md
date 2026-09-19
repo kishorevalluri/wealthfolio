@@ -84,6 +84,14 @@ Frontend /tax route → TaxPage
   → classify_asset_for_indian_tax() per asset
   → calculate_indian_capital_gains()                   [crates/core/src/lots/mod.rs]
   → IndianTaxYearSummary
+
+Frontend /tax route Export Button →
+  → exportIndianScheduleCg(filter?, financialYear?)    [apps/frontend/src/adapters/*/exports.ts]
+  → [Desktop] Tauri IPC → commands::portfolio::export_indian_schedule_cg
+  → [Web]     POST /tax/indian/schedule-cg/export/query [apps/server/src/api/tax.rs]
+  → to_schedule_cg_rows()                              [crates/core/src/lots/tax_export.rs]
+  → format_records(&rows, ExportFileFormat::Csv)       [crates/core/src/exports.rs]
+  → CSV File Download (native dialog or browser download)
 ```
 
 ### Key Files
@@ -91,12 +99,14 @@ Frontend /tax route → TaxPage
 |---|---|
 | `crates/core/src/lots/tax_service.rs` | `classify_asset_for_indian_tax`, `extract_fmv_2018`, `compute_indian_tax_summary` |
 | `crates/core/src/lots/mod.rs` | `IndianAssetTaxClassification`, `IndianTaxYearSummary`, `calculate_indian_capital_gains` |
-| `apps/tauri/src/commands/portfolio.rs` | `get_indian_tax_summary` Tauri IPC command |
-| `apps/server/src/api/tax.rs` | `GET /tax/indian/summary` and `POST /tax/indian/summary/query` |
-| `apps/frontend/src/pages/tax/tax-page.tsx` | UI: FY selector, metric cards, Section 112A harvest monitor, disposal table, Dual-Regime Optimizer |
+| `crates/core/src/lots/tax_export.rs` | `ScheduleCgRow`, `to_schedule_cg_rows` (ITR-2/ITR-3 compliant CSV generator) |
+| `apps/tauri/src/commands/portfolio.rs` | `get_indian_tax_summary`, `export_indian_schedule_cg` Tauri IPC commands |
+| `apps/server/src/api/tax.rs` | `GET/POST /tax/indian/summary`, `GET/POST /tax/indian/schedule-cg/export` |
+| `apps/frontend/src/pages/tax/tax-page.tsx` | UI: FY selector, export button, Section 112A monitor, disposal table with security names/ISINs |
 | `apps/frontend/src/pages/tax/components/dual-regime-optimizer.tsx` | Dual-Regime Optimizer: Old vs New Tax Regime with Budget 2024 slabs & ₹75k standard deduction |
 | `apps/frontend/src/adapters/shared/portfolio.ts` | `getIndianTaxSummary` command wrapper |
-| `apps/frontend/src/lib/types.ts` | `IndianTaxYearSummary`, `IndianCapitalGainCalculation` TS types |
+| `apps/frontend/src/adapters/{tauri,web}/exports.ts` | `exportIndianScheduleCg` command implementation |
+| `apps/frontend/src/lib/types.ts` | `IndianTaxYearSummary`, `IndianCapitalGainCalculation` TS types with export fields |
 | `apps/frontend/src/pages/layouts/navigation/app-navigation.tsx` | Conditional Tax & ITR nav item (India only) |
 
 ### Query Key

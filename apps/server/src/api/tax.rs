@@ -9,7 +9,8 @@ use axum::{
 use chrono::Datelike;
 use wealthfolio_core::{
     accounts::AccountServiceTrait,
-    lots::{compute_indian_tax_summary, IndianTaxYearSummary},
+    exports::{format_records, ExportFileFormat},
+    lots::{compute_indian_tax_summary, to_schedule_cg_rows, IndianTaxYearSummary},
     portfolios::AccountScope,
 };
 
@@ -106,8 +107,88 @@ async fn get_indian_tax_summary_post(
     Ok(Json(summary))
 }
 
+/// GET /tax/indian/schedule-cg/export?financialYear=...
+async fn export_schedule_cg(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<IndianTaxSummaryQuery>,
+) -> ApiResult<axum::response::Response> {
+    use axum::http::header;
+    use axum::response::IntoResponse;
+
+    let account_ids = resolve_tax_accounts(&state, None, q.account_id.as_deref())?;
+    let fy = q.financial_year.unwrap_or_else(default_financial_year);
+
+    let summary = compute_indian_tax_summary(
+        state.lots_repository.as_ref(),
+        state.asset_service.as_ref(),
+        &account_ids,
+        fy,
+    )
+    .await?;
+
+    let rows = to_schedule_cg_rows(&summary);
+    let content = format_records(&rows, ExportFileFormat::Csv)
+        .map_err(crate::error::ApiError::from)?
+        .unwrap_or_default();
+
+    let filename = format!("schedule_cg_fy{}_{}.csv", fy, fy + 1);
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+            (
+                header::CONTENT_DISPOSITION,
+                &format!("attachment; filename=\"{}\"", filename),
+            ),
+        ],
+        content,
+    )
+        .into_response())
+}
+
+/// POST /tax/indian/schedule-cg/export/query
+async fn export_schedule_cg_post(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<IndianTaxSummaryBody>,
+) -> ApiResult<axum::response::Response> {
+    use axum::http::header;
+    use axum::response::IntoResponse;
+
+    let account_ids = resolve_tax_accounts(&state, body.filter.as_ref(), None)?;
+    let fy = body.financial_year.unwrap_or_else(default_financial_year);
+
+    let summary = compute_indian_tax_summary(
+        state.lots_repository.as_ref(),
+        state.asset_service.as_ref(),
+        &account_ids,
+        fy,
+    )
+    .await?;
+
+    let rows = to_schedule_cg_rows(&summary);
+    let content = format_records(&rows, ExportFileFormat::Csv)
+        .map_err(crate::error::ApiError::from)?
+        .unwrap_or_default();
+
+    let filename = format!("schedule_cg_fy{}_{}.csv", fy, fy + 1);
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+            (
+                header::CONTENT_DISPOSITION,
+                &format!("attachment; filename=\"{}\"", filename),
+            ),
+        ],
+        content,
+    )
+        .into_response())
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/tax/indian/summary", get(get_indian_tax_summary_get))
         .route("/tax/indian/summary/query", post(get_indian_tax_summary_post))
+        .route("/tax/indian/schedule-cg/export", get(export_schedule_cg))
+        .route("/tax/indian/schedule-cg/export/query", post(export_schedule_cg_post))
 }

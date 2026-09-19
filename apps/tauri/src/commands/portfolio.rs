@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::{
+    commands::utilities::{save_content_with_dialog, write_pending_export_content, DataExportResult},
     context::ServiceContext,
     events::{
         emit_portfolio_trigger_recalculate, emit_portfolio_trigger_update, PortfolioRequestPayload,
@@ -24,7 +25,8 @@ use wealthfolio_core::{
     health::HealthServiceTrait,
     holdings::{Holding, HoldingListItem},
     income::IncomeSummary,
-    lots::{compute_indian_tax_summary, AssetLotView, IndianTaxYearSummary},
+    lots::{compute_indian_tax_summary, to_schedule_cg_rows, AssetLotView, IndianTaxYearSummary},
+    exports::{format_records, ExportFileFormat},
     performance::{
         calculate_performance_summary_batch_for_accounts, empty_performance_metrics,
         performance_account_ids_from_map, performance_account_tracking_modes_from_map,
@@ -1773,6 +1775,74 @@ pub async fn get_indian_tax_summary(
     )
     .await
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn export_indian_schedule_cg(
+    app_handle: AppHandle,
+    state: State<'_, DatabaseRuntime>,
+    filter: Option<AccountScopeInput>,
+    financial_year: Option<i32>,
+) -> Result<DataExportResult, String> {
+    let context = state.context()?;
+    let account_ids: Vec<String> = if let Some(input) = filter {
+        let af = input.into_account_filter()?;
+        let resolved = resolve_scope(&af, &context).await?;
+        resolved.account_ids
+    } else {
+        context
+            .account_service()
+            .get_active_accounts()
+            .map_err(|e| format!("Failed to fetch active accounts: {}", e))?
+            .into_iter()
+            .map(|account| account.id)
+            .collect()
+    };
+
+    if account_ids.is_empty() {
+        return Ok(DataExportResult::empty());
+    }
+
+    let fy = financial_year.unwrap_or_else(|| {
+        let now = chrono::Utc::now();
+        if now.month() >= 4 {
+            now.year()
+        } else {
+            now.year() - 1
+        }
+    });
+
+    let summary = compute_indian_tax_summary(
+        context.lots_repository.as_ref(),
+        context.asset_service().as_ref(),
+        &account_ids,
+        fy,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let rows = to_schedule_cg_rows(&summary);
+    let Some(content) = format_records(&rows, ExportFileFormat::Csv).map_err(|e| e.to_string())?
+    else {
+        return Ok(DataExportResult::empty());
+    };
+
+    let filename = format!("schedule_cg_fy{}_{}.csv", fy, fy + 1);
+
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    {
+        let pending_export = write_pending_export_content(&app_handle, &filename, &content)?;
+        Ok(DataExportResult::pending(pending_export))
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        if save_content_with_dialog(&app_handle, &filename, &content)? {
+            Ok(DataExportResult::saved(filename))
+        } else {
+            Ok(DataExportResult::canceled())
+        }
+    }
 }
 
 #[cfg(test)]

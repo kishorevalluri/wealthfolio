@@ -145,7 +145,7 @@ export * from "../shared/health";
 export * from "../shared/allocation-targets";
 
 // Data Export Commands
-export { exportDataFile } from "./exports";
+export { exportDataFile, exportIndianScheduleCg } from "./exports";
 
 // ============================================================================
 // Platform-specific modules (different implementations)

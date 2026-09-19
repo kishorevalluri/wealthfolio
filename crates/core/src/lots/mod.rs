@@ -24,7 +24,9 @@ use std::str::FromStr;
 use crate::errors::Result;
 use crate::portfolio::snapshot::AccountStateSnapshot;
 
+pub mod tax_export;
 pub mod tax_service;
+pub use tax_export::{to_schedule_cg_rows, ScheduleCgRow};
 pub use tax_service::{classify_asset_for_indian_tax, compute_indian_tax_summary, extract_fmv_2018};
 
 // ── Repository trait ──────────────────────────────────────────────────────────
@@ -717,21 +719,30 @@ pub fn determine_holding_period_category(
 
     // Days difference calculation
     let days = (disposal_date - acquisition_date).num_days();
+    let budget_2024_date = NaiveDate::from_ymd_opt(2024, 7, 23).unwrap();
 
     match classification {
-        IndianAssetTaxClassification::EquityListed
-        | IndianAssetTaxClassification::EquityMf
-        | IndianAssetTaxClassification::ReitInvIt => {
-            // > 12 months (365 days) is Long Term
+        IndianAssetTaxClassification::EquityListed | IndianAssetTaxClassification::EquityMf => {
+            // Listed equity & equity mutual funds: > 12 months (365 days) is Long Term
             if days > 365 {
                 HoldingPeriodCategory::LongTerm
             } else {
                 HoldingPeriodCategory::ShortTerm
             }
         }
+        IndianAssetTaxClassification::ReitInvIt => {
+            // Pre-Budget 2024: 36 months (1095 days). Post-Budget 2024: 12 months (365 days).
+            let threshold = if disposal_date < budget_2024_date { 1095 } else { 365 };
+            if days > threshold {
+                HoldingPeriodCategory::LongTerm
+            } else {
+                HoldingPeriodCategory::ShortTerm
+            }
+        }
         IndianAssetTaxClassification::OtherCapitalAsset | IndianAssetTaxClassification::GoldSgb => {
-            // Post Budget 2024, holding period for most listed/unlisted and gold standardized to 24 months (730 days)
-            if days > 730 {
+            // Pre-Budget 2024: 36 months (1095 days). Post-Budget 2024: 24 months (730 days).
+            let threshold = if disposal_date < budget_2024_date { 1095 } else { 730 };
+            if days > threshold {
                 HoldingPeriodCategory::LongTerm
             } else {
                 HoldingPeriodCategory::ShortTerm
@@ -762,6 +773,22 @@ pub struct IndianCapitalGainCalculation {
     pub taxable_gain: Decimal,
     pub applicable_tax_rate: Decimal,
     pub estimated_tax: Decimal,
+    // ── Fields for Schedule CG / ITR export ──
+    pub asset_name: String,
+    pub asset_symbol: Option<String>,
+    pub isin: Option<String>,
+    pub quantity: Decimal,
+    pub sale_price_per_unit: Decimal,
+    pub cost_per_unit: Decimal,
+    pub fmv_per_unit_2018: Option<Decimal>,
+    pub transfer_expenses: Decimal,
+}
+
+/// Compact asset info used by the Indian tax calculator for export fields.
+pub struct IndianTaxAssetInfo {
+    pub name: String,
+    pub symbol: Option<String>,
+    pub isin: Option<String>,
 }
 
 /// Annual Indian Tax Summary with Section 112A exemption pooling, loss set-offs, and pre/post Budget 2024 pools
@@ -808,21 +835,27 @@ pub fn calculate_indian_capital_gains(
     lot_open_dates: &std::collections::HashMap<String, NaiveDate>,
     asset_classifications: &std::collections::HashMap<String, IndianAssetTaxClassification>,
     asset_fmv_2018: &std::collections::HashMap<String, Decimal>,
+    asset_info: &std::collections::HashMap<String, IndianTaxAssetInfo>,
 ) -> IndianTaxYearSummary {
     let mut summary = IndianTaxYearSummary::default();
     let budget_2024_date = NaiveDate::from_ymd_opt(2024, 7, 23).unwrap();
 
-    // Determine the relevant Section 112A exemption limit based on the latest disposal date (or default post-budget)
+    // The ₹1.25L exemption under Section 112A applies annually across FY 2024-25 onwards.
+    // Pre-FY24-25 defaults to ₹1,00,000 if all trades are strictly prior to 2024-04-01.
     let max_disposal_date = disposals
         .iter()
         .filter_map(|d| NaiveDate::parse_from_str(&d.disposal_date[..10], "%Y-%m-%d").ok())
         .max()
         .unwrap_or(budget_2024_date);
 
-    let (_, _, max_sec_112a_exemption) = indian_equity_tax_rates_for_date(max_disposal_date);
+    let sec_112a_exemption_limit = if max_disposal_date >= NaiveDate::from_ymd_opt(2024, 4, 1).unwrap() {
+        Decimal::new(125000, 0)
+    } else {
+        Decimal::new(100000, 0)
+    };
 
-    let mut sec_112a_pre_pool = Decimal::ZERO;
-    let mut sec_112a_post_pool = Decimal::ZERO;
+    let mut ltcg_other_pre_pool = Decimal::ZERO;
+    let mut ltcg_other_post_pool = Decimal::ZERO;
 
     for d in disposals {
         let disp_date = match NaiveDate::parse_from_str(&d.disposal_date[..10], "%Y-%m-%d") {
@@ -843,6 +876,17 @@ pub fn calculate_indian_capital_gains(
         let proceeds: Decimal = d.proceeds_base.parse().unwrap_or(Decimal::ZERO);
 
         let fmv_2018 = asset_fmv_2018.get(&d.asset_id).copied();
+
+        let info = asset_info.get(&d.asset_id);
+        let asset_name = info.map(|i| i.name.clone()).unwrap_or_default();
+        let asset_symbol = info.and_then(|i| i.symbol.clone());
+        let isin = info.and_then(|i| i.isin.clone());
+
+        let qty: Decimal = d.quantity.parse().unwrap_or(Decimal::ONE);
+        let sale_price_per_unit = if qty > Decimal::ZERO { proceeds / qty } else { Decimal::ZERO };
+        let cost_per_unit = if qty > Decimal::ZERO { cost_basis / qty } else { Decimal::ZERO };
+        let fmv_per_unit_2018 = fmv_2018;
+        let transfer_expenses = Decimal::ZERO;
 
         // Calculate grandfathered cost basis if applicable under Section 55(2)(ac)
         let deemed_cost = if classification == IndianAssetTaxClassification::EquityListed
@@ -876,17 +920,16 @@ pub fn calculate_indian_capital_gains(
         if is_sec_112a_eligible {
             if disp_date < budget_2024_date {
                 summary.ltcg_112a_pre_budget += gross_gain;
-                if gross_gain > Decimal::ZERO {
-                    sec_112a_pre_pool += gross_gain;
-                }
             } else {
                 summary.ltcg_112a_post_budget += gross_gain;
-                if gross_gain > Decimal::ZERO {
-                    sec_112a_post_pool += gross_gain;
-                }
             }
             summary.sec_112a_ltcg_gross += gross_gain;
         } else if holding_period == HoldingPeriodCategory::LongTerm {
+            if disp_date < budget_2024_date {
+                ltcg_other_pre_pool += gross_gain;
+            } else {
+                ltcg_other_post_pool += gross_gain;
+            }
             summary.ltcg_other_total += gross_gain;
         }
 
@@ -896,14 +939,8 @@ pub fn calculate_indian_capital_gains(
                 if is_sec_111a_eligible {
                     if disp_date < budget_2024_date {
                         summary.stcg_111a_pre_budget += gross_gain;
-                        if gross_gain > Decimal::ZERO {
-                            summary.estimated_stcg_tax += gross_gain * Decimal::new(15, 2);
-                        }
                     } else {
                         summary.stcg_111a_post_budget += gross_gain;
-                        if gross_gain > Decimal::ZERO {
-                            summary.estimated_stcg_tax += gross_gain * Decimal::new(20, 2);
-                        }
                     }
                 } else {
                     summary.stcg_slab_total += gross_gain;
@@ -929,35 +966,184 @@ pub fn calculate_indian_capital_gains(
             taxable_gain: gross_gain,
             applicable_tax_rate: applicable_rate,
             estimated_tax: Decimal::ZERO,
+            // Schedule CG export fields
+            asset_name,
+            asset_symbol,
+            isin,
+            quantity: qty,
+            sale_price_per_unit,
+            cost_per_unit,
+            fmv_per_unit_2018,
+            transfer_expenses,
         });
     }
 
-    // Apply Section 112A aggregate exemption proportionally / sequentially (pre-budget pool first)
-    let total_sec_112a_gain = sec_112a_pre_pool + sec_112a_post_pool;
-    let exemption_applied = total_sec_112a_gain.min(max_sec_112a_exemption);
-    summary.sec_112a_exemption_applied = exemption_applied;
-    summary.sec_112a_ltcg_taxable = (total_sec_112a_gain - exemption_applied).max(Decimal::ZERO);
+    // ── Section 70 Intra-Head Loss Set-Off & Section 112A Exemption ──
 
-    // Exempt pre-budget gains first, then post-budget gains
-    let mut remaining_exemption = exemption_applied;
-    let taxable_pre = if sec_112a_pre_pool >= remaining_exemption {
-        let taxable = sec_112a_pre_pool - remaining_exemption;
-        remaining_exemption = Decimal::ZERO;
-        taxable
+    // 1. Netting Section 112A LTCG:
+    // If one pool (pre vs post) is positive and the other is negative, net them.
+    let mut net_112a_pre = summary.ltcg_112a_pre_budget;
+    let mut net_112a_post = summary.ltcg_112a_post_budget;
+
+    if net_112a_pre < Decimal::ZERO && net_112a_post > Decimal::ZERO {
+        let abs_loss = net_112a_pre.abs();
+        if net_112a_post >= abs_loss {
+            net_112a_post -= abs_loss;
+            net_112a_pre = Decimal::ZERO;
+        } else {
+            net_112a_pre += net_112a_post;
+            net_112a_post = Decimal::ZERO;
+        }
+    } else if net_112a_post < Decimal::ZERO && net_112a_pre > Decimal::ZERO {
+        let abs_loss = net_112a_post.abs();
+        if net_112a_pre >= abs_loss {
+            net_112a_pre -= abs_loss;
+            net_112a_post = Decimal::ZERO;
+        } else {
+            net_112a_post += net_112a_pre;
+            net_112a_pre = Decimal::ZERO;
+        }
+    }
+
+    let positive_112a_total = net_112a_pre.max(Decimal::ZERO) + net_112a_post.max(Decimal::ZERO);
+    let exemption_applied = positive_112a_total.min(sec_112a_exemption_limit);
+    summary.sec_112a_exemption_applied = exemption_applied;
+    summary.sec_112a_ltcg_taxable = (positive_112a_total - exemption_applied).max(Decimal::ZERO);
+
+    // Apply exemption pre-budget first (10% bucket), then post-budget (12.5% bucket)
+    let mut rem_exemption = exemption_applied;
+    let taxable_112a_pre = if net_112a_pre > Decimal::ZERO {
+        if net_112a_pre >= rem_exemption {
+            let t = net_112a_pre - rem_exemption;
+            rem_exemption = Decimal::ZERO;
+            t
+        } else {
+            rem_exemption -= net_112a_pre;
+            Decimal::ZERO
+        }
     } else {
-        remaining_exemption -= sec_112a_pre_pool;
+        Decimal::ZERO
+    };
+    let taxable_112a_post = if net_112a_post > Decimal::ZERO {
+        (net_112a_post - rem_exemption).max(Decimal::ZERO)
+    } else {
         Decimal::ZERO
     };
 
-    let taxable_post = (sec_112a_post_pool - remaining_exemption).max(Decimal::ZERO);
+    // 2. Netting Section 111A STCG:
+    let mut net_111a_pre = summary.stcg_111a_pre_budget;
+    let mut net_111a_post = summary.stcg_111a_post_budget;
+    let mut net_stcg_slab = summary.stcg_slab_total;
 
-    // Calculate exact LTCG tax across pre (10%) and post (12.5%) pools
-    summary.estimated_ltcg_tax = (taxable_pre * Decimal::new(10, 2)) + (taxable_post * Decimal::new(125, 3));
-
-    // Handle Capital Loss Carry-Forward tracking under Section 74
-    if summary.stcg_total < Decimal::ZERO {
-        summary.stcl_carried_forward = summary.stcg_total.abs();
+    // Cross-net STCL within STCG buckets
+    if net_111a_pre < Decimal::ZERO {
+        let abs_loss = net_111a_pre.abs();
+        if net_111a_post >= abs_loss {
+            net_111a_post -= abs_loss;
+            net_111a_pre = Decimal::ZERO;
+        } else {
+            let absorbed = net_111a_post;
+            net_111a_post = Decimal::ZERO;
+            let rem_loss = abs_loss - absorbed;
+            if net_stcg_slab >= rem_loss {
+                net_stcg_slab -= rem_loss;
+                net_111a_pre = Decimal::ZERO;
+            } else {
+                net_111a_pre = -(rem_loss - net_stcg_slab.max(Decimal::ZERO));
+                net_stcg_slab = Decimal::ZERO;
+            }
+        }
     }
+
+    if net_111a_post < Decimal::ZERO {
+        let abs_loss = net_111a_post.abs();
+        if net_111a_pre >= abs_loss {
+            net_111a_pre -= abs_loss;
+            net_111a_post = Decimal::ZERO;
+        } else {
+            let absorbed = net_111a_pre;
+            net_111a_pre = Decimal::ZERO;
+            let rem_loss = abs_loss - absorbed;
+            if net_stcg_slab >= rem_loss {
+                net_stcg_slab -= rem_loss;
+                net_111a_post = Decimal::ZERO;
+            } else {
+                net_111a_post = -(rem_loss - net_stcg_slab.max(Decimal::ZERO));
+                net_stcg_slab = Decimal::ZERO;
+            }
+        }
+    }
+
+    if net_stcg_slab < Decimal::ZERO {
+        let mut abs_loss = net_stcg_slab.abs();
+        if net_111a_post >= abs_loss {
+            net_111a_post -= abs_loss;
+            net_stcg_slab = Decimal::ZERO;
+        } else {
+            abs_loss -= net_111a_post;
+            net_111a_post = Decimal::ZERO;
+            if net_111a_pre >= abs_loss {
+                net_111a_pre -= abs_loss;
+                net_stcg_slab = Decimal::ZERO;
+            } else {
+                net_stcg_slab = -(abs_loss - net_111a_pre);
+                net_111a_pre = Decimal::ZERO;
+            }
+        }
+    }
+
+    // 3. Section 70(2): Short-Term Capital Loss can be set off against Long-Term Capital Gains
+    let mut unabsorbed_stcl = Decimal::ZERO;
+    if net_111a_pre < Decimal::ZERO {
+        unabsorbed_stcl += net_111a_pre.abs();
+        net_111a_pre = Decimal::ZERO;
+    }
+    if net_111a_post < Decimal::ZERO {
+        unabsorbed_stcl += net_111a_post.abs();
+        net_111a_post = Decimal::ZERO;
+    }
+    if net_stcg_slab < Decimal::ZERO {
+        unabsorbed_stcl += net_stcg_slab.abs();
+    }
+
+    // Offset residual STCL against Section 112 Other LTCG, then Section 112A taxable LTCG
+    let mut taxable_other_pre = ltcg_other_pre_pool.max(Decimal::ZERO);
+    let mut taxable_other_post = ltcg_other_post_pool.max(Decimal::ZERO);
+    let mut final_taxable_112a_pre = taxable_112a_pre;
+    let mut final_taxable_112a_post = taxable_112a_post;
+
+    if unabsorbed_stcl > Decimal::ZERO && taxable_other_post > Decimal::ZERO {
+        let absorb = unabsorbed_stcl.min(taxable_other_post);
+        taxable_other_post -= absorb;
+        unabsorbed_stcl -= absorb;
+    }
+    if unabsorbed_stcl > Decimal::ZERO && taxable_other_pre > Decimal::ZERO {
+        let absorb = unabsorbed_stcl.min(taxable_other_pre);
+        taxable_other_pre -= absorb;
+        unabsorbed_stcl -= absorb;
+    }
+    if unabsorbed_stcl > Decimal::ZERO && final_taxable_112a_post > Decimal::ZERO {
+        let absorb = unabsorbed_stcl.min(final_taxable_112a_post);
+        final_taxable_112a_post -= absorb;
+        unabsorbed_stcl -= absorb;
+    }
+    if unabsorbed_stcl > Decimal::ZERO && final_taxable_112a_pre > Decimal::ZERO {
+        let absorb = unabsorbed_stcl.min(final_taxable_112a_pre);
+        final_taxable_112a_pre -= absorb;
+        unabsorbed_stcl -= absorb;
+    }
+
+    // 4. Compute exact estimated tax across net pools
+    summary.estimated_stcg_tax = (net_111a_pre.max(Decimal::ZERO) * Decimal::new(15, 2))
+        + (net_111a_post.max(Decimal::ZERO) * Decimal::new(20, 2));
+
+    summary.estimated_ltcg_tax = (final_taxable_112a_pre * Decimal::new(10, 2))
+        + (final_taxable_112a_post * Decimal::new(125, 3))
+        + (taxable_other_pre * Decimal::new(20, 2))
+        + (taxable_other_post * Decimal::new(125, 3));
+
+    // 5. Section 74 Loss Carry-Forward
+    summary.stcl_carried_forward = unabsorbed_stcl;
     if summary.ltcg_total < Decimal::ZERO {
         summary.ltcl_carried_forward = summary.ltcg_total.abs();
     }
@@ -1554,6 +1740,7 @@ mod tests {
             &lot_open_dates,
             &asset_classifications,
             &asset_fmv_2018,
+            &HashMap::new(),
         );
 
         // STCG should be 20,000, tax at 20% = 4,000
@@ -1568,5 +1755,98 @@ mod tests {
         assert_eq!(summary.sec_112a_ltcg_taxable, dec!(25000));
         // LTCG tax at 12.5% on 25,000 = 3,125
         assert_eq!(summary.estimated_ltcg_tax, dec!(3125));
+    }
+
+    #[test]
+    fn test_section_70_loss_set_off() {
+        // Test that losing trades net against winning trades in same bucket,
+        // and that STCL can offset LTCG under Section 70(2).
+        let disp_stcg_gain = LotDisposal {
+            id: "d1".to_string(),
+            lot_id: "l1".to_string(),
+            account_id: "a1".to_string(),
+            asset_id: "INFY".to_string(),
+            disposal_activity_id: "act1".to_string(),
+            disposal_date: "2024-08-10T00:00:00.000Z".to_string(),
+            quantity: "10".to_string(),
+            proceeds: "100000".to_string(),
+            cost_basis: "60000".to_string(),
+            realized_pnl: "40000".to_string(),
+            proceeds_base: "100000".to_string(),
+            cost_basis_base: "60000".to_string(),
+            realized_pnl_base: "40000".to_string(),
+            currency: "INR".to_string(),
+            base_currency: "INR".to_string(),
+            fx_rate_to_base: "1".to_string(),
+            cost_basis_method: "FIFO".to_string(),
+            created_at: "2024-08-10T00:00:00.000Z".to_string(),
+        };
+
+        let disp_stcg_loss = LotDisposal {
+            id: "d2".to_string(),
+            lot_id: "l2".to_string(),
+            account_id: "a1".to_string(),
+            asset_id: "WIPRO".to_string(),
+            disposal_activity_id: "act2".to_string(),
+            disposal_date: "2024-08-12T00:00:00.000Z".to_string(),
+            quantity: "10".to_string(),
+            proceeds: "40000".to_string(),
+            cost_basis: "50000".to_string(),
+            realized_pnl: "-10000".to_string(),
+            proceeds_base: "40000".to_string(),
+            cost_basis_base: "50000".to_string(),
+            realized_pnl_base: "-10000".to_string(),
+            currency: "INR".to_string(),
+            base_currency: "INR".to_string(),
+            fx_rate_to_base: "1".to_string(),
+            cost_basis_method: "FIFO".to_string(),
+            created_at: "2024-08-12T00:00:00.000Z".to_string(),
+        };
+
+        let mut lot_open_dates = HashMap::new();
+        lot_open_dates.insert("l1".to_string(), NaiveDate::from_ymd_opt(2024, 7, 1).unwrap());
+        lot_open_dates.insert("l2".to_string(), NaiveDate::from_ymd_opt(2024, 7, 1).unwrap());
+
+        let mut asset_classifications = HashMap::new();
+        asset_classifications.insert("INFY".to_string(), IndianAssetTaxClassification::EquityListed);
+        asset_classifications.insert("WIPRO".to_string(), IndianAssetTaxClassification::EquityListed);
+
+        let summary = calculate_indian_capital_gains(
+            &[disp_stcg_gain, disp_stcg_loss],
+            &lot_open_dates,
+            &asset_classifications,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        // Net STCG is 40,000 - 10,000 = 30,000.
+        // Tax at 20% on net 30,000 = 6,000 (NOT 8,000 on gross 40,000!).
+        assert_eq!(summary.stcg_total, dec!(30000));
+        assert_eq!(summary.estimated_stcg_tax, dec!(6000));
+        assert_eq!(summary.stcl_carried_forward, dec!(0));
+    }
+
+    #[test]
+    fn test_date_aware_holding_periods() {
+        let acq = NaiveDate::from_ymd_opt(2022, 1, 1).unwrap();
+        // 800 days holding (> 2 years, < 3 years)
+        let pre_budget_disp = NaiveDate::from_ymd_opt(2024, 3, 11).unwrap();
+        let post_budget_disp = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
+
+        // REIT pre-budget: requires >1095 days -> 800 days is Short-Term
+        let reit_pre = determine_holding_period_category(acq, pre_budget_disp, IndianAssetTaxClassification::ReitInvIt);
+        assert_eq!(reit_pre, HoldingPeriodCategory::ShortTerm);
+
+        // REIT post-budget: requires >365 days -> 800 days is Long-Term
+        let reit_post = determine_holding_period_category(acq, post_budget_disp, IndianAssetTaxClassification::ReitInvIt);
+        assert_eq!(reit_post, HoldingPeriodCategory::LongTerm);
+
+        // Gold pre-budget: requires >1095 days -> 800 days is Short-Term
+        let gold_pre = determine_holding_period_category(acq, pre_budget_disp, IndianAssetTaxClassification::GoldSgb);
+        assert_eq!(gold_pre, HoldingPeriodCategory::ShortTerm);
+
+        // Gold post-budget: requires >730 days -> 800 days is Long-Term
+        let gold_post = determine_holding_period_category(acq, post_budget_disp, IndianAssetTaxClassification::GoldSgb);
+        assert_eq!(gold_post, HoldingPeriodCategory::LongTerm);
     }
 }

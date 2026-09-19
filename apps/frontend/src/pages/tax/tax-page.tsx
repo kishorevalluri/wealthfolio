@@ -1,4 +1,4 @@
-import { getIndianTaxSummary } from "@/adapters";
+import { exportIndianScheduleCg, getIndianTaxSummary } from "@/adapters";
 import { AccountScopeSelector } from "@/components/account-filter-selector";
 import { useAccountScopeStore } from "@/lib/account-scope-store";
 import { QueryKeys } from "@/lib/query-keys";
@@ -8,6 +8,7 @@ import type {
   IndianTaxYearSummary,
 } from "@/lib/types";
 import { Badge } from "@wealthfolio/ui/components/ui/badge";
+import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
 import { EmptyPlaceholder } from "@wealthfolio/ui/components/ui/empty-placeholder";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
@@ -20,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@wealthfolio/ui/components/ui/table";
+import { toast } from "@wealthfolio/ui/components/ui/use-toast";
 import { AmountDisplay, AnimatedToggleGroup, Progress } from "@wealthfolio/ui";
 import { useQuery } from "@tanstack/react-query";
 import React, { useMemo, useState } from "react";
@@ -275,7 +277,18 @@ function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalcul
 
                 return (
                   <TableRow key={`${calc.disposalId}-${calc.lotId}`}>
-                    <TableCell className="font-mono text-xs">{calc.assetId}</TableCell>
+                    <TableCell className="text-xs">
+                      <div className="flex flex-col">
+                        <span className="font-medium">
+                          {calc.assetName || calc.assetSymbol || calc.assetId}
+                        </span>
+                        {(calc.assetSymbol || calc.isin) && (
+                          <span className="text-muted-foreground text-[11px]">
+                            {[calc.assetSymbol, calc.isin].filter(Boolean).join(" • ")}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs">
                         {classificationLabel(calc.classification)}
@@ -373,6 +386,7 @@ export default function TaxPage() {
   const { t } = useTranslation();
   const currentFY = useMemo(() => getCurrentFY(), []);
   const [selectedFY, setSelectedFY] = useState(String(currentFY));
+  const [isExporting, setIsExporting] = useState(false);
 
   const accountFilter = useAccountScopeStore((state) => state.scope);
   const setAccountScope = useAccountScopeStore((state) => state.setScope);
@@ -388,9 +402,56 @@ export default function TaxPage() {
     queryFn: () => getIndianTaxSummary(accountFilter, parseInt(selectedFY)),
   });
 
+  const handleExportScheduleCg = async () => {
+    try {
+      setIsExporting(true);
+      const result = await exportIndianScheduleCg(accountFilter, parseInt(selectedFY));
+      if (result.status === "saved") {
+        toast({
+          title: "Schedule CG Exported",
+          description: result.filename
+            ? `Successfully saved ${result.filename}`
+            : "Schedule CG CSV has been downloaded.",
+          variant: "success",
+        });
+      } else if (result.status === "empty") {
+        toast({
+          title: "No Data to Export",
+          description: "No capital gains or disposal transactions found for the selected financial year.",
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Export Failed",
+        description: err instanceof Error ? err.message : "Failed to export Schedule CG CSV.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const exportButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleExportScheduleCg}
+      disabled={isExporting || isLoading || !summary?.calculations?.length}
+      className="gap-1.5 text-xs font-medium"
+    >
+      {isExporting ? (
+        <Icons.Loader className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Icons.Download className="h-3.5 w-3.5" />
+      )}
+      <span>Export Schedule CG</span>
+    </Button>
+  );
+
   const filters = (
     <>
       <div className="pointer-events-auto fixed right-2 top-4 z-20 hidden items-center gap-2 md:flex lg:right-4">
+        {exportButton}
         <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
         <AnimatedToggleGroup
           variant="secondary"
@@ -409,6 +470,7 @@ export default function TaxPage() {
           onValueChange={(v) => v && setSelectedFY(v)}
         />
         <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
+        {exportButton}
       </div>
     </>
   );

@@ -6,8 +6,8 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 
 use super::{
-    calculate_indian_capital_gains, IndianAssetTaxClassification, IndianTaxYearSummary,
-    LotRepositoryTrait,
+    calculate_indian_capital_gains, IndianAssetTaxClassification, IndianTaxAssetInfo,
+    IndianTaxYearSummary, LotRepositoryTrait,
 };
 use crate::assets::{Asset, AssetServiceTrait, InstrumentType};
 use crate::errors::Result;
@@ -122,6 +122,7 @@ pub async fn compute_indian_tax_summary(
     let assets = asset_service.get_assets()?;
     let mut asset_classifications = HashMap::new();
     let mut asset_fmv_2018 = HashMap::new();
+    let mut asset_info_map = HashMap::new();
 
     for asset in &assets {
         let classification = classify_asset_for_indian_tax(asset);
@@ -129,6 +130,25 @@ pub async fn compute_indian_tax_summary(
         if let Some(fmv) = extract_fmv_2018(asset) {
             asset_fmv_2018.insert(asset.id.clone(), fmv);
         }
+
+        let isin = asset
+            .metadata
+            .as_ref()
+            .and_then(|m| m.get("identifiers"))
+            .and_then(|v| v.as_object())
+            .and_then(|ids| ids.get("isin"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        asset_info_map.insert(
+            asset.id.clone(),
+            IndianTaxAssetInfo {
+                name: asset.name.clone().unwrap_or_default(),
+                symbol: asset.display_code.clone().or_else(|| asset.instrument_symbol.clone()),
+                isin,
+            },
+        );
     }
 
     let summary = calculate_indian_capital_gains(
@@ -136,6 +156,7 @@ pub async fn compute_indian_tax_summary(
         &lot_open_dates,
         &asset_classifications,
         &asset_fmv_2018,
+        &asset_info_map,
     );
 
     Ok(summary)

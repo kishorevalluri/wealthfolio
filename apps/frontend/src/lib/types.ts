@@ -2814,6 +2814,14 @@ export interface IndianCapitalGainCalculation {
   taxableGain: string;
   applicableTaxRate: string;
   estimatedTax: string;
+  assetName?: string;
+  assetSymbol?: string;
+  isin?: string;
+  quantity?: string;
+  salePricePerUnit?: string;
+  costPerUnit?: string;
+  fmvPerUnit2018?: string;
+  transferExpenses?: string;
 }
 
 export interface IndianTaxYearSummary {

@@ -166,7 +166,7 @@ pub enum DataExportStatus {
 
 impl DataExportResult {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    fn saved(filename: String) -> Self {
+    pub fn saved(filename: String) -> Self {
         Self {
             status: DataExportStatus::Saved,
             relative_path: None,
@@ -175,7 +175,7 @@ impl DataExportResult {
     }
 
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    fn pending(pending_export: PendingExport) -> Self {
+    pub fn pending(pending_export: PendingExport) -> Self {
         Self {
             status: DataExportStatus::Pending,
             relative_path: Some(pending_export.relative_path),
@@ -183,7 +183,7 @@ impl DataExportResult {
         }
     }
 
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Self {
             status: DataExportStatus::Empty,
             relative_path: None,
@@ -192,7 +192,7 @@ impl DataExportResult {
     }
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    fn canceled() -> Self {
+    pub fn canceled() -> Self {
         Self {
             status: DataExportStatus::Canceled,
             relative_path: None,
@@ -202,7 +202,7 @@ impl DataExportResult {
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
-fn save_content_with_dialog(
+pub fn save_content_with_dialog(
     app_handle: &AppHandle,
     file_name: &str,
     content: &[u8],
@@ -228,7 +228,7 @@ fn save_content_with_dialog(
     Ok(true)
 }
 
-fn write_pending_export_content(
+pub fn write_pending_export_content(
     app_handle: &AppHandle,
     file_name: &str,
     content: &[u8],
