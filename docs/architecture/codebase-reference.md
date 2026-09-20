@@ -120,7 +120,7 @@ FY start year passed as `financial_year: i32` (e.g. 2024 → FY 2024-25). Defaul
 
 ## Indian Broker & Statement Import Subsystem
 
-### Pre-seeded System Templates (`crates/storage-sqlite/migrations/2026-09-19-000001_indian_broker_templates/`)
+### Pre-seeded System Templates (`crates/storage-sqlite/migrations/`)
 - **`system_zerodha`** (Zerodha Kite Tradebook):
   - Field mappings: `trade_date`, `trade_type`, `symbol`, `isin`, `quantity`, `price`, `trade_id`, `segment`.
   - Activities: `buy` -> BUY, `sell` -> SELL.
@@ -130,6 +130,12 @@ FY start year passed as `financial_year: i32` (e.g. 2024 → FY 2024-25). Defaul
 - **`system_cams_cas`** (CAMS / KFintech Consolidated Account Statement):
   - Field mappings: `Date`, `Transaction Description`, `Scheme Name`, `ISIN`, `Units`, `NAV`, `Amount`, `Folio No`.
   - Activities: `PURCHASE`/`SIP`/`ADDITIONAL PURCHASE`/`SWITCH IN`/`REINVESTMENT` -> BUY, `REDEMPTION`/`SWITCH OUT`/`SWP` -> SELL, `DIVIDEND PAYOUT` -> DIVIDEND, `STAMP DUTY`/`STT`/`TDS` -> TAX, `BROKERAGE`/`CHARGES` -> FEE.
+- **`system_cdsl_cas`** (CDSL e-CAS - Central Depository Services Limited):
+  - Field mappings: `Date`, `Transaction Description`, `Security Description`, `ISIN`, `Quantity`, `Rate`, `Amount`, `BO ID`.
+  - Activities: `PURCHASE`/`BUY`/`OFF-MARKET INWARD`/`IPO ALLOTMENT`/`BONUS`/`RIGHTS`/`INTER-DEPOSITORY TRANSFER INWARD`/`TRANSMISSION INWARD` -> BUY, `SALE`/`SELL`/`OFF-MARKET OUTWARD`/`REDEMPTION`/`INTER-DEPOSITORY TRANSFER OUTWARD`/`TRANSMISSION OUTWARD` -> SELL, `STOCK SPLIT`/`SUBDIVISION` -> SPLIT, `CHARGES`/`DEPOSITORY CHARGES` -> FEE.
+- **`system_nsdl_cas`** (NSDL e-CAS - National Securities Depository Limited):
+  - Field mappings: `Transaction Date`, `Particulars`, `Security Name`, `ISIN`, `Quantity`, `Rate`, `Amount`, `Client ID`.
+  - Activities: `BUY`/`PURCHASE`/`OFF-MARKET INWARD`/`IPO ALLOTMENT`/`BONUS`/`RIGHTS`/`INTER-DEPOSITORY TRANSFER INWARD`/`DEMAT INWARD` -> BUY, `SELL`/`SALE`/`OFF-MARKET OUTWARD`/`REDEMPTION`/`INTER-DEPOSITORY TRANSFER OUTWARD`/`DEMAT OUTWARD` -> SELL, `SUB-DIVISION`/`STOCK SPLIT` -> SPLIT, `CHARGES`/`DEP CHARGES` -> FEE.
 
 ### CSV Auto-detection
-Configured in `apps/frontend/src/pages/activity/import/hooks/use-import-mapping.ts` (`COLUMN_ALIASES`). Supports Indian tradebook/CAS column titles like `Execution Date`, `Transaction Description`, `Scheme Name`, `Order Value`, `Folio No`, `NAV`, etc.
+Configured in `apps/frontend/src/pages/activity/import/hooks/use-import-mapping.ts` (`COLUMN_ALIASES`). Supports Indian tradebook/CAS column titles like `Execution Date`, `Transaction Description`, `Particulars`, `Scheme Name`, `Security Description`, `Security Name`, `Order Value`, `Folio No`, `BO ID`, `Client ID`, `DP ID`, `Rate`, `NAV`, etc.

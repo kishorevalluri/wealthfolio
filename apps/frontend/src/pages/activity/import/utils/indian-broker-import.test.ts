@@ -232,4 +232,192 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
       expect(findMappedActivityType("TRANSACTION CHARGES", camsCasTemplate.activityMappings)).toBe(ActivityType.FEE);
     });
   });
+
+  describe("CDSL e-CAS (Consolidated Account Statement)", () => {
+    const cdslTemplate: ImportTemplateData = {
+      id: "system_cdsl_cas",
+      name: "CDSL e-CAS",
+      scope: "SYSTEM",
+      kind: "CSV_ACTIVITY",
+      fieldMappings: {
+        [ImportFormat.DATE]: "Date",
+        [ImportFormat.ACTIVITY_TYPE]: "Transaction Description",
+        [ImportFormat.SYMBOL]: "Security Description",
+        [ImportFormat.ISIN]: "ISIN",
+        [ImportFormat.QUANTITY]: "Quantity",
+        [ImportFormat.UNIT_PRICE]: "Rate",
+        [ImportFormat.AMOUNT]: "Amount",
+        [ImportFormat.ACCOUNT]: "BO ID",
+      },
+      activityMappings: {
+        [ActivityType.BUY]: [
+          "PURCHASE",
+          "BUY",
+          "MARKET BUY",
+          "OFF-MARKET INWARD",
+          "OFF MARKET INWARD",
+          "IPO ALLOTMENT",
+          "IPO",
+          "BONUS",
+          "RIGHTS",
+          "CORPORATE ACTION INWARD",
+          "INTER-DEPOSITORY TRANSFER INWARD",
+          "INWARD TRANSFER",
+          "TRANSMISSION INWARD",
+        ],
+        [ActivityType.SELL]: [
+          "SALE",
+          "SELL",
+          "MARKET SELL",
+          "OFF-MARKET OUTWARD",
+          "OFF MARKET OUTWARD",
+          "REDEMPTION",
+          "CORPORATE ACTION OUTWARD",
+          "INTER-DEPOSITORY TRANSFER OUTWARD",
+          "OUTWARD TRANSFER",
+          "TRANSMISSION OUTWARD",
+        ],
+        [ActivityType.SPLIT]: ["STOCK SPLIT", "SUBDIVISION"],
+        [ActivityType.FEE]: ["CHARGES", "DEPOSITORY CHARGES"],
+      },
+      symbolMappings: {},
+      accountMappings: {},
+      symbolMappingMeta: {},
+    };
+
+    const cdslHeaders = [
+      "Date",
+      "Transaction Description",
+      "Security Description",
+      "ISIN",
+      "Quantity",
+      "Rate",
+      "Amount",
+      "BO ID",
+    ];
+
+    it("auto-detects CDSL e-CAS columns correctly via aliases", () => {
+      const mapping = initializeColumnMapping(cdslHeaders);
+
+      expect(mapping[ImportFormat.DATE]).toBe("Date");
+      expect(mapping[ImportFormat.ACTIVITY_TYPE]).toBe("Transaction Description");
+      expect(mapping[ImportFormat.SYMBOL]).toBe("Security Description");
+      expect(mapping[ImportFormat.ISIN]).toBe("ISIN");
+      expect(mapping[ImportFormat.QUANTITY]).toBe("Quantity");
+      expect(mapping[ImportFormat.UNIT_PRICE]).toBe("Rate");
+      expect(mapping[ImportFormat.AMOUNT]).toBe("Amount");
+      expect(mapping[ImportFormat.ACCOUNT]).toBe("BO ID");
+    });
+
+    it("maps CDSL depository activity descriptions correctly", () => {
+      // Inward movements
+      expect(findMappedActivityType("PURCHASE", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("OFF-MARKET INWARD", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("IPO ALLOTMENT", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("BONUS", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("INTER-DEPOSITORY TRANSFER INWARD", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
+
+      // Outward movements
+      expect(findMappedActivityType("SALE", cdslTemplate.activityMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("OFF-MARKET OUTWARD", cdslTemplate.activityMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("INTER-DEPOSITORY TRANSFER OUTWARD", cdslTemplate.activityMappings)).toBe(ActivityType.SELL);
+
+      // Corporate action split
+      expect(findMappedActivityType("STOCK SPLIT", cdslTemplate.activityMappings)).toBe(ActivityType.SPLIT);
+      expect(findMappedActivityType("SUBDIVISION", cdslTemplate.activityMappings)).toBe(ActivityType.SPLIT);
+    });
+  });
+
+  describe("NSDL e-CAS (Consolidated Account Statement)", () => {
+    const nsdlTemplate: ImportTemplateData = {
+      id: "system_nsdl_cas",
+      name: "NSDL e-CAS",
+      scope: "SYSTEM",
+      kind: "CSV_ACTIVITY",
+      fieldMappings: {
+        [ImportFormat.DATE]: "Transaction Date",
+        [ImportFormat.ACTIVITY_TYPE]: "Particulars",
+        [ImportFormat.SYMBOL]: "Security Name",
+        [ImportFormat.ISIN]: "ISIN",
+        [ImportFormat.QUANTITY]: "Quantity",
+        [ImportFormat.UNIT_PRICE]: "Rate",
+        [ImportFormat.AMOUNT]: "Amount",
+        [ImportFormat.ACCOUNT]: "Client ID",
+      },
+      activityMappings: {
+        [ActivityType.BUY]: [
+          "BUY",
+          "PURCHASE",
+          "MARKET BUY",
+          "OFF-MARKET INWARD",
+          "OFF MARKET INWARD",
+          "IPO ALLOTMENT",
+          "IPO",
+          "BONUS",
+          "RIGHTS",
+          "CORPORATE ACTION INWARD",
+          "INTER-DEPOSITORY TRANSFER INWARD",
+          "INWARD TRANSFER",
+          "DEMAT INWARD",
+        ],
+        [ActivityType.SELL]: [
+          "SELL",
+          "SALE",
+          "MARKET SELL",
+          "OFF-MARKET OUTWARD",
+          "OFF MARKET OUTWARD",
+          "REDEMPTION",
+          "CORPORATE ACTION OUTWARD",
+          "INTER-DEPOSITORY TRANSFER OUTWARD",
+          "OUTWARD TRANSFER",
+          "DEMAT OUTWARD",
+        ],
+        [ActivityType.SPLIT]: ["SUB-DIVISION", "STOCK SPLIT"],
+        [ActivityType.FEE]: ["CHARGES", "DEP CHARGES"],
+      },
+      symbolMappings: {},
+      accountMappings: {},
+      symbolMappingMeta: {},
+    };
+
+    const nsdlHeaders = [
+      "Transaction Date",
+      "Particulars",
+      "Security Name",
+      "ISIN",
+      "Quantity",
+      "Rate",
+      "Amount",
+      "Client ID",
+    ];
+
+    it("auto-detects NSDL e-CAS columns correctly via aliases", () => {
+      const mapping = initializeColumnMapping(nsdlHeaders);
+
+      expect(mapping[ImportFormat.DATE]).toBe("Transaction Date");
+      expect(mapping[ImportFormat.ACTIVITY_TYPE]).toBe("Particulars");
+      expect(mapping[ImportFormat.SYMBOL]).toBe("Security Name");
+      expect(mapping[ImportFormat.ISIN]).toBe("ISIN");
+      expect(mapping[ImportFormat.QUANTITY]).toBe("Quantity");
+      expect(mapping[ImportFormat.UNIT_PRICE]).toBe("Rate");
+      expect(mapping[ImportFormat.AMOUNT]).toBe("Amount");
+      expect(mapping[ImportFormat.ACCOUNT]).toBe("Client ID");
+    });
+
+    it("maps NSDL depository activity descriptions correctly", () => {
+      // Inward movements
+      expect(findMappedActivityType("BUY", nsdlTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("DEMAT INWARD", nsdlTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("OFF-MARKET INWARD", nsdlTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("RIGHTS", nsdlTemplate.activityMappings)).toBe(ActivityType.BUY);
+
+      // Outward movements
+      expect(findMappedActivityType("SELL", nsdlTemplate.activityMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("DEMAT OUTWARD", nsdlTemplate.activityMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("OFF-MARKET OUTWARD", nsdlTemplate.activityMappings)).toBe(ActivityType.SELL);
+
+      // Split
+      expect(findMappedActivityType("SUB-DIVISION", nsdlTemplate.activityMappings)).toBe(ActivityType.SPLIT);
+    });
+  });
 });
