@@ -8,6 +8,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@wealthfolio/ui/components/ui/sheet";
+import { AccountTypeIconTile, IconTile } from "@/components/account-type-icon";
 import { HOLDING_CATEGORY_FILTERS } from "@/lib/constants";
 import { Account, AccountScope, HoldingCategoryFilterId } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -75,11 +76,8 @@ export const HoldingsMobileFilterSheet = ({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="flex h-[85vh] flex-col rounded-t-xl pb-[max(env(safe-area-inset-bottom),0.75rem)]"
-      >
-        <SheetHeader className="text-left">
+      <SheetContent side="bottom" className="flex h-[85vh] flex-col rounded-t-xl pb-3">
+        <SheetHeader className="text-start">
           <SheetTitle>{t("holdings:display_options")}</SheetTitle>
         </SheetHeader>
         <ScrollArea className="flex-1 py-4">
@@ -87,7 +85,7 @@ export const HoldingsMobileFilterSheet = ({
             {/* View Settings */}
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                   {t("holdings:sort_by")}
                 </h4>
                 <AnimatedToggleGroup<"symbol" | "marketValue">
@@ -103,7 +101,7 @@ export const HoldingsMobileFilterSheet = ({
               </div>
 
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                   {t("common:performance")}
                 </h4>
                 <AnimatedToggleGroup<PerformanceMode>
@@ -125,7 +123,7 @@ export const HoldingsMobileFilterSheet = ({
             {/* Position visibility */}
             {setVisibilityFilters && showClosedPositions && (
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                   {t("common:status")}
                 </h4>
                 <div className="overflow-hidden rounded-lg border">
@@ -137,7 +135,7 @@ export const HoldingsMobileFilterSheet = ({
                         type="button"
                         aria-pressed={isSelected}
                         className={cn(
-                          "flex w-full items-center justify-between p-3 text-left text-sm transition-colors",
+                          "flex w-full items-center justify-between p-3 text-start text-sm transition-colors",
                           index > 0 && "border-t",
                           isSelected ? "bg-accent/50 font-medium" : "hover:bg-muted/50",
                         )}
@@ -157,7 +155,7 @@ export const HoldingsMobileFilterSheet = ({
             {/* Category Filter Section */}
             {setCategoryFilter && (
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                   {t("holdings:category")}
                 </h4>
                 <div className="overflow-hidden rounded-lg border">
@@ -194,7 +192,7 @@ export const HoldingsMobileFilterSheet = ({
             {/* Account Filter Section */}
             {showAccountScope && (
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                   {t("holdings:account")}
                 </h4>
                 <div className="overflow-hidden rounded-lg border">
@@ -207,11 +205,10 @@ export const HoldingsMobileFilterSheet = ({
                     )}
                     onClick={() => {
                       onAccountScopeChange({ type: "all" });
-                      onOpenChange(false);
                     }}
                   >
                     <span className="flex items-center gap-2">
-                      <Icons.Wallet className="text-muted-foreground h-4 w-4" />
+                      <IconTile icon={Icons.Wallet} />
                       {t("holdings:all_accounts")}
                     </span>
                     {accountFilter.type === "all" && (
@@ -230,11 +227,10 @@ export const HoldingsMobileFilterSheet = ({
                       )}
                       onClick={() => {
                         onAccountScopeChange({ type: "portfolio", portfolioId: portfolio.id });
-                        onOpenChange(false);
                       }}
                     >
                       <span className="flex items-center gap-2">
-                        <Icons.Folder className="text-muted-foreground h-4 w-4" />
+                        <IconTile icon={Icons.Folder} />
                         {portfolio.name}
                       </span>
                       {accountFilter.type === "portfolio" &&
@@ -254,11 +250,10 @@ export const HoldingsMobileFilterSheet = ({
                       )}
                       onClick={() => {
                         onAccountScopeChange({ type: "account", accountId: account.id });
-                        onOpenChange(false);
                       }}
                     >
                       <span className="flex items-center gap-2">
-                        <Icons.CreditCard className="text-muted-foreground h-4 w-4" />
+                        <AccountTypeIconTile accountType={account.accountType} />
                         {account.name}
                       </span>
                       {accountFilter.type === "account" &&
@@ -274,7 +269,7 @@ export const HoldingsMobileFilterSheet = ({
             {/* Asset Type Filter Section */}
             {((typeOptions?.length ?? 0) > 0 || selectedTypes.length > 0) && (
               <div className="space-y-3">
-                <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                <h4 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                   {t("holdings:asset_type")}
                 </h4>
                 <div className="overflow-hidden rounded-lg border">
@@ -285,7 +280,6 @@ export const HoldingsMobileFilterSheet = ({
                     )}
                     onClick={() => {
                       setSelectedTypes([]);
-                      onOpenChange(false);
                     }}
                   >
                     <span>{t("holdings:all_types")}</span>
@@ -319,9 +313,7 @@ export const HoldingsMobileFilterSheet = ({
           </div>
         </ScrollArea>
         <SheetFooter className="mt-auto">
-          <SheetClose asChild>
-            <Button className="w-full">{t("holdings:done")}</Button>
-          </SheetClose>
+          <SheetClose render={<Button className="w-full" />}>{t("holdings:done")}</SheetClose>
         </SheetFooter>
       </SheetContent>
     </Sheet>

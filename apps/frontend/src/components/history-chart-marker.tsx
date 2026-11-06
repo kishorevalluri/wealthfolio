@@ -4,6 +4,7 @@ export type HistoryChartMarkerTone =
   | "destructive"
   | "secondary"
   | "warning"
+  | "info"
   | "default";
 export type TradeMarkerVariant = Extract<HistoryChartMarkerVariant, "buy" | "sell">;
 
@@ -21,13 +22,16 @@ interface HistoryChartMarkerShapeProps extends RechartsMarkerShapeProps {
   value?: number;
   label?: string;
   tone?: HistoryChartMarkerTone;
+  /** A snapshot dot's colour at or above zero, the chart line's; below zero it is --loss. */
+  color?: string;
 }
 
-export function HistoryChartActiveDot({
-  cx,
-  cy,
-  stroke = "var(--success)",
-}: RechartsActiveDotProps) {
+/** A value line's colour at one value: its own at or above zero, --loss below. */
+export function lineColorAt(value: number, color = "var(--gain)") {
+  return value >= 0 ? color : "var(--loss)";
+}
+
+export function HistoryChartActiveDot({ cx, cy, stroke = "var(--gain)" }: RechartsActiveDotProps) {
   return (
     <g transform={`translate(${cx ?? 0}, ${cy ?? 0})`} style={{ pointerEvents: "none" }}>
       <circle r={5} fill="var(--background)" />
@@ -43,13 +47,13 @@ export function HistoryChartMarkerShape({
   value = 0,
   label,
   tone,
+  color = "var(--gain)",
 }: HistoryChartMarkerShapeProps) {
   if (variant === "snapshot") {
     return (
       <g
-        className={value >= 0 ? "text-success" : "text-destructive"}
         transform={`translate(${cx ?? 0}, ${cy ?? 0})`}
-        style={{ pointerEvents: "none" }}
+        style={{ pointerEvents: "none", color: lineColorAt(value, color) }}
       >
         <circle r={10} fill="currentColor" opacity={0.14} />
         <circle r={6} fill="currentColor" stroke="var(--background)" strokeWidth={1.5} />
@@ -104,6 +108,8 @@ function markerColors(tone: HistoryChartMarkerTone) {
       return { fill: "var(--secondary)", foreground: "var(--secondary-foreground)" };
     case "warning":
       return { fill: "var(--warning)", foreground: "var(--warning-foreground)" };
+    case "info":
+      return { fill: "var(--info)", foreground: "var(--info-foreground)" };
     default:
       return { fill: "var(--primary)", foreground: "var(--primary-foreground)" };
   }

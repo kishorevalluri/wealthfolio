@@ -17,6 +17,9 @@ import {
   buildImportAssetCandidateFromDraft,
   buildNewAssetFromSearchResult,
 } from "../utils/asset-review-utils";
+import { badgeVariants } from "@wealthfolio/ui";
+import { cn } from "@/lib/utils";
+import { HoldingsFormat } from "./holdings-mapping-step";
 
 interface AssetDialogState {
   open: boolean;
@@ -71,6 +74,7 @@ interface NeedsFixingRowProps {
   onSearch: (item: ImportAssetPreviewItem, result?: SymbolSearchResult) => void;
   onMarkCustom: () => void;
   onCreateAsset: () => void;
+  onSkip: () => void;
 }
 
 // Errors that are self-evident from context (item is in "Needs Fixing") and add no info.
@@ -84,6 +88,7 @@ function NeedsFixingRow({
   onSearch,
   onMarkCustom,
   onCreateAsset,
+  onSkip,
 }: NeedsFixingRowProps) {
   const { t } = useTranslation();
   const logoSymbol = item.draft?.instrumentSymbol || item.draft?.displayCode || symbol;
@@ -107,36 +112,36 @@ function NeedsFixingRow({
         <div className="flex min-w-0 flex-col">
           <div className="flex items-center gap-1.5">
             <span className="font-mono text-sm font-bold tracking-tight">{symbol}</span>
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+            <span className="text-2xs bg-warning-subtle text-warning-subtle-foreground rounded px-1.5 py-0.5 font-semibold">
               {count}×
             </span>
           </div>
           {symbolName && (
-            <span className="text-muted-foreground truncate text-[11px]">{symbolName}</span>
+            <span className="text-muted-foreground text-2xs truncate">{symbolName}</span>
           )}
         </div>
-        <Icons.ArrowRight className="ml-auto h-3.5 w-3.5 shrink-0 text-amber-400 dark:text-amber-500/70" />
+        <Icons.ArrowRight className="text-warning ms-auto h-3.5 w-3.5 shrink-0 rtl:rotate-180" />
       </div>
 
       {/* Col 2: search input with icon */}
       <div className="relative [&_[role=combobox]]:h-9 [&_[role=combobox]]:min-h-0 [&_[role=combobox]]:py-1">
-        <Icons.Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-amber-400 dark:text-amber-500/70" />
+        <Icons.Search className="text-warning pointer-events-none absolute start-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2" />
         <TickerSearchInput
           defaultValue={symbol}
           placeholder={t("activity:import.assets.searchPlaceholder")}
           onSelectResult={(_sym, result) => onSearch(item, result)}
-          className="w-full pl-8 text-xs"
+          className="w-full ps-8 text-xs"
         />
       </div>
 
       {/* Col 3: actions */}
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5">
         <Button
           type="button"
           size="sm"
           variant="ghost"
           onClick={onMarkCustom}
-          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-amber-700 dark:hover:text-amber-400"
+          className="text-muted-foreground text-2xs hover:text-warning-subtle-foreground h-7 gap-1 px-2"
         >
           <Icons.Tag className="h-3 w-3 shrink-0" />
           <span className="hidden sm:inline">{t("activity:import.assets.markCustom")}</span>
@@ -146,16 +151,27 @@ function NeedsFixingRow({
           size="sm"
           variant="outline"
           onClick={onCreateAsset}
-          className="h-7 gap-1 border-amber-300 px-2.5 text-[11px] text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10"
+          className="text-2xs border-warning-subtle-border text-warning-subtle-foreground hover:bg-warning-subtle h-7 gap-1 px-2.5"
         >
           <Icons.Plus className="h-3 w-3 shrink-0" />
           <span className="hidden sm:inline">{t("activity:import.assets.createManually")}</span>
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onSkip}
+          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/20"
+          title={t("activity:import.assets.skipAsset")}
+        >
+          <Icons.X className="h-3 w-3 shrink-0" />
+          <span className="hidden sm:inline">{t("activity:import.assets.skip")}</span>
         </Button>
       </div>
 
       {/* Errors span all 3 columns */}
       {meaningfulErrors.length > 0 && (
-        <p className="col-span-3 flex items-start gap-1.5 text-[11px] text-red-600 dark:text-red-400">
+        <p className="text-2xs text-destructive col-span-3 flex items-start gap-1.5">
           <Icons.AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
           {meaningfulErrors.join(" ")}
         </p>
@@ -169,6 +185,7 @@ function NeedsFixingRow({
 interface AutoResolvedRowProps {
   item: ImportAssetPreviewItem;
   symbol: string;
+  symbolName?: string;
   count: number;
   isSuspicious: boolean;
   csvCurrency?: string;
@@ -176,11 +193,13 @@ interface AutoResolvedRowProps {
   onToggleSearch: () => void;
   onSearch: (item: ImportAssetPreviewItem, result?: SymbolSearchResult) => void;
   onEdit: () => void;
+  onSkip: () => void;
 }
 
 function AutoResolvedRow({
   item,
   symbol,
+  symbolName,
   count,
   isSuspicious,
   csvCurrency,
@@ -188,12 +207,14 @@ function AutoResolvedRow({
   onToggleSearch,
   onSearch,
   onEdit,
+  onSkip,
 }: AutoResolvedRowProps) {
   const { t } = useTranslation();
   const asset = item.draft;
   const logoSymbol = asset?.instrumentSymbol || asset?.displayCode || symbol;
+  const rawName = asset?.name || symbolName;
   const assetName =
-    asset?.name && asset.name.toUpperCase() !== symbol.toUpperCase() ? asset.name : undefined;
+    rawName && rawName.toUpperCase() !== symbol.toUpperCase() ? rawName : undefined;
   const exchangeDisplay = asset?.instrumentExchangeMic
     ? getExchangeDisplayName(asset.instrumentExchangeMic)
     : undefined;
@@ -215,12 +236,12 @@ function AutoResolvedRow({
         <div className="flex min-w-0 flex-col">
           <div className="flex items-center gap-1.5">
             <span className="font-mono text-sm font-bold tracking-tight">{symbol}</span>
-            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+            <span className="text-2xs bg-info-subtle text-info-subtle-foreground rounded px-1.5 py-0.5 font-semibold">
               {count}×
             </span>
           </div>
           {assetName && (
-            <span className="text-muted-foreground truncate text-[11px]">{assetName}</span>
+            <span className="text-muted-foreground text-2xs truncate">{assetName}</span>
           )}
         </div>
       </div>
@@ -236,14 +257,14 @@ function AutoResolvedRow({
       ) : (
         <div className="flex min-w-0 flex-wrap items-center gap-1">
           {item.resolutionSource === "mark_custom" && (
-            <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300">
+            <span className="text-2xs border-warning-subtle-border bg-warning-subtle text-warning-subtle-foreground inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-semibold tracking-wide uppercase">
               <Icons.Tag className="h-3 w-3 shrink-0" />
               {t("activity:import.assets.custom")}
             </span>
           )}
           {isSuspicious && (
             <span
-              className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300"
+              className="text-2xs border-warning-subtle-border bg-warning-subtle text-warning-subtle-foreground inline-flex items-center gap-1 rounded border px-1.5 py-0.5"
               title={t("activity:import.assets.currencyMismatch", {
                 csv: csvCurrency,
                 resolved: asset?.quoteCcy,
@@ -256,13 +277,13 @@ function AutoResolvedRow({
           {metaPills.map((pill) => (
             <span
               key={pill}
-              className="border-border bg-muted/50 text-muted-foreground rounded border px-1.5 py-0.5 text-[10px]"
+              className="border-border bg-muted/50 text-muted-foreground text-2xs rounded border px-1.5 py-0.5"
             >
               {pill}
             </span>
           ))}
           {metaPills.length === 0 && item.resolutionSource !== "mark_custom" && (
-            <span className="text-muted-foreground text-[11px] italic">
+            <span className="text-muted-foreground text-2xs italic">
               {t("activity:import.assets.noMetadataResolved")}
             </span>
           )}
@@ -274,7 +295,7 @@ function AutoResolvedRow({
         <Button
           size="sm"
           variant={isSearchOpen ? "secondary" : "ghost"}
-          className="h-7 gap-1 px-2 text-[11px]"
+          className="text-2xs h-7 gap-1 px-2"
           onClick={onToggleSearch}
         >
           <Icons.Search className="h-3 w-3" />
@@ -283,11 +304,21 @@ function AutoResolvedRow({
           </span>
         </Button>
         {!isSearchOpen && (
-          <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]" onClick={onEdit}>
+          <Button size="sm" variant="ghost" className="text-2xs h-7 gap-1 px-2" onClick={onEdit}>
             <Icons.Pencil className="h-3 w-3" />
             <span className="hidden sm:inline">{t("activity:import.assets.edit")}</span>
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onSkip}
+          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/20"
+          title={t("activity:import.assets.skipAsset")}
+        >
+          <Icons.X className="h-3 w-3 shrink-0" />
+          <span className="hidden sm:inline">{t("activity:import.assets.skip")}</span>
+        </Button>
       </div>
     </div>
   );
@@ -303,6 +334,7 @@ interface ReadyAssetRowProps {
   onToggleSearch: () => void;
   onSearch: (item: ImportAssetPreviewItem, result?: SymbolSearchResult) => void;
   onEdit: () => void;
+  onSkip: () => void;
 }
 
 function ReadyAssetRow({
@@ -313,6 +345,7 @@ function ReadyAssetRow({
   onToggleSearch,
   onSearch,
   onEdit,
+  onSkip,
 }: ReadyAssetRowProps) {
   const { t } = useTranslation();
   const asset = item.draft;
@@ -340,12 +373,17 @@ function ReadyAssetRow({
         <div className="flex min-w-0 flex-col">
           <div className="flex items-center gap-1.5">
             <span className="font-mono text-sm font-bold tracking-tight">{symbol}</span>
-            <span className="bg-success/15 text-success rounded px-1.5 py-0.5 text-[10px] font-semibold">
+            <span
+              className={cn(
+                badgeVariants({ variant: "success-subtle" }),
+                "text-2xs rounded px-1.5 font-semibold",
+              )}
+            >
               {count}×
             </span>
           </div>
           {assetName && (
-            <span className="text-muted-foreground truncate text-[11px]">{assetName}</span>
+            <span className="text-muted-foreground text-2xs truncate">{assetName}</span>
           )}
         </div>
       </div>
@@ -363,13 +401,13 @@ function ReadyAssetRow({
           {metaPills.map((pill) => (
             <span
               key={pill}
-              className="border-border bg-muted/50 text-muted-foreground rounded border px-1.5 py-0.5 text-[10px]"
+              className="border-border bg-muted/50 text-muted-foreground text-2xs rounded border px-1.5 py-0.5"
             >
               {pill}
             </span>
           ))}
           {metaPills.length === 0 && (
-            <span className="text-muted-foreground text-[11px] italic">
+            <span className="text-muted-foreground text-2xs italic">
               {t("activity:import.assets.noMetadata")}
             </span>
           )}
@@ -381,7 +419,7 @@ function ReadyAssetRow({
         <Button
           size="sm"
           variant={isSearchOpen ? "secondary" : "ghost"}
-          className="h-7 gap-1 px-2 text-[11px]"
+          className="text-2xs h-7 gap-1 px-2"
           onClick={onToggleSearch}
         >
           <Icons.Search className="h-3 w-3" />
@@ -390,11 +428,21 @@ function ReadyAssetRow({
           </span>
         </Button>
         {!isSearchOpen && (
-          <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]" onClick={onEdit}>
+          <Button size="sm" variant="ghost" className="text-2xs h-7 gap-1 px-2" onClick={onEdit}>
             <Icons.Pencil className="h-3 w-3" />
             <span className="hidden sm:inline">{t("activity:import.assets.edit")}</span>
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onSkip}
+          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/20"
+          title={t("activity:import.assets.skipAsset")}
+        >
+          <Icons.X className="h-3 w-3 shrink-0" />
+          <span className="hidden sm:inline">{t("activity:import.assets.skip")}</span>
+        </Button>
       </div>
     </div>
   );
@@ -655,6 +703,59 @@ export function AssetReviewStep() {
     [assetDialog.key, dispatch, draftActivities, updatePreviewItem],
   );
 
+  const handleSkipAsset = useCallback(
+    (itemKey: string) => {
+      // 1. Remove rows matching this asset from draftActivities
+      const remainingDrafts = draftActivities.filter(
+        (draft) =>
+          draft.assetCandidateKey !== itemKey &&
+          buildImportAssetCandidateFromDraft(draft)?.key !== itemKey,
+      );
+      dispatch({ type: "SET_DRAFT_ACTIVITIES", payload: remainingDrafts });
+
+      // 2. Remove from pending import assets if present
+      dispatch({ type: "REMOVE_PENDING_IMPORT_ASSET", payload: itemKey });
+
+      // 3. Remove preview item from assetPreviewItems
+      const remainingPreviewItems = assetPreviewItems.filter((item) => item.key !== itemKey);
+      dispatch({ type: "SET_ASSET_PREVIEW_ITEMS", payload: remainingPreviewItems });
+
+      // 4. If in holdings mode, also filter out corresponding raw rows
+      if (state.headers.length > 0 && state.parsedRows.length > 0) {
+        const symbolHeader = (state.mapping?.fieldMappings as Record<string, string>)?.[
+          HoldingsFormat.SYMBOL
+        ];
+        const symbolIdx = symbolHeader ? state.headers.indexOf(symbolHeader) : -1;
+        if (symbolIdx !== -1) {
+          const remainingRows = state.parsedRows.filter((row) => {
+            const rawSymbol = row[symbolIdx]?.trim().toUpperCase();
+            if (!rawSymbol) return true;
+            const resolvedSymbol = state.mapping?.symbolMappings?.[rawSymbol] || rawSymbol;
+            const candidate = candidateMap.get(itemKey);
+            if (!candidate?.draft.symbol) return true;
+            return candidate.draft.symbol.toUpperCase() !== resolvedSymbol;
+          });
+          if (remainingRows.length !== state.parsedRows.length) {
+            dispatch({
+              type: "SET_PARSED_DATA",
+              payload: { headers: state.headers, rows: remainingRows },
+            });
+          }
+        }
+      }
+    },
+    [
+      assetPreviewItems,
+      candidateMap,
+      dispatch,
+      draftActivities,
+      state.headers,
+      state.mapping?.fieldMappings,
+      state.mapping?.symbolMappings,
+      state.parsedRows,
+    ],
+  );
+
   const needsFixing = assetPreviewItems.filter((item) => item.status === "NEEDS_FIXING");
   const autoResolvedItems = assetPreviewItems.filter(
     (item) => item.status === "AUTO_RESOLVED_NEW_ASSET",
@@ -715,21 +816,21 @@ export function AssetReviewStep() {
 
       {/* ── Needs Fixing section ──────────────────────────────────────────── */}
       {needsFixing.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50/40 dark:border-amber-500/20 dark:bg-amber-500/[0.04]">
+        <div className="border-warning-subtle-border bg-warning-subtle overflow-hidden rounded-lg border">
           {/* Section header */}
-          <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50/60 px-4 py-2.5 dark:border-amber-500/20 dark:bg-amber-500/[0.06]">
+          <div className="border-warning-subtle-border bg-warning-subtle flex items-center gap-3 border-b px-4 py-2.5">
             {/* Left: icon + text — clicking collapses */}
             <button
               type="button"
-              className="flex flex-1 items-start gap-2 text-left"
+              className="flex flex-1 items-start gap-2 text-start"
               onClick={() => toggleSection("needsFixing")}
             >
-              <Icons.AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <Icons.AlertTriangle className="text-warning mt-0.5 h-3.5 w-3.5 shrink-0" />
               <div className="flex-1">
-                <span className="text-xs font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                <span className="text-warning-subtle-foreground text-xs font-semibold tracking-wider uppercase">
                   {t("activity:import.assets.needsFixing")}
                 </span>
-                <p className="text-muted-foreground mt-0.5 text-[11px]">
+                <p className="text-muted-foreground text-2xs mt-0.5">
                   {t("activity:import.assets.needsFixingDescription")}
                 </p>
               </div>
@@ -741,17 +842,22 @@ export function AssetReviewStep() {
                 size="sm"
                 variant="outline"
                 onClick={handleMarkAllCustom}
-                className="h-7 gap-1 border-amber-300 px-2.5 text-[11px] text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10"
+                className="text-2xs border-warning-subtle-border text-warning-subtle-foreground hover:bg-warning-subtle h-7 gap-1 px-2.5"
               >
                 <Icons.Tag className="h-3 w-3 shrink-0" />
                 {t("activity:import.assets.markAllCustom")}
               </Button>
-              <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
+              <span className="text-2xs bg-warning-subtle text-warning-subtle-foreground rounded-full px-2 py-0.5 font-bold">
                 {needsFixing.length}
               </span>
-              <button type="button" onClick={() => toggleSection("needsFixing")}>
+              <button
+                type="button"
+                onClick={() => toggleSection("needsFixing")}
+                aria-label={t("activity:import.assets.needsFixing")}
+                aria-expanded={!collapsed.has("needsFixing")}
+              >
                 <Icons.ChevronDown
-                  className={`h-3.5 w-3.5 text-amber-500 transition-transform dark:text-amber-400/70 ${collapsed.has("needsFixing") ? "" : "rotate-180"}`}
+                  className={`text-warning h-3.5 w-3.5 transition-transform ${collapsed.has("needsFixing") ? "" : "rotate-180"}`}
                 />
               </button>
             </div>
@@ -762,8 +868,12 @@ export function AssetReviewStep() {
             <div className="divide-border divide-y">
               {needsFixing.map((item) => {
                 const candidate = candidateMap.get(item.key);
-                const symbol = item.reviewSymbol || candidate?.draft.symbol || item.key;
+                const rawSymbol = item.reviewSymbol || candidate?.draft.symbol || item.key;
                 const symbolName = item.draft?.name || candidate?.draft.symbolName;
+                const symbol =
+                  /^\d{5,7}$/.test(rawSymbol) && symbolName
+                    ? symbolName
+                    : rawSymbol;
                 const count = candidate?.count ?? 0;
                 return (
                   <NeedsFixingRow
@@ -782,6 +892,7 @@ export function AssetReviewStep() {
                         mode: "create",
                       })
                     }
+                    onSkip={() => handleSkipAsset(item.key)}
                   />
                 );
               })}
@@ -810,35 +921,35 @@ export function AssetReviewStep() {
           });
           const suspiciousCount = sortedItems.filter(isItemSuspicious).length;
           return (
-            <div className="overflow-hidden rounded-lg border border-blue-200 bg-blue-50/40 dark:border-blue-400/20 dark:bg-blue-500/[0.06]">
+            <div className="border-info-subtle-border bg-info-subtle overflow-hidden rounded-lg border">
               {/* Section header */}
               <button
                 type="button"
-                className="flex w-full items-start gap-2 border-b border-blue-200 bg-blue-50/60 px-4 py-2.5 text-left dark:border-blue-400/20 dark:bg-blue-500/10"
+                className="border-info-subtle-border bg-info-subtle flex w-full items-start gap-2 border-b px-4 py-2.5 text-start"
                 onClick={() => toggleSection("newAssets")}
               >
-                <Icons.Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                <Icons.Sparkles className="text-info mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <div className="flex-1">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-300">
+                  <span className="text-info-subtle-foreground text-xs font-semibold tracking-wider uppercase">
                     {t("activity:import.assets.newAssets")}
                   </span>
-                  <p className="text-muted-foreground mt-0.5 text-[11px]">
+                  <p className="text-muted-foreground text-2xs mt-0.5">
                     {t("activity:import.assets.newAssetsDescription")}
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5">
                   {suspiciousCount > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+                    <span className="text-2xs bg-warning-subtle text-warning-subtle-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold">
                       <Icons.AlertTriangle className="h-3 w-3" />
                       {suspiciousCount}
                     </span>
                   )}
-                  <span className="rounded-full bg-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-900 dark:bg-blue-500/20 dark:text-blue-200">
+                  <span className="text-2xs bg-info-subtle text-info-subtle-foreground rounded-full px-2 py-0.5 font-bold">
                     {autoResolvedItems.length}
                   </span>
                 </div>
                 <Icons.ChevronDown
-                  className={`mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500 transition-transform dark:text-blue-400/70 ${collapsed.has("newAssets") ? "" : "rotate-180"}`}
+                  className={`text-info mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform ${collapsed.has("newAssets") ? "" : "rotate-180"}`}
                 />
               </button>
 
@@ -861,11 +972,17 @@ export function AssetReviewStep() {
                       assetCcy &&
                       normalizeCurrency(csvCcy) !== normalizeCurrency(assetCcy),
                     );
+                    const symbolName = item.draft?.name || candidate?.draft.symbolName;
+                    const displaySymbol =
+                      /^\d{5,7}$/.test(symbol) && symbolName
+                        ? symbolName
+                        : symbol;
                     return (
                       <AutoResolvedRow
                         key={item.key}
                         item={item}
-                        symbol={symbol}
+                        symbol={displaySymbol}
+                        symbolName={symbolName}
                         count={count}
                         isSuspicious={isSuspicious}
                         csvCurrency={csvCcy}
@@ -887,6 +1004,7 @@ export function AssetReviewStep() {
                             ),
                           })
                         }
+                        onSkip={() => handleSkipAsset(item.key)}
                       />
                     );
                   })}
@@ -902,19 +1020,21 @@ export function AssetReviewStep() {
           {/* Section header */}
           <button
             type="button"
-            className="border-success/30 bg-success/[0.06] flex w-full items-start gap-2 border-b px-4 py-2.5 text-left"
+            className="border-success/30 bg-success/[0.06] flex w-full items-start gap-2 border-b px-4 py-2.5 text-start"
             onClick={() => toggleSection("existingAssets")}
           >
             <Icons.CheckCircle className="text-success mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div className="flex-1">
-              <span className="text-success text-xs font-semibold uppercase tracking-wider">
+              <span className="text-success text-xs font-semibold tracking-wider uppercase">
                 {t("activity:import.assets.existingAssets")}
               </span>
-              <p className="text-muted-foreground mt-0.5 text-[11px]">
+              <p className="text-muted-foreground text-2xs mt-0.5">
                 {t("activity:import.assets.existingAssetsDescription")}
               </p>
             </div>
-            <span className="bg-success/20 text-success rounded-full px-2 py-0.5 text-[10px] font-bold">
+            <span
+              className={cn(badgeVariants({ variant: "success-subtle" }), "text-2xs font-bold")}
+            >
               {existingItems.length}
             </span>
             <Icons.ChevronDown
@@ -960,6 +1080,7 @@ export function AssetReviewStep() {
                         ),
                       })
                     }
+                    onSkip={() => handleSkipAsset(item.key)}
                   />
                 );
               })}

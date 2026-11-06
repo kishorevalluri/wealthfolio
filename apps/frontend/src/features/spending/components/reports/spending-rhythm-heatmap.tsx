@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import type { Activity } from "@/lib/types";
 import { formatDateISO } from "@/lib/utils";
-import { PrivacyAmount, useDateFormatting } from "@wealthfolio/ui";
+import { PrivacyAmount, useDateFormatting, useAmountFormatting } from "@wealthfolio/ui";
 
 import { getVisibleSpendingAmount } from "../../lib/constants";
 
@@ -62,10 +62,7 @@ export function SpendingRhythmHeatmap({
       <div className="grid grid-cols-[auto_repeat(7,1fr)] gap-1.5">
         <div />
         {dayNamesShort.map((d, i) => (
-          <div
-            key={`hd-${i}`}
-            className="text-muted-foreground/70 text-center text-[10px] uppercase"
-          >
+          <div key={`hd-${i}`} className="text-muted-foreground/70 text-2xs text-center uppercase">
             {d}
           </div>
         ))}
@@ -76,6 +73,7 @@ export function SpendingRhythmHeatmap({
             cells={row}
             max={max}
             accent={accent}
+            currency={currency}
             isBalanceHidden={isBalanceHidden}
             weekLabel={t("spending:rhythm.week", { number: wi + 1 })}
             noSpendLabel={t("spending:rhythm.noSpend")}
@@ -104,6 +102,7 @@ function RhythmRow({
   isBalanceHidden,
   weekLabel,
   noSpendLabel,
+  currency,
 }: {
   weekIndex: number;
   cells: Cell[];
@@ -112,13 +111,13 @@ function RhythmRow({
   isBalanceHidden: boolean;
   weekLabel: string;
   noSpendLabel: string;
+  currency: string;
 }) {
   const formatting = useDateFormatting();
+  const amounts = useAmountFormatting();
   return (
     <>
-      <div className="text-muted-foreground/70 self-center pr-1 text-right text-[10px]">
-        {weekLabel}
-      </div>
+      <div className="text-muted-foreground/70 text-2xs self-center pe-1 text-end">{weekLabel}</div>
       {cells.map((cell, i) => {
         const intensity = max > 0 ? cell.amount / max : 0;
         const opacity = cell.amount === 0 ? 0.12 : 0.18 + intensity * 0.7;
@@ -132,7 +131,11 @@ function RhythmRow({
               month: cell.date.getMonth() + 1,
               day: cell.date.getDate(),
             })} · ${
-              cell.amount > 0 ? (isBalanceHidden ? "••••" : cell.amount.toFixed(2)) : noSpendLabel
+              cell.amount > 0
+                ? isBalanceHidden
+                  ? "••••"
+                  : amounts.formatAmount(cell.amount, currency)
+                : noSpendLabel
             }`}
           />
         );

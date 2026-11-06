@@ -90,6 +90,10 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     functions: [
       'getAll',
       'search',
+      'searchCashActivities',
+      'assignCategory',
+      'unassignCategory',
+      'setEvent',
       'create',
       'update',
       'saveMany',
@@ -142,18 +146,30 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
   {
     id: 'spending',
-    name: 'Spend Categorization',
+    name: 'Spending',
     description:
-      'View spend categories and manage categorization rules that auto-tag transactions',
+      'View aggregate spending reports and categories, and manage categorization rules that auto-tag transactions',
     functions: [
       'isEnabled',
       'getCategories',
+      'getContext',
+      'getBudget',
+      'getEvents',
+      'getEventTypes',
+      'getReport',
       'getRules',
       'saveRule',
       'deleteRule',
       'rerunRules',
     ],
     riskLevel: 'medium',
+  },
+  {
+    id: 'budgets',
+    name: 'Budget Management',
+    description: 'Change default budget targets and monthly overrides',
+    functions: ['upsertBudgetTarget'],
+    riskLevel: 'high',
   },
   {
     id: 'financial-planning',

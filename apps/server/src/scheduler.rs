@@ -14,7 +14,7 @@ use tracing::warn;
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "connect-sync")]
-use crate::api::connect::{has_broker_sync, perform_broker_sync};
+use crate::api::connect::perform_broker_sync;
 use crate::main_lib::AppState;
 #[cfg(feature = "connect-sync")]
 use wealthfolio_connect::CLOUD_REFRESH_TOKEN_KEY;
@@ -30,7 +30,8 @@ const INITIAL_DELAY_SECS: u64 = 60;
 /// Starts the background broker sync scheduler.
 #[cfg(feature = "connect-sync")]
 pub fn start_broker_sync_scheduler(state: Arc<AppState>) {
-    tokio::spawn(async move {
+    let runtime = state.clone();
+    let worker = tokio::spawn(async move {
         info!("Broker sync scheduler started (4-hour interval)");
 
         // Initial delay before first sync
@@ -41,9 +42,14 @@ pub fn start_broker_sync_scheduler(state: Arc<AppState>) {
 
         loop {
             sync_interval.tick().await;
-            run_scheduled_sync(&state).await;
+            run_scheduled_sync(&runtime).await;
         }
     });
+    state
+        .workers
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(worker);
 }
 
 /// Starts the background broker sync scheduler.
@@ -69,22 +75,6 @@ async fn run_scheduled_sync(state: &Arc<AppState>) {
         return;
     }
 
-    // Check if user's plan includes broker sync
-    match has_broker_sync(state).await {
-        Ok(true) => {}
-        Ok(false) => {
-            debug!("Scheduled sync skipped: plan does not include broker sync");
-            return;
-        }
-        Err(e) => {
-            debug!(
-                "Scheduled sync skipped: could not verify broker sync access ({})",
-                e
-            );
-            return;
-        }
-    }
-
     // Perform the sync using the shared perform_broker_sync from api::connect
     // This uses SyncOrchestrator which:
     // - Emits broker:sync-start, broker:sync-complete, broker:sync-error events via SSE
@@ -108,6 +98,7 @@ async fn run_scheduled_sync(state: &Arc<AppState>) {
                 || e.contains("not authenticated")
                 || e.contains("Session expired")
                 || e.contains("Broker sync already running")
+                || wealthfolio_connect::is_subscription_denial(&e)
             {
                 debug!("Scheduled sync skipped: {}", e);
             } else {
@@ -132,11 +123,17 @@ fn is_expected_startup_token_warmup_error(err: &crate::error::ApiError) -> bool 
 
 /// Start background jobs after server construction succeeds.
 pub fn start_background_workers(state: Arc<AppState>) {
+    #[cfg(any(feature = "connect-sync", feature = "device-sync"))]
+    state
+        .workers
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(crate::api::cloud_backups::start_scheduler(state.clone()));
     #[cfg(feature = "device-sync")]
     #[allow(clippy::collapsible_if)]
     if crate::features::device_sync_enabled() {
         let startup_state = state.clone();
-        tokio::spawn(async move {
+        let worker = tokio::spawn(async move {
             match crate::api::connect::mint_access_token(&startup_state).await {
                 Ok(token) => {
                     if startup_state
@@ -173,21 +170,24 @@ pub fn start_background_workers(state: Arc<AppState>) {
                 }
             }
         });
+        state
+            .workers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(worker);
     }
 
     // Start background broker sync scheduler (4-hour interval)
     start_broker_sync_scheduler(state.clone());
 
-    // Start periodic market data sync (6h interval, 2min initial delay)
-    let quote_svc = state.quote_service.clone();
-    tokio::spawn(async move {
-        wealthfolio_core::quotes::scheduler::run_periodic_sync(
-            quote_svc,
-            std::time::Duration::from_secs(120),
-            std::time::Duration::from_secs(6 * 3600),
-        )
-        .await;
-    });
+    // Periodic market data sync plus portfolio update (6h interval, 2min
+    // initial delay): the coordinator rebuilds whatever the sync made stale.
+    let worker = crate::api::shared::spawn_periodic_update(state.clone());
+    state
+        .workers
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(worker);
 }
 
 #[cfg(all(test, feature = "device-sync"))]

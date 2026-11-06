@@ -1,3 +1,4 @@
+import { installProfileSession } from "@/features/profiles/session";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setUnauthorizedHandler } from "@/lib/auth-token";
 
@@ -19,9 +20,14 @@ import {
   getSettings,
   inspectDatabaseBackup,
   inspectSavedDatabaseBackup,
+  isAutoUpdateCheckEnabled,
   restoreDatabaseBackupImport,
   discardDatabaseBackupImport,
 } from "./settings";
+
+beforeEach(() => {
+  installProfileSession({ profileId: "test", scopeId: "scope-test" });
+});
 
 afterEach(() => {
   setUnauthorizedHandler(null);
@@ -52,6 +58,7 @@ it("downloads through a browser link without buffering the backup into a Blob", 
   const blob = vi.fn();
   const fetch = vi.fn().mockResolvedValue({
     ok: true,
+    headers: new Headers({ "Content-Type": "application/json" }),
     json: async () => ({ id: "job-id", filename: "backup.db" }),
     blob,
   });
@@ -66,7 +73,7 @@ it("downloads through a browser link without buffering the backup into a Blob", 
   const [url, options] = fetch.mock.calls[0];
   expect(url).toContain("/backups/selected.db/export");
   expect(options.credentials).toBe("same-origin");
-  expect(options.headers["X-Wealthfolio-Backup"]).toBe("1");
+  expect(options.headers.get("X-Wealthfolio-Backup")).toBe("1");
   expect(JSON.parse(options.body)).toEqual({ password: null, unencrypted: true });
   expect(target).toContain("/utilities/database/exports/job-id");
   expect(blob).not.toHaveBeenCalled();
@@ -83,6 +90,20 @@ describe("web getSettings", () => {
 
     await expect(getSettings()).rejects.toThrow("Backend unavailable");
     expect(mocks.logger.error).toHaveBeenCalledWith("Error fetching settings.");
+  });
+});
+
+describe("web isAutoUpdateCheckEnabled", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("skips automatic checks when the setting can't be read", async () => {
+    // A reload or navigation cancels the read while the page's scripts still run.
+    mocks.invoke.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    expect(await isAutoUpdateCheckEnabled()).toBe(false);
+    expect(mocks.logger.error).toHaveBeenCalledWith("Error checking auto-update setting.");
   });
 });
 

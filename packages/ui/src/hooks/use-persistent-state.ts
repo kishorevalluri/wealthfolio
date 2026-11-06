@@ -1,4 +1,11 @@
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 const dateReviver = (_key: string, value: unknown) => {
   const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|([+-]\d{2}:\d{2}))$/;
@@ -22,10 +29,13 @@ interface PersistentStateChangeDetail {
 export function usePersistentState<T>(
   key: string,
   initialState: T,
+  fallbackKey?: string,
 ): [T, Dispatch<SetStateAction<T>>] {
   const [state, setState] = useState<T>(() => {
     try {
-      const storedValue = window.localStorage.getItem(key);
+      const storedValue =
+        window.localStorage.getItem(key) ??
+        (fallbackKey ? window.localStorage.getItem(fallbackKey) : null);
       if (storedValue) {
         return JSON.parse(storedValue, dateReviver) as T;
       }
@@ -35,41 +45,54 @@ export function usePersistentState<T>(
     return initialState;
   });
 
-  // Wrapped setState that also broadcasts a custom event for same-page sync
+  // Resolve updates outside React's updater so broadcasting cannot run during render.
+  const current = useRef(state);
   const setStateAndBroadcast = useCallback<Dispatch<SetStateAction<T>>>(
     (action) => {
-      setState((prevState) => {
-        const newState =
-          typeof action === "function" ? (action as (prev: T) => T)(prevState) : action;
+      const newState =
+        typeof action === "function" ? (action as (prev: T) => T)(current.current) : action;
+      current.current = newState;
+      setState(() => newState);
 
-        // Write to localStorage
-        try {
-          const serializedState = JSON.stringify(newState);
-          window.localStorage.setItem(key, serializedState);
-        } catch (error) {
-          console.error(`Error writing to localStorage for key "${key}":`, error);
-        }
-
-        // Broadcast custom event for other instances on the same page
-        window.dispatchEvent(
-          new CustomEvent<PersistentStateChangeDetail>(PERSISTENT_STATE_CHANGE_EVENT, {
-            detail: { key, value: newState },
-          }),
-        );
-
-        return newState;
-      });
+      try {
+        window.localStorage.setItem(key, JSON.stringify(newState));
+      } catch (error) {
+        console.error(`Error writing to localStorage for key "${key}":`, error);
+      }
+      window.dispatchEvent(
+        new CustomEvent<PersistentStateChangeDetail>(PERSISTENT_STATE_CHANGE_EVENT, {
+          detail: { key, value: newState },
+        }),
+      );
     },
     [key],
   );
 
   // Listen for changes from other instances (same page) and cross-tab storage events
   useEffect(() => {
+    // A screen kept hidden (React <Activity>) drops these listeners and adds
+    // them back when it is shown again: read storage first, so a change another
+    // screen made in between shows here too.
+    try {
+      const storedValue =
+        window.localStorage.getItem(key) ??
+        (fallbackKey ? window.localStorage.getItem(fallbackKey) : null);
+      if (storedValue !== null && storedValue !== JSON.stringify(current.current)) {
+        const value = JSON.parse(storedValue, dateReviver) as T;
+        current.current = value;
+        setState(() => value);
+      }
+    } catch (error) {
+      console.error(`Error reading from localStorage for key "${key}":`, error);
+    }
+
     // Handle custom event from same page
     const handleCustomEvent = (event: Event) => {
       const customEvent = event as CustomEvent<PersistentStateChangeDetail>;
       if (customEvent.detail.key === key) {
-        setState(customEvent.detail.value as T);
+        const value = customEvent.detail.value as T;
+        current.current = value;
+        setState(() => value);
       }
     };
 
@@ -77,7 +100,9 @@ export function usePersistentState<T>(
     const handleStorageEvent = (event: StorageEvent) => {
       if (event.key === key && event.newValue !== null) {
         try {
-          setState(JSON.parse(event.newValue, dateReviver) as T);
+          const value = JSON.parse(event.newValue, dateReviver) as T;
+          current.current = value;
+          setState(() => value);
         } catch (error) {
           console.error(`Error parsing storage event for key "${key}":`, error);
         }
@@ -91,7 +116,7 @@ export function usePersistentState<T>(
       window.removeEventListener(PERSISTENT_STATE_CHANGE_EVENT, handleCustomEvent);
       window.removeEventListener("storage", handleStorageEvent);
     };
-  }, [key]);
+  }, [key, fallbackKey]);
 
   return [state, setStateAndBroadcast];
 }

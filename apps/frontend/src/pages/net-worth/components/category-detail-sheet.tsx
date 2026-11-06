@@ -9,6 +9,7 @@ import {
   CATEGORY_CSS_COLORS,
   deriveChange,
   formatChangePercent,
+  hadBalanceBefore,
   toneClass,
   toneColor,
   type ParsedHistoryPoint,
@@ -87,6 +88,7 @@ export function CategoryDetailSheet({
   const change = deriveChange(
     trend.map((t) => t.value),
     selected?.isLiability ?? false,
+    hadBalanceBefore(history, selected?.firstValueDate),
   );
   const sign = Math.abs(change.amount) < 0.005 ? "" : change.amount > 0 ? "+" : "-";
 
@@ -159,7 +161,9 @@ export function CategoryDetailSheet({
                         <div className="flex items-baseline gap-2.5">
                           {selected.value > 0 && (
                             <span className="text-muted-foreground/60 text-xs tabular-nums">
-                              {((child.value / selected.value) * 100).toFixed(1)}%
+                              {formatting.formatPercent(child.value / selected.value, {
+                                digits: 1,
+                              })}
                             </span>
                           )}
                           <span className="text-foreground/90 text-sm tabular-nums">

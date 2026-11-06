@@ -1,3 +1,4 @@
+import type { NumberFormatting } from "@wealthfolio/ui";
 import type { DriftRow } from "@/lib/types";
 import { formatPp } from "./drift-copy";
 
@@ -16,14 +17,10 @@ export function hasVisibleAllocation(
   );
 }
 
-export function formatDriftBps(driftBps: number, decimals = 1): string {
-  return formatPp(driftBps, decimals);
-}
-
-export function rebalanceMove(row: Pick<DriftRow, "valueDelta">) {
-  const amount = -row.valueDelta;
-  return {
-    action: amount >= 0 ? "Add" : "Trim",
-    amount,
-  };
+export function formatDriftBps(
+  driftBps: number,
+  formatting: NumberFormatting,
+  decimals = 1,
+): string {
+  return formatPp(driftBps, formatting, decimals);
 }

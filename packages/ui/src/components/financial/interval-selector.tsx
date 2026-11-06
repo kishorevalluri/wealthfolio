@@ -90,6 +90,8 @@ interface IntervalSelectorProps {
   className?: string;
   isLoading?: boolean;
   defaultValue?: TimePeriod;
+  /** Controlled selection; the parent owns persistence when provided. Null highlights no period. */
+  value?: TimePeriod | null;
   /** LocalStorage key to persist selection. When provided, selection is persisted. */
   storageKey?: string;
   /** Optional callback for haptic feedback */
@@ -100,6 +102,7 @@ const IntervalSelector: React.FC<IntervalSelectorProps> = ({
   onIntervalSelect,
   className,
   defaultValue = DEFAULT_INTERVAL_CODE,
+  value,
   storageKey,
   onHaptic,
 }) => {
@@ -112,23 +115,25 @@ const IntervalSelector: React.FC<IntervalSelectorProps> = ({
   );
   const [localValue, setLocalValue] = useState<TimePeriod>(defaultValue);
 
-  const currentValue = storageKey ? persistedValue : localValue;
+  const currentValue = value !== undefined ? value : storageKey ? persistedValue : localValue;
 
   const handleValueChange = useCallback(
-    (value: TimePeriod) => {
+    (nextValue: TimePeriod) => {
       // Update state
-      if (storageKey) {
-        setPersistedValue(value);
-      } else {
-        setLocalValue(value);
+      if (value === undefined) {
+        if (storageKey) {
+          setPersistedValue(nextValue);
+        } else {
+          setLocalValue(nextValue);
+        }
       }
       // Notify parent
-      const data = getIntervalData(value);
+      const data = getIntervalData(nextValue);
       onIntervalSelect(data.code, data.description, data.calculateRange(new Date()));
       // Trigger haptic feedback
       onHaptic?.();
     },
-    [onIntervalSelect, storageKey, setPersistedValue, onHaptic],
+    [onIntervalSelect, storageKey, setPersistedValue, onHaptic, value],
   );
 
   const items = intervals.map((interval) => ({
@@ -138,10 +143,14 @@ const IntervalSelector: React.FC<IntervalSelectorProps> = ({
   }));
 
   return (
-    <div className={cn("pointer-events-none relative w-full min-w-0", className)}>
+    // data-no-swipe-drag: on a swipe page, a sideways drag scrolls the intervals instead of
+    // switching the page's view.
+    <div className={cn("pointer-events-none relative w-full min-w-0", className)} data-no-swipe-drag>
       <div
         className={cn(
-          "pointer-events-none relative z-30 flex w-full justify-center overflow-x-auto overflow-y-hidden",
+          // Centred by the child's auto margins, not justify-center: those fall back to the
+          // start when the intervals overflow, so the first stays reachable by scrolling.
+          "pointer-events-none relative z-30 flex w-full overflow-x-auto overflow-y-hidden",
           "touch-pan-x snap-x snap-mandatory overscroll-x-contain scroll-smooth",
           "px-2 md:px-0",
           "[&::-webkit-scrollbar]:hidden",
@@ -155,7 +164,7 @@ const IntervalSelector: React.FC<IntervalSelectorProps> = ({
           onValueChange={handleValueChange}
           size={isMobile ? "compact" : "sm"}
           variant="default"
-          className="pointer-events-auto bg-transparent"
+          className="pointer-events-auto mx-auto bg-transparent"
         />
       </div>
     </div>

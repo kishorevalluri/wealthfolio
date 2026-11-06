@@ -33,30 +33,6 @@ pub struct SyncCycleResult {
     pub dead_letter_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncBootstrapResult {
-    pub status: String,
-    pub message: String,
-    pub snapshot_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncReadyReconcileResult {
-    pub status: String,
-    pub message: String,
-    pub bootstrap_action: String,
-    pub bootstrap_status: String,
-    pub bootstrap_message: Option<String>,
-    pub bootstrap_snapshot_id: Option<String>,
-    pub cycle_status: Option<String>,
-    pub cycle_needs_bootstrap: bool,
-    pub retry_attempted: bool,
-    pub retry_cycle_status: Option<String>,
-    pub background_status: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct ReplayEvent {
     pub entity: SyncEntity,
@@ -78,9 +54,9 @@ pub struct TransportError {
 
 impl TransportError {
     pub fn is_subscription_blocked(&self) -> bool {
-        self.error_code
-            .as_deref()
-            .is_some_and(|code| code.starts_with("SUBSCRIPTION_"))
+        self.error_code.as_deref().is_some_and(|code| {
+            code.starts_with("SUBSCRIPTION_") || code == "PLAN_UPGRADE_REQUIRED"
+        })
     }
 }
 
@@ -111,6 +87,8 @@ pub trait OutboxStore: Send + Sync {
     ) -> Result<(), String>;
     async fn mark_push_completed(&self) -> Result<(), String>;
     async fn has_pending_outbox(&self) -> Result<bool, String>;
+    /// Earliest retry deadline among unsent pending rows, including rows still in backoff.
+    async fn next_outbox_retry_at(&self) -> Result<Option<String>, String>;
 }
 
 #[async_trait]
@@ -176,9 +154,9 @@ pub trait SyncTransport: Send + Sync {
 #[async_trait]
 pub trait CredentialStore: Send + Sync {
     fn has_cloud_session(&self) -> Result<bool, String>;
-    async fn is_sync_allowed(&self) -> Result<bool, String>;
     fn get_sync_identity(&self) -> Option<SyncIdentity>;
-    fn get_access_token(&self) -> Result<String, String>;
+    // Keep token waits cancellable: logout may hold the token mutex while joining this worker.
+    async fn get_access_token(&self) -> Result<String, String>;
     async fn get_sync_state(&self) -> Result<SyncState, String>;
     async fn persist_device_config(&self, identity: &SyncIdentity, trust_state: &str);
     fn encrypt_sync_payload(
@@ -193,12 +171,4 @@ pub trait CredentialStore: Send + Sync {
         identity: &SyncIdentity,
         payload_key_version: i32,
     ) -> Result<String, String>;
-}
-
-#[async_trait]
-pub trait ReadyReconcileStore: Send + Sync {
-    async fn get_sync_state(&self) -> Result<SyncState, String>;
-    async fn bootstrap_snapshot_if_needed(&self) -> Result<SyncBootstrapResult, String>;
-    async fn run_sync_cycle(&self, post_bootstrap: bool) -> Result<SyncCycleResult, String>;
-    async fn ensure_background_started(&self) -> Result<bool, String>;
 }

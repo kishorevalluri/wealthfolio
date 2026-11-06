@@ -1,6 +1,7 @@
 use super::DbPool;
 use crate::errors::StorageError;
 use crate::sync::app_sync::ProjectedChange;
+use crate::sync::ProfileSyncState;
 use crate::sync::{flush_projected_outbox, OutboxWriteRequest, SyncOutboxModel};
 use diesel::SqliteConnection;
 use std::any::Any;
@@ -41,6 +42,7 @@ pub struct WriteHandle {
     // Each job is a boxed closure, and a oneshot sender is used for the reply.
     // The Box<dyn Any + Send> is used for type erasure of the job's return type.
     tx: mpsc::Sender<WriteMessage>,
+    sync_state: Arc<ProfileSyncState>,
 }
 
 /// Ownership of the writer actor's task.
@@ -62,6 +64,10 @@ impl WriterTask {
 }
 
 impl WriteHandle {
+    pub(crate) fn sync_state(&self) -> Arc<ProfileSyncState> {
+        Arc::clone(&self.sync_state)
+    }
+
     /// Executes a database job on the writer actor's dedicated connection.
     ///
     /// # Arguments
@@ -104,7 +110,7 @@ impl WriteHandle {
             .map(|boxed: Box<dyn Any + Send + 'static>| {
                 *boxed
                     .downcast::<T>()
-                    .unwrap_or_else(|_| panic!("Failed to downcast writer actor result."))
+                    .expect("a write job returns its own result type")
             })
     }
 
@@ -276,19 +282,30 @@ impl WriteProjection {
 /// Use [`spawn_writer_with_outbox_observer`] anywhere that matters; this is for
 /// tests and throwaway pools.
 pub fn spawn_writer(pool: DbPool) -> Result<WriteHandle> {
-    spawn_writer_inner(pool, None).map(|(handle, _task)| handle)
+    spawn_writer_inner(pool, None, Arc::default()).map(|(handle, _task)| handle)
 }
 
 pub fn spawn_writer_with_outbox_observer(
     pool: DbPool,
     outbox_observer: OutboxObserver,
 ) -> Result<(WriteHandle, WriterTask)> {
-    spawn_writer_inner(pool, Some(outbox_observer))
+    spawn_writer_inner(pool, Some(outbox_observer), Arc::default())
+}
+
+/// Open a writer using its profile's retained sync state.
+/// Keep this state across writer recreation and separate from other profiles.
+pub fn spawn_writer_with_sync_state(
+    pool: DbPool,
+    outbox_observer: OutboxObserver,
+    sync_state: Arc<ProfileSyncState>,
+) -> Result<(WriteHandle, WriterTask)> {
+    spawn_writer_inner(pool, Some(outbox_observer), sync_state)
 }
 
 fn spawn_writer_inner(
     pool: DbPool,
     outbox_observer: Option<OutboxObserver>,
+    sync_state: Arc<ProfileSyncState>,
 ) -> Result<(WriteHandle, WriterTask)> {
     fn acquire_writer_connection(pool: &DbPool) -> Result<super::DbConnection> {
         const PER_ATTEMPT_TIMEOUT: Duration = Duration::from_millis(800);
@@ -375,7 +392,7 @@ fn spawn_writer_inner(
         }
     });
 
-    Ok((WriteHandle { tx }, WriterTask { join }))
+    Ok((WriteHandle { tx, sync_state }, WriterTask { join }))
 }
 
 // Note: DbConnection (PooledConnection) derefs to SqliteConnection.
@@ -384,34 +401,32 @@ fn spawn_writer_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::DbAccess;
+    use crate::db::{DbAccess, TestDir};
     use crate::sync::OutboxWriteRequest;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use tempfile::tempdir;
     use tokio::sync::oneshot as tokio_oneshot;
     use wealthfolio_core::sync::{SyncEntity, SyncOperation};
 
-    fn setup_pool() -> DbPool {
-        let app_data = tempdir()
-            .expect("tempdir")
-            .keep()
-            .to_string_lossy()
-            .to_string();
+    fn setup_pool() -> (DbPool, TestDir) {
+        let dir = TestDir::new();
+        let app_data = dir.path().to_string_lossy().to_string();
         // An explicit path: `get_db_path` resolves to `$DATABASE_URL` when that
         // is set, which would point the test at a real database.
         let access = DbAccess::plaintext(format!("{app_data}/app.db"));
         access.prepare().expect("init db");
         access.run_migrations().expect("migrate db");
-        access.create_pool().expect("create pool").as_ref().clone()
+        let pool = access.create_pool().expect("create pool").as_ref().clone();
+        (pool, dir)
     }
 
     #[tokio::test]
     async fn notifies_observer_once_for_transaction_with_multiple_outbox_rows() {
         let notify_count = Arc::new(AtomicUsize::new(0));
         let observer_count = notify_count.clone();
+        let (pool, _dir) = setup_pool();
         let (writer, _task) = spawn_writer_with_outbox_observer(
-            setup_pool(),
+            pool,
             Arc::new(move || {
                 observer_count.fetch_add(1, Ordering::SeqCst);
             }),
@@ -444,8 +459,9 @@ mod tests {
     async fn notifies_observer_even_if_caller_is_cancelled() {
         let notify_count = Arc::new(AtomicUsize::new(0));
         let observer_count = notify_count.clone();
+        let (pool, _dir) = setup_pool();
         let (writer, _task) = spawn_writer_with_outbox_observer(
-            setup_pool(),
+            pool,
             Arc::new(move || {
                 observer_count.fetch_add(1, Ordering::SeqCst);
             }),
@@ -483,7 +499,7 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_releases_the_pooled_connection_and_fails_later_writes() {
-        let pool = setup_pool();
+        let (pool, _dir) = setup_pool();
         let (writer, task) =
             spawn_writer_with_outbox_observer(pool.clone(), Arc::new(|| {})).expect("spawn writer");
 
@@ -507,8 +523,9 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_drains_work_already_queued() {
+        let (pool, _dir) = setup_pool();
         let (writer, task) =
-            spawn_writer_with_outbox_observer(setup_pool(), Arc::new(|| {})).expect("spawn writer");
+            spawn_writer_with_outbox_observer(pool, Arc::new(|| {})).expect("spawn writer");
 
         let queued = writer.exec_tx(|tx| {
             tx.run(|_conn| {
@@ -527,8 +544,9 @@ mod tests {
     async fn does_not_notify_observer_when_transaction_writes_no_outbox_rows() {
         let notify_count = Arc::new(AtomicUsize::new(0));
         let observer_count = notify_count.clone();
+        let (pool, _dir) = setup_pool();
         let (writer, _task) = spawn_writer_with_outbox_observer(
-            setup_pool(),
+            pool,
             Arc::new(move || {
                 observer_count.fetch_add(1, Ordering::SeqCst);
             }),

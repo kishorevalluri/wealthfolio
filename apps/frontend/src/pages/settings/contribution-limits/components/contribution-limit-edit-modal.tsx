@@ -1,6 +1,7 @@
 import { Dialog, DialogContent } from "@wealthfolio/ui/components/ui/dialog";
 import { ContributionLimitForm } from "./contribution-limit-form";
 import type { ContributionLimit } from "@/lib/types";
+import { useSettingsContext } from "@/lib/settings-provider";
 
 interface ContributionLimitEditModalProps {
   limit: ContributionLimit | null;
@@ -13,17 +14,28 @@ export function ContributionLimitEditModal({
   open,
   onClose,
 }: ContributionLimitEditModalProps) {
+  const { settings } = useSettingsContext();
+  const isIndia = settings?.formattingRegion === "IN" || settings?.baseCurrency === "INR";
+  const currentYear = new Date().getFullYear();
+
+  const defaultStartDate = isIndia
+    ? new Date(currentYear, 3, 1)
+    : new Date(currentYear, 0, 1);
+  const defaultEndDate = isIndia
+    ? new Date(currentYear + 1, 2, 31)
+    : new Date(currentYear, 11, 31);
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[650px]">
+      <DialogContent className="overflow-y-auto [--overlay-max-height:90vh] sm:max-w-162.5">
         <ContributionLimitForm
           defaultValues={
             limit ?? {
               groupName: "",
-              contributionYear: new Date().getFullYear(),
+              contributionYear: currentYear,
               accountIds: "",
-              startDate: new Date(Date.UTC(new Date().getFullYear(), 0, 1, 12, 0, 0)),
-              endDate: new Date(Date.UTC(new Date().getFullYear(), 11, 31, 12, 0, 0)),
+              startDate: defaultStartDate,
+              endDate: defaultEndDate,
             }
           }
           onSuccess={() => {

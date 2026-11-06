@@ -2,8 +2,8 @@
 //!
 //! When a user gives a "save this for next time" hint (e.g. "T&T is groceries",
 //! "treat coffee shops as food/coffee"), the agent calls this to draft a
-//! `categorization_rule` row for user review. The frontend persists the rule
-//! only after the user confirms the draft widget.
+//! `categorization_rule` row for user review. The in-app confirmation widget
+//! or the MCP commit tool persists the rule only after user confirmation.
 
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -66,9 +66,11 @@ pub struct CreateCategorizationRuleOutput {
 const CREATE_CATEGORIZATION_RULE_DESCRIPTION: &str =
     "Draft a persistent categorization rule for user confirmation. Call this when the user gives a \
      generalizable hint like 'T&T is groceries', 'treat coffee shops as food', \
-     'gym charges are health'. The rule is not saved until the user confirms the widget. \
-     \n\nWORKFLOW: when the user supplies such a hint while reviewing a draft, \
-     call `create_categorization_rule` to render the confirmation widget, then stop. \
+     'gym charges are health'. The rule is not saved by this tool. \
+     \n\nWORKFLOW: In the in-app assistant, render the confirmation widget and stop; \
+     the widget saves the rule when confirmed. In an external MCP client, show \
+     the returned draft to the user and, after confirmation, pass its `rule` \
+     object to `commit_categorization_rule`. \
      \n\nUse `pattern: \"T&T\"` with default `matchType: \"contains\"` for typical \
      merchant-name hints. Get both `taxonomyId` and `categoryKey` from the `taxonomies` \
      list returned by `list_categorization_context`. If the user scopes the hint to an \
@@ -82,9 +84,8 @@ impl CreateCategorizationRule {
         args: CreateCategorizationRuleArgs,
     ) -> Result<CreateCategorizationRuleOutput, AgentToolError> {
         debug!(
-            "create_categorization_rule called: pattern_len={}, categoryKey={}",
-            args.pattern.chars().count(),
-            args.category_key
+            "create_categorization_rule called: pattern_len={}",
+            args.pattern.chars().count()
         );
 
         let pattern = args.pattern.trim().to_string();
@@ -117,7 +118,10 @@ impl CreateCategorizationRule {
 
         let mut key_lookup: HashMap<(String, String), (String, Vec<String>)> = HashMap::new();
         for entry in &taxonomies {
-            if entry.taxonomy.scope != "activity" {
+            if entry.taxonomy.scope != "activity"
+                || !wealthfolio_core::taxonomies::TRANSACTION_CATEGORY_TAXONOMY_IDS
+                    .contains(&entry.taxonomy.id.as_str())
+            {
                 continue;
             }
             let cats_by_id: HashMap<&str, &_> = entry
@@ -154,22 +158,21 @@ impl CreateCategorizationRule {
         let Some((category_id, path_parts)) =
             key_lookup.get(&(taxonomy_id.clone(), category_key.clone()))
         else {
-            return Err(AgentToolError::ExecutionFailed(format!(
-                "Unknown taxonomyId/categoryKey \"{}\" / \"{}\". Pick both from `list_categorization_context.taxonomies`.",
-                taxonomy_id, category_key
-            )));
+            return Err(AgentToolError::ExecutionFailed(
+                "Unknown transaction category; select one from category discovery".into(),
+            ));
         };
 
         let match_type = match args.match_type.as_deref().map(str::trim) {
-            Some(s) if !s.is_empty() => RuleMatchType::try_parse(s).ok_or_else(|| {
-                AgentToolError::ExecutionFailed(format!("unsupported matchType: {s}"))
-            })?,
+            Some(s) if !s.is_empty() => RuleMatchType::try_parse(s)
+                .ok_or_else(|| AgentToolError::ExecutionFailed("Unsupported matchType".into()))?,
             None => RuleMatchType::Contains,
             Some(_) => RuleMatchType::Contains,
         };
         if matches!(match_type, RuleMatchType::Regex) {
-            compile_regex_pattern(&pattern)
-                .map_err(|err| AgentToolError::ExecutionFailed(format!("invalid regex: {err}")))?;
+            compile_regex_pattern(&pattern).map_err(|_| {
+                AgentToolError::ExecutionFailed("invalid regex pattern".to_string())
+            })?;
         }
 
         let category_path = path_parts.join(" / ");
@@ -190,6 +193,20 @@ impl CreateCategorizationRule {
             .filter(|id| !id.is_empty())
             .map(str::to_string);
         let account_name = if let Some(account_id) = account_id.as_deref() {
+            if !env
+                .cash_activity_service()
+                .spending_account_ids()
+                .await
+                .map_err(|_| {
+                    AgentToolError::ExecutionFailed("Unable to resolve Spending scope".into())
+                })?
+                .iter()
+                .any(|id| id == account_id)
+            {
+                return Err(AgentToolError::InvalidInput(
+                    "Rule account is outside effective Spending scope".into(),
+                ));
+            }
             let account = env
                 .account_service()
                 .get_account(account_id)
@@ -285,12 +302,7 @@ impl AgentTool for CreateCategorizationRule {
     }
 
     fn required_scopes(&self) -> &'static [AgentScope] {
-        // Reads the taxonomy tree to resolve/validate the category, so it
-        // requires classification:read alongside classification:suggest.
-        &[
-            AgentScope::ClassificationRead,
-            AgentScope::ClassificationSuggest,
-        ]
+        &[AgentScope::SpendingRead]
     }
 
     fn access_level(&self) -> AgentToolAccess {

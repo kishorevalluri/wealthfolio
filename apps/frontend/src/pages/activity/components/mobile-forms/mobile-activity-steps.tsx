@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import { useFormContext } from "react-hook-form";
 import type { AccountSelectOption } from "../forms/fields";
 import type { NewActivityFormValues } from "../forms/schemas";
+import type { IncomeAmountTypedLast } from "../forms/use-income-amounts";
 import { MobileActivityTypeStep } from "./mobile-activity-type-step";
 import { MobileDetailsStep } from "./mobile-details-step";
 
@@ -16,6 +17,8 @@ interface MobileActivityStepsProps {
    */
   needsTypeSelection?: boolean;
   amountWasEdited: RefObject<boolean>;
+  incomeAmountTypedLast: RefObject<IncomeAmountTypedLast>;
+  onSelectConversion?: () => void;
 }
 
 export function MobileActivitySteps({
@@ -24,6 +27,8 @@ export function MobileActivitySteps({
   isEditing,
   needsTypeSelection = false,
   amountWasEdited,
+  incomeAmountTypedLast,
+  onSelectConversion,
 }: MobileActivityStepsProps) {
   const { watch } = useFormContext<NewActivityFormValues>();
   const activityType = watch("activityType");
@@ -35,14 +40,18 @@ export function MobileActivitySteps({
         accounts={accounts}
         isEditing
         amountWasEdited={amountWasEdited}
+        incomeAmountTypedLast={incomeAmountTypedLast}
       />
     );
   }
 
   return (
-    <div className="h-full">
+    <div>
       {currentStep === 1 && (
-        <MobileActivityTypeStep includeReclassificationTypes={needsTypeSelection} />
+        <MobileActivityTypeStep
+          includeReclassificationTypes={needsTypeSelection}
+          onSelectConversion={onSelectConversion}
+        />
       )}
       {currentStep === 2 && activityType && (
         <MobileDetailsStep
@@ -50,6 +59,7 @@ export function MobileActivitySteps({
           accounts={accounts}
           isEditing={isEditing}
           amountWasEdited={amountWasEdited}
+          incomeAmountTypedLast={incomeAmountTypedLast}
         />
       )}
     </div>

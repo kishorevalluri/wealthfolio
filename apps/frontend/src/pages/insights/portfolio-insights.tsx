@@ -1,5 +1,7 @@
 import { AccountScopeSelector } from "@/components/account-filter-selector";
 import { SwipablePage, SwipablePageView } from "@/components/page";
+import { useSpendingSettings } from "@/features/spending/hooks/use-spending-settings";
+import SpendingInsightsPage from "@/features/spending/pages/spending-insights-page";
 
 import { useAccountScopeStore } from "@/lib/account-scope-store";
 import IncomePage from "@/pages/income/income-page";
@@ -44,18 +46,25 @@ export default function PortfolioInsightsPage() {
   const accountFilter = useAccountScopeStore((state) => state.scope);
   const setAccountScope = useAccountScopeStore((state) => state.setScope);
   const [overviewToolbarActions, setOverviewToolbarActions] = useState<ReactNode | null>(null);
+  const [spendingToolbarActions, setSpendingToolbarActions] = useState<ReactNode | null>(null);
+
+  const [customizeAction, setCustomizeAction] = useState<ReactNode | null>(null);
+  const { isEnabled: spendingEnabled } = useSpendingSettings();
 
   const holdingsActions = useMemo(
     () =>
       overviewToolbarActions ?? (
-        <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
+        <div className="flex items-center gap-2">
+          <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
+          {customizeAction}
+        </div>
       ),
-    [accountFilter, overviewToolbarActions, setAccountScope],
+    [accountFilter, overviewToolbarActions, customizeAction, setAccountScope],
   );
 
   // Define the views with icons
-  const views: SwipablePageView[] = useMemo(
-    () => [
+  const views: SwipablePageView[] = useMemo(() => {
+    const items: SwipablePageView[] = [
       {
         value: "overview",
         label: t("insights:insights.tab_overview"),
@@ -66,6 +75,7 @@ export default function PortfolioInsightsPage() {
               filter={accountFilter}
               onFilterChange={setAccountScope}
               onToolbarActionsChange={setOverviewToolbarActions}
+              onCustomizeActionChange={setCustomizeAction}
             />
           </Suspense>
         ),
@@ -91,9 +101,22 @@ export default function PortfolioInsightsPage() {
           </Suspense>
         ),
       },
-    ],
-    [accountFilter, holdingsActions, setAccountScope, t],
-  );
+    ];
+    if (spendingEnabled) {
+      items.push({
+        value: "spending",
+        label: t("dashboard:tabs.spending"),
+        icon: Icons.Wallet,
+        content: (
+          <Suspense fallback={<DashboardLoader />}>
+            <SpendingInsightsPage onToolbarActionsChange={setSpendingToolbarActions} />
+          </Suspense>
+        ),
+        actions: spendingToolbarActions,
+      });
+    }
+    return items;
+  }, [accountFilter, holdingsActions, setAccountScope, spendingEnabled, spendingToolbarActions, t]);
 
   return <SwipablePage views={views} defaultView="overview" withPadding={true} />;
 }

@@ -5,16 +5,14 @@
 
 use async_trait::async_trait;
 use log::{debug, warn};
-use reqwest::Client as HttpClient;
-use rig::{
-    client::{AgentClientExt, Nothing},
-    completion::Prompt,
-    providers::{anthropic, gemini, groq, ollama, openai, openrouter},
-};
+use rig::{operation::Completion, AgentBuilder, DynModel};
 
+use crate::chat::provider_clients::{
+    create_anthropic_client, create_gemini_client, create_groq_client, create_ollama_client,
+    create_openai_client, create_openrouter_client, redact_secret,
+};
 use crate::env::AiEnvironment;
 use crate::error::AiError;
-use crate::provider_urls::ensure_openai_v1_base_url;
 use crate::providers::ProviderService;
 use std::sync::Arc;
 
@@ -108,120 +106,39 @@ Title:",
             truncate_to_title(user_message, 200)
         );
 
-        let response = match provider_id {
-            "anthropic" => {
-                let key = api_key.ok_or_else(|| AiError::MissingApiKey(provider_id.to_string()))?;
-                let mut builder = anthropic::Client::<HttpClient>::builder()
-                    .api_key(&key)
-                    .http_client(wealthfolio_http::client());
-                if let Some(url) = provider_url {
-                    builder = builder.base_url(&url);
-                }
-                let client = builder
-                    .build()
-                    .map_err(|e| AiError::Provider(e.to_string()))?;
-                client
-                    .agent(model_id)
-                    .max_tokens(self.config.max_tokens as u64)
-                    .build()
-                    .prompt(&prompt)
-                    .await
-                    .map_err(|e| AiError::Provider(e.to_string()))?
-            }
-            "gemini" | "google" => {
-                let key = api_key.ok_or_else(|| AiError::MissingApiKey(provider_id.to_string()))?;
-                let mut builder = gemini::Client::<HttpClient>::builder()
-                    .api_key(&key)
-                    .http_client(wealthfolio_http::client());
-                if let Some(url) = provider_url {
-                    builder = builder.base_url(&url);
-                }
-                let client = builder
-                    .build()
-                    .map_err(|e| AiError::Provider(e.to_string()))?;
-                client
-                    .agent(model_id)
-                    .build()
-                    .prompt(&prompt)
-                    .await
-                    .map_err(|e| AiError::Provider(e.to_string()))?
-            }
-            "groq" => {
-                let key = api_key.ok_or_else(|| AiError::MissingApiKey(provider_id.to_string()))?;
-                let mut builder = groq::Client::<HttpClient>::builder()
-                    .api_key(&key)
-                    .http_client(wealthfolio_http::client());
-                if let Some(url) = provider_url {
-                    let normalized = ensure_openai_v1_base_url(&url);
-                    builder = builder.base_url(&normalized);
-                }
-                let client = builder
-                    .build()
-                    .map_err(|e| AiError::Provider(e.to_string()))?;
-                client
-                    .agent(model_id)
-                    .build()
-                    .prompt(&prompt)
-                    .await
-                    .map_err(|e| AiError::Provider(e.to_string()))?
-            }
-            "ollama" => {
-                let mut builder = ollama::Client::<HttpClient>::builder()
-                    .api_key(Nothing)
-                    .http_client(wealthfolio_http::client());
-                if let Some(url) = provider_url {
-                    builder = builder.base_url(&url);
-                }
-                let client = builder
-                    .build()
-                    .map_err(|e| AiError::Provider(e.to_string()))?;
-                client
-                    .agent(model_id)
-                    .build()
-                    .prompt(&prompt)
-                    .await
-                    .map_err(|e| AiError::Provider(e.to_string()))?
-            }
-            "openrouter" => {
-                let key = api_key.ok_or_else(|| AiError::MissingApiKey(provider_id.to_string()))?;
-                let mut builder = openrouter::Client::<HttpClient>::builder()
-                    .api_key(&key)
-                    .http_client(wealthfolio_http::client());
-                if let Some(url) = provider_url {
-                    let normalized = ensure_openai_v1_base_url(&url);
-                    builder = builder.base_url(&normalized);
-                }
-                let client = builder
-                    .build()
-                    .map_err(|e| AiError::Provider(e.to_string()))?;
-                client
-                    .agent(model_id)
-                    .build()
-                    .prompt(&prompt)
-                    .await
-                    .map_err(|e| AiError::Provider(e.to_string()))?
-            }
-            _ => {
-                // Default to OpenAI-compatible
-                let key = api_key.ok_or_else(|| AiError::MissingApiKey(provider_id.to_string()))?;
-                let mut builder = openai::CompletionsClient::<HttpClient>::builder()
-                    .api_key(&key)
-                    .http_client(wealthfolio_http::client());
-                if let Some(url) = provider_url {
-                    let normalized = ensure_openai_v1_base_url(&url);
-                    builder = builder.base_url(&normalized);
-                }
-                let client = builder
-                    .build()
-                    .map_err(|e| AiError::Provider(e.to_string()))?;
-                client
-                    .agent(model_id)
-                    .build()
-                    .prompt(&prompt)
-                    .await
-                    .map_err(|e| AiError::Provider(e.to_string()))?
-            }
+        let secret = api_key.clone();
+        let model: DynModel<Completion> = match provider_id {
+            "anthropic" => create_anthropic_client(api_key, provider_id, provider_url)?
+                .completion(model_id)
+                .into(),
+            "gemini" | "google" => create_gemini_client(api_key, provider_id, provider_url)?
+                .completion(model_id)
+                .into(),
+            "groq" => create_groq_client(api_key, provider_id, provider_url)?
+                .completion(model_id)
+                .into(),
+            "ollama" => create_ollama_client(provider_url)?
+                .native_completion(model_id)
+                .into(),
+            "openrouter" => create_openrouter_client(api_key, provider_id, provider_url)?
+                .completion(model_id)
+                .into(),
+            // Default to OpenAI-compatible Chat Completions: titles call no tools.
+            _ => create_openai_client(api_key, provider_id, provider_url)?
+                .chat(model_id)
+                .into(),
         };
+        let mut builder = AgentBuilder::new(model);
+        if provider_id == "anthropic" {
+            // Anthropic requires max_tokens.
+            builder = builder.max_tokens(self.config.max_tokens as u64);
+        }
+        let response = builder
+            .build()
+            .prompt(prompt.as_str())
+            .await
+            .map_err(|e| AiError::Provider(redact_secret(e.to_string(), secret.as_deref())))?
+            .output();
 
         // Clean up the response (providers sometimes wrap titles in markdown/quotes).
         let title = clean_generated_title(&response);
@@ -486,5 +403,90 @@ mod tests {
             .await;
         assert!(title.ends_with("..."));
         assert!(title.len() <= 53);
+    }
+
+    /// Groq shut down `groq/compound`. Groq titles go to a model it still
+    /// serves, and take the answer, not the reasoning gpt-oss sends with it.
+    #[tokio::test]
+    async fn groq_title_uses_a_served_model_and_skips_its_reasoning() {
+        use crate::chat::provider_clients::transport_tests::read_request;
+        use crate::env::test_env::MockEnvironment;
+        use crate::provider_model::AI_PROVIDER_SETTINGS_KEY;
+        use std::sync::Mutex;
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let models = Arc::new(Mutex::new(Vec::new()));
+        let requested = models.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let request = read_request(&mut socket).await;
+                let (_, body) = request.split_once("\r\n\r\n").unwrap();
+                let body: serde_json::Value = serde_json::from_str(body).unwrap();
+                let model = body["model"].as_str().unwrap().to_string();
+                requested.lock().unwrap().push(model.clone());
+                let (status, reply) = if model == "groq/compound" {
+                    (
+                        "400 Bad Request",
+                        serde_json::json!({"error": {
+                            "message": "The model `groq/compound` has been decommissioned",
+                            "type": "invalid_request_error", "code": "model_decommissioned"
+                        }}),
+                    )
+                } else {
+                    (
+                        "200 OK",
+                        serde_json::json!({
+                            "id": "fixture", "object": "chat.completion", "created": 1,
+                            "model": model, "choices": [{"index": 0, "message": {
+                                "role": "assistant",
+                                "reasoning": "The user asks about allocation.\nA short title fits.",
+                                "content": "Portfolio Allocation Review"
+                            }, "finish_reason": "stop"}],
+                            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+                        }),
+                    )
+                };
+                let reply = reply.to_string();
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+
+        let env = Arc::new(MockEnvironment::new().with_secret("ai_groq", "fixture-key"));
+        env.settings_service
+            .set_setting_value(
+                AI_PROVIDER_SETTINGS_KEY,
+                &serde_json::json!({"schemaVersion": 2, "providers": {"groq": {"customUrl": url}}})
+                    .to_string(),
+            )
+            .await
+            .unwrap();
+        let generator = TitleGenerator::new(env, TitleGeneratorConfig::default());
+        let title = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            generator.generate_title(
+                "How is my portfolio allocated?",
+                "groq",
+                "openai/gpt-oss-120b",
+            ),
+        )
+        .await
+        .unwrap();
+        server.abort();
+
+        assert_eq!(
+            (title.as_str(), models.lock().unwrap().as_slice()),
+            (
+                "Portfolio Allocation Review",
+                ["openai/gpt-oss-20b".to_string()].as_slice()
+            )
+        );
     }
 }

@@ -11,15 +11,16 @@ repository = "https://github.com/wealthfolio/wealthfolio"
 default = []
 
 [dependencies]
+argon2 = { version = "0.5", features = ["std"] }
+fs2 = "0.4"
+subtle = "2"
+zeroize = { workspace = true }
 wealthfolio-http = { workspace = true }
 # Workspace dependencies
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 diesel = { workspace = true }
-diesel_migrations = { workspace = true }
-rusqlite = { workspace = true }
-r2d2 = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
@@ -34,19 +35,18 @@ reqwest = { workspace = true, features = ["cookies"] }
 
 # Sibling crates
 wealthfolio-market-data = { path = "../market-data" }
+wealthfolio-portfolio-engine = { workspace = true }
 
 # Additional dependencies not in workspace
 regex = "1.10"
 rand = { workspace = true }
 rand_distr = "0.4"
 rayon = "1"
-dashmap = "6.1"
-serde_with = "3"
 urlencoding = "2"
 csv = "1.4.0"
-chardetng = "0.1"
+chardetng = "1.0"
 encoding_rs = "0.8"
-zip = "2.2.0"
+zip = "9.2.1"
 jsonpath-rust = "0.7"
 scraper = "0.22"
 sha2 = "0.10"
@@ -54,7 +54,12 @@ base64 = "0.22"
 hex = "0.4"
 chrono-tz = "0.10"
 url = "2"
+lopdf = "0.45.0"
 
 [dev-dependencies]
 tempfile = "3"
 proptest = "1.4"
+serde_yaml = "0.9"
+
+[lints]
+workspace = true

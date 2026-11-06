@@ -1,3 +1,4 @@
+import { useNumericDraft, useNumberFormatting } from "@wealthfolio/ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ExchangeRate } from "@/lib/types";
@@ -13,8 +14,9 @@ interface RateCellProps {
 
 export function RateCell({ rate, onUpdate }: RateCellProps) {
   const { t } = useTranslation();
+  const numbers = useNumberFormatting();
   const [isEditing, setIsEditing] = useState(false);
-  const [editedRate, setEditedRate] = useState(rate.rate.toString());
+  const rateDraft = useNumericDraft(rate.rate, { onEnter: () => handleSubmit() });
   const isManual = rate.source === "MANUAL";
 
   const handleEdit = () => {
@@ -27,17 +29,17 @@ export function RateCell({ rate, onUpdate }: RateCellProps) {
       return;
     }
     setIsEditing(true);
-    setEditedRate(rate.rate.toString());
+    rateDraft.reset();
   };
 
   const handleCancelEdit = () => {
     setIsEditing(false);
-    setEditedRate(rate.rate.toString());
+    rateDraft.reset();
   };
 
   const handleSubmit = () => {
-    const newRate = parseFloat(editedRate);
-    if (isNaN(newRate) || newRate <= 0) {
+    const result = rateDraft.read();
+    if (result.status !== "valid" || result.value <= 0) {
       toast({
         title: t("settings:fx_invalid_title"),
         description: t("settings:fx_invalid_desc"),
@@ -45,7 +47,7 @@ export function RateCell({ rate, onUpdate }: RateCellProps) {
       });
       return;
     }
-    const updatedRate = { ...rate, rate: newRate };
+    const updatedRate = { ...rate, rate: result.value };
     onUpdate(updatedRate);
     setIsEditing(false);
   };
@@ -55,27 +57,44 @@ export function RateCell({ rate, onUpdate }: RateCellProps) {
       <div className="w-24">
         {isManual && isEditing ? (
           <Input
-            value={editedRate}
-            onChange={(e) => setEditedRate(e.target.value)}
+            aria-label={t("settings:exchange_rates_rate")}
+            {...rateDraft.inputProps}
             className="w-full"
           />
         ) : (
-          <span>{rate.rate ? Number(rate.rate).toFixed(4) : "-"}</span>
+          <span>
+            {rate.rate
+              ? numbers.formatDecimal(rate.rate, {
+                  minimumFractionDigits: 4,
+                  maximumFractionDigits: 4,
+                })
+              : "-"}
+          </span>
         )}
       </div>
       {isManual && (
         <div className="flex space-x-1">
           {isEditing ? (
             <>
-              <Button variant="outline" size="icon" onClick={handleCancelEdit}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleCancelEdit}
+                aria-label={t("common:cancel")}
+              >
                 <Icons.Close className="h-4 w-4" />
               </Button>
-              <Button size="icon" onClick={handleSubmit}>
+              <Button size="icon" onClick={handleSubmit} aria-label={t("common:save")}>
                 <Icons.Check className="h-4 w-4" />
               </Button>
             </>
           ) : (
-            <Button variant="outline" size="icon" onClick={handleEdit}>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleEdit}
+              aria-label={t("common:edit")}
+            >
               <Icons.Pencil className="h-4 w-4" />
             </Button>
           )}

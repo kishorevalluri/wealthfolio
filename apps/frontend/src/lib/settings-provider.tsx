@@ -1,12 +1,27 @@
-import { isDesktop, logger } from "@/adapters";
+import { StartupScreen } from "@/components/startup-screen";
+import { useProfile } from "@/features/profiles/profile-context";
+import { Button } from "@wealthfolio/ui";
+import { useTranslation } from "react-i18next";
+import { isTauri, logger } from "@/adapters";
 import { setAddonLocalizationSnapshot } from "@/addons/iframe/addon-sandbox-localization";
 import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 
+import { getPlatform } from "@/hooks/use-platform";
 import { useSettings } from "@/hooks/use-settings";
 import { useSettingsMutation } from "@/hooks/use-settings-mutation";
+import { setLanguageDirection, useDocumentDirection } from "@/i18n/direction";
 import i18n, { LANGUAGE_STORAGE_KEY } from "@/i18n/i18n";
 import { DEFAULT_LOCALE } from "@/i18n/locales";
 import { Settings, SettingsContextType } from "@/lib/types";
+import { isGainColors, resolveGainColors } from "@/themes/gain-colors";
+import {
+  isTextSize,
+  measureDynamicTypeScale,
+  resolveTextSize,
+  setSystemTextScale,
+  TEXT_SIZE_STORAGE_KEY,
+} from "@/themes/text-size";
+import { isThemeId, resolveThemeId } from "@/themes/themes";
 import { FormattingProvider, resolveFormattingLocale } from "@wealthfolio/ui";
 
 interface ExtendedSettingsContextType extends SettingsContextType {
@@ -14,16 +29,21 @@ interface ExtendedSettingsContextType extends SettingsContextType {
     updates: Partial<
       Pick<
         Settings,
+        | "themeId"
+        | "gainColors"
         | "theme"
         | "font"
+        | "textSize"
         | "language"
         | "formattingRegion"
+        | "currencyFormattingRegions"
         | "baseCurrency"
         | "defaultReturnMetric"
         | "timezone"
         | "onboardingCompleted"
         | "menuBarVisible"
         | "syncEnabled"
+        | "insightsOverviewLayout"
       >
     >,
   ) => Promise<void>;
@@ -33,7 +53,12 @@ interface ExtendedSettingsContextType extends SettingsContextType {
 const SettingsContext = createContext<ExtendedSettingsContextType | undefined>(undefined);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const { data, isLoading, isError, refetch } = useSettings();
+  const { data, error, isLoading, isError, refetch } = useSettings();
+  const profile = useProfile();
+  const { t } = useTranslation("common", { useSuspense: false });
+  const [appearanceReady, setAppearanceReady] = useState(false);
+  const [appearanceError, setAppearanceError] = useState<string>();
+  const [appearanceAttempt, setAppearanceAttempt] = useState(0);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [accountsGrouped, setAccountsGrouped] = useState(true);
 
@@ -49,40 +74,86 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     updates: Partial<
       Pick<
         Settings,
+        | "themeId"
+        | "gainColors"
         | "theme"
         | "font"
+        | "textSize"
         | "language"
         | "formattingRegion"
+        | "currencyFormattingRegions"
         | "baseCurrency"
         | "defaultReturnMetric"
         | "timezone"
         | "onboardingCompleted"
         | "menuBarVisible"
         | "syncEnabled"
+        | "insightsOverviewLayout"
       >
     >,
   ) => {
     if (!settings) throw new Error("Settings not loaded");
+    if (updates.themeId !== undefined && !isThemeId(updates.themeId)) {
+      throw new Error(`Unknown theme: ${updates.themeId}`);
+    }
+    if (updates.textSize !== undefined && !isTextSize(updates.textSize)) {
+      throw new Error(`Unknown text size: ${updates.textSize}`);
+    }
+    if (updates.gainColors !== undefined && !isGainColors(updates.gainColors)) {
+      throw new Error(`Unknown gain and loss colours: ${updates.gainColors}`);
+    }
     await updateMutation.mutateAsync(updates);
   };
 
   useEffect(() => {
+    let cancelled = false;
     if (data) {
-      setSettings(data);
-      applySettingsToDocument(data);
+      void applySettingsToDocument(data)
+        .then(() => {
+          if (!cancelled) {
+            setSettings(data);
+            setAppearanceReady(true);
+            setAppearanceError(undefined);
+          }
+        })
+        .catch(() => {
+          if (!cancelled)
+            setAppearanceError(
+              t("profiles.appearanceFailed", {
+                defaultValue: "Couldn’t load appearance settings.",
+              }),
+            );
+        });
     }
-  }, [data]);
+    return () => {
+      cancelled = true;
+    };
+  }, [data, appearanceAttempt, t]);
 
   // Cleanup any lingering listeners when provider unmounts
   useEffect(() => {
     return () => {
       try {
+        appearanceGeneration += 1;
         cleanupSystemThemeListeners();
       } catch {
         // noop
       }
     };
   }, []);
+
+  // Until a size is picked, a text size changed in iOS Settings applies when the
+  // app comes back to the foreground.
+  const followsSystemTextSize = settings !== null && settings.textSize === undefined;
+  useEffect(() => {
+    if (!followsSystemTextSize) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshIosTextScale().then(() => applyTextSize(undefined));
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [followsSystemTextSize]);
 
   const contextValue: ExtendedSettingsContextType = {
     settings,
@@ -100,14 +171,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const uiLocale = settings ? settings.language : DEFAULT_LOCALE;
   const resolvedFormattingLocale = resolveFormattingLocale(formattingRegion);
   const formattingTimezone = settings?.timezone || undefined;
+  const currencyFormattingRegions = settings?.currencyFormattingRegions;
+  const direction = useDocumentDirection();
 
   useEffect(() => {
     setAddonLocalizationSnapshot({
       locale: resolvedFormattingLocale,
       uiLocale,
+      direction,
       timezone: formattingTimezone,
+      currencyFormattingRegions,
     });
-  }, [resolvedFormattingLocale, uiLocale, formattingTimezone]);
+  }, [
+    resolvedFormattingLocale,
+    uiLocale,
+    direction,
+    formattingTimezone,
+    currencyFormattingRegions,
+  ]);
 
   if (settings && !formattingRegion) {
     throw new Error("Loaded settings are missing the required formatting region");
@@ -116,12 +197,37 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     throw new Error("Loaded settings are missing the required UI language");
   }
 
+  if (!appearanceReady)
+    return (
+      <StartupScreen error={appearanceError ?? (isError ? String(error) : undefined)}>
+        {(isError || appearanceError) && (
+          <>
+            <Button
+              onClick={() => {
+                setAppearanceError(undefined);
+                setAppearanceAttempt((n) => n + 1);
+                void refetch();
+              }}
+            >
+              {t("retry")}
+            </Button>
+            {profile && (
+              <Button variant="ghost" onClick={profile.switchProfile}>
+                {t("profiles.switch", { defaultValue: "Switch profile" })}
+              </Button>
+            )}
+          </>
+        )}
+      </StartupScreen>
+    );
+
   return (
     <SettingsContext.Provider value={contextValue}>
       <FormattingProvider
         locale={formattingRegion}
         uiLocale={uiLocale}
         timezone={formattingTimezone}
+        currencyFormattingRegions={settings?.currencyFormattingRegions}
       >
         {children}
       </FormattingProvider>
@@ -137,6 +243,7 @@ export function useSettingsContext() {
   return context;
 }
 // Keep references to system theme listeners so we can clean up when switching modes
+let appearanceGeneration = 0;
 let tauriThemeUnlisten: (() => void) | null = null;
 let mediaQueryList: MediaQueryList | null = null;
 let mediaQueryUnsubscribe: (() => void) | null = null;
@@ -169,26 +276,74 @@ function cleanupSystemThemeListeners() {
   mediaQueryList = null;
 }
 
+// Only desktop windows follow the OS theme; tao's iOS and Android windows
+// always report light.
+async function getDesktopWindow() {
+  if (!isTauri) return null;
+  const platform = await getPlatform();
+  if (!platform.is_desktop) return null;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  return getCurrentWindow();
+}
+
+// iOS: WKWebView neither scales page text by Dynamic Type nor reports its size,
+// so the app measures it. Android's native side sets the scale before load, and
+// the web and desktop builds have none.
+async function refreshIosTextScale() {
+  if (!isTauri) return;
+  const platform = await getPlatform();
+  if (platform.os === "ios") setSystemTextScale(measureDynamicTypeScale());
+}
+
+// Sets <html data-text-size> and caches it for index.html's next start.
+function applyTextSize(saved: Settings["textSize"]) {
+  const textSize = resolveTextSize(saved);
+  document.documentElement.dataset.textSize = textSize;
+  try {
+    localStorage.setItem(TEXT_SIZE_STORAGE_KEY, textSize);
+  } catch {
+    // noop – localStorage may be unavailable
+  }
+  return textSize;
+}
+
 // Helper function to apply settings to the document
-const applySettingsToDocument = (newSettings: Settings) => {
+const applySettingsToDocument = async (newSettings: Settings) => {
+  const application = ++appearanceGeneration;
   // Apply the stored language. This is the single source of truth for the UI
   // language — on initial load and on every change (including device-synced ones).
   const language = newSettings.language || DEFAULT_LOCALE;
-  if (i18n.language !== language) {
-    i18n.changeLanguage(language).catch(() => {
-      // noop – falls back to the default locale
-    });
+  if (i18n.language !== language || !i18n.isInitialized) {
+    await i18n.changeLanguage(language).catch(() => i18n.changeLanguage(DEFAULT_LOCALE));
   }
+  if (application !== appearanceGeneration) return;
   document.documentElement.setAttribute("lang", language);
-  document.documentElement.setAttribute("dir", i18n.dir(language));
+  setLanguageDirection(language);
+
+  // Theme (palette and shape); an ID this version doesn't know shows Classic.
+  const themeId = resolveThemeId(newSettings.themeId);
+  document.documentElement.dataset.theme = themeId;
+  // Gain and loss colours; a value this version doesn't know shows green up.
+  const gainColors = resolveGainColors(newSettings.gainColors);
+  document.documentElement.dataset.gainColors = gainColors;
 
   // Font classes
   document.body.classList.remove("font-mono", "font-sans", "font-serif");
   document.body.classList.add(newSettings.font);
 
+  // Text size scales the root font size. Until one is picked it follows the
+  // system's font scale where the app knows one (Android, iOS); an unknown name
+  // shows the default.
+  await refreshIosTextScale();
+  if (application !== appearanceGeneration) return;
+  applyTextSize(newSettings.textSize);
+
   // Cache pre-auth presentation settings so bootstrap UI does not flash defaults.
+  // index.html reads these keys before the app loads.
   try {
     localStorage.setItem("wealthfolio-theme", newSettings.theme);
+    localStorage.setItem("wealthfolio-theme-id", themeId);
+    localStorage.setItem("wealthfolio-gain-colors", gainColors);
     localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   } catch {
     // noop – localStorage may be unavailable
@@ -221,26 +376,28 @@ const applySettingsToDocument = (newSettings: Settings) => {
       }
     }
 
-    // On desktop, also sync with Tauri window theme + listen to OS changes
-    if (isDesktop) {
-      (async () => {
-        try {
-          const { getCurrentWindow } = await import("@tauri-apps/api/window");
-          const currentWindow = getCurrentWindow();
-          await currentWindow.setTheme(null);
-          const current = await currentWindow.theme();
-          if (current === "dark" || current === "light") {
-            applyResolvedTheme(current);
-          }
-          tauriThemeUnlisten = await currentWindow.onThemeChanged(({ payload }) => {
-            const next = payload === "dark" ? "dark" : "light";
-            applyResolvedTheme(next);
-          });
-        } catch {
-          logger.error("Error setting window theme.");
+    // On desktop, also sync with the window theme + listen to OS changes
+    (async () => {
+      try {
+        const currentWindow = await getDesktopWindow();
+        if (!currentWindow || application !== appearanceGeneration) return;
+        await currentWindow.setTheme(null);
+        const current = await currentWindow.theme();
+        if (application !== appearanceGeneration) return;
+        if (current === "dark" || current === "light") {
+          applyResolvedTheme(current);
         }
-      })();
-    }
+        const unlisten = await currentWindow.onThemeChanged(({ payload }) => {
+          if (application !== appearanceGeneration) return;
+          const next = payload === "dark" ? "dark" : "light";
+          applyResolvedTheme(next);
+        });
+        if (application !== appearanceGeneration) unlisten();
+        else tauriThemeUnlisten = unlisten;
+      } catch {
+        logger.error("Error setting window theme.");
+      }
+    })();
 
     applyResolvedTheme(initial);
     return;
@@ -250,16 +407,14 @@ const applySettingsToDocument = (newSettings: Settings) => {
   const explicit = newSettings.theme === "dark" ? "dark" : "light";
   applyResolvedTheme(explicit);
 
-  // Only call Tauri window APIs when running the desktop app for explicit modes
-  if (isDesktop) {
-    (async () => {
-      try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        const currentWindow = getCurrentWindow();
-        await currentWindow.setTheme(explicit);
-      } catch {
-        logger.error("Error setting window theme.");
-      }
-    })();
-  }
+  // On desktop, match the window theme to the explicit mode
+  (async () => {
+    try {
+      const currentWindow = await getDesktopWindow();
+      if (!currentWindow || application !== appearanceGeneration) return;
+      await currentWindow.setTheme(explicit);
+    } catch {
+      logger.error("Error setting window theme.");
+    }
+  })();
 };

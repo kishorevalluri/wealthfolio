@@ -25,8 +25,15 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "date",
     "trade date",
     "tradedate",
+    "trade_date",
+    "execution date",
+    "executiondate",
+    "execution_date",
+    "order execution time",
+    "order_execution_time",
     "transaction date",
     "transactiondate",
+    "transaction_date",
     "settlement date",
     "settlementdate",
     "settledate",
@@ -37,8 +44,6 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "timestamp",
     "executed at",
     "executedat",
-    "trade_date",
-    "transaction_date",
   ],
   [ImportFormat.ACTIVITY_TYPE]: [
     "activitytype",
@@ -57,6 +62,19 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "operation",
     "trade type",
     "tradetype",
+    "trade_type",
+    "order type",
+    "ordertype",
+    "order_type",
+    "txn type",
+    "txntype",
+    "txn_type",
+    "transaction description",
+    "transactiondescription",
+    "transaction_description",
+    "trans description",
+    "transdescription",
+    "particulars",
   ],
   [ImportFormat.SYMBOL]: [
     "symbol",
@@ -67,9 +85,22 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "security",
     "securitysymbol",
     "security symbol",
+    "security name",
+    "securityname",
+    "security_name",
+    "security description",
+    "securitydescription",
+    "security_description",
     "stock",
     "stocksymbol",
     "stock symbol",
+    "stock name",
+    "stockname",
+    "stock_name",
+    "scheme name",
+    "schemename",
+    "scheme_name",
+    "scheme",
     "asset",
     "assetid",
     "asset id",
@@ -77,7 +108,18 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "instrument",
     "cusip",
   ],
-  [ImportFormat.ISIN]: ["isin", "security id", "securityid"],
+  [ImportFormat.ISIN]: [
+    "isin",
+    "security id",
+    "securityid",
+    "security_id",
+    "isin no",
+    "isin_no",
+    "isin number",
+    "isinnumber",
+    "isin code",
+    "isincode",
+  ],
   [ImportFormat.INSTRUMENT_TYPE]: [
     "instrumenttype",
     "instrument type",
@@ -90,6 +132,8 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "security_type",
     "type hint",
     "type_hint",
+    "segment",
+    "series",
   ],
   [ImportFormat.QUANTITY]: [
     "quantity",
@@ -119,6 +163,7 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "pricepershare",
     "avg price",
     "avgprice",
+    "avg. price",
     "average price",
     "averageprice",
     "execution price",
@@ -127,6 +172,11 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "tradeprice",
     "cost basis",
     "costbasis",
+    "nav",
+    "rate",
+    "rate / nav",
+    "rate/nav",
+    "price / share",
   ],
   [ImportFormat.AMOUNT]: [
     "amount",
@@ -152,6 +202,10 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "cost",
     "split ratio",
     "splitratio",
+    "trade value",
+    "tradevalue",
+    "order value",
+    "ordervalue",
   ],
   [ImportFormat.CURRENCY]: [
     "currency",
@@ -180,6 +234,8 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "brokerage fee",
     "brokerage_fee",
     "charges",
+    "depository charges",
+    "depository_charges",
     "fees & comm",
     "fees & commission",
     "fees and commissions",
@@ -190,7 +246,10 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "taxes",
     "transaction tax",
     "stamp duty",
+    "stamp_duty",
     "sdrt",
+    "stt",
+    "securities transaction tax",
     "levy",
     "withholding tax",
     "tax withheld",
@@ -214,6 +273,23 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "account number",
     "account_number",
     "acct",
+    "folio no",
+    "folio number",
+    "folio_no",
+    "folio",
+    "boid",
+    "bo id",
+    "bo_id",
+    "client id",
+    "clientid",
+    "client_id",
+    "dp id",
+    "dpid",
+    "dp_id",
+    "demat account",
+    "demat account no",
+    "demat account number",
+    "demat_account_no",
   ],
   [ImportFormat.COMMENT]: [
     "comment",
@@ -223,9 +299,18 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     "description",
     "transaction description",
     "transactiondescription",
+    "transaction_description",
     "memo",
     "remarks",
     "details",
+    "order id",
+    "order_id",
+    "trade id",
+    "trade_id",
+    "order status",
+    "orderstatus",
+    "order_status",
+    "status",
   ],
   [ImportFormat.FX_RATE]: [
     "fxrate",
@@ -322,9 +407,13 @@ function headerIsBlockedForField(header: string, field: ImportFormat): boolean {
   return normalized.includes("market value") || compact.includes("marketvalue");
 }
 
+function headerMatchesCanonicalField(header: string, field: ImportFormat): boolean {
+  return header.trim().toLowerCase() === field.toLowerCase();
+}
+
 /**
  * Initialize column mapping by matching CSV headers to ImportFormat fields.
- * Uses tiered matching: exact → word-boundary contains → substring contains.
+ * Uses tiered matching: canonical name → exact alias → word-boundary contains → substring contains.
  */
 export function initializeColumnMapping(
   headerRow: string[],
@@ -335,7 +424,19 @@ export function initializeColumnMapping(
 
   const fields = profile.visibleMappingFields;
 
-  // Pass 1: Exact match (normalized alias === normalized header)
+  // Pass 1: Reserve canonical field names before considering any aliases.
+  for (const field of fields) {
+    const match = headerRow.find(
+      (header) => !usedHeaders.has(header) && headerMatchesCanonicalField(header, field),
+    );
+
+    if (match) {
+      initialMapping[field] = match;
+      usedHeaders.add(match);
+    }
+  }
+
+  // Pass 2: Exact alias match (normalized alias === normalized header)
   for (const field of fields) {
     if (initialMapping[field]) continue;
     const aliases = aliasesForField(field, profile);
@@ -353,7 +454,7 @@ export function initializeColumnMapping(
     }
   }
 
-  // Pass 2: Word-boundary contains (catches "Trade Date (UTC)" → alias "trade date")
+  // Pass 3: Word-boundary contains (catches "Trade Date (UTC)" → alias "trade date")
   for (const field of fields) {
     if (initialMapping[field]) continue;
     const aliases = aliasesForField(field, profile);
@@ -378,7 +479,7 @@ export function initializeColumnMapping(
     }
   }
 
-  // Pass 3: Substring contains for aliases ≥ 4 chars (catches "transactiondate_utc")
+  // Pass 4: Substring contains for aliases ≥ 4 chars (catches "transactiondate_utc")
   for (const field of fields) {
     if (initialMapping[field]) continue;
     const aliases = aliasesForField(field, profile);
@@ -420,7 +521,12 @@ export function computeFieldMappings(
     if (header) result[field] = header;
   }
 
-  if (isTransactionImportProfile(profile)) {
+  // Canonical amount columns are authoritative, even when a row's cell is empty.
+  const amountHeader = autoDetected[ImportFormat.AMOUNT];
+  if (
+    isTransactionImportProfile(profile) &&
+    (!amountHeader || !headerMatchesCanonicalField(amountHeader, ImportFormat.AMOUNT))
+  ) {
     const amountAliases = aliasesForField(ImportFormat.AMOUNT, profile);
     const amountHeaders = headers.filter(
       (header) =>

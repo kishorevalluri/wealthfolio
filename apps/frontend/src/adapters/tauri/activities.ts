@@ -1,5 +1,4 @@
-// Tauri-specific activity commands
-import type { ParseConfig, ParsedCsvResult } from "@/lib/types";
+import type { ParseConfig, ParsedCsvResult, ParsedPdfResult } from "@/lib/types";
 import { invoke, logger } from "./core";
 
 /**
@@ -13,6 +12,21 @@ export const parseCsv = async (file: File, config: ParseConfig): Promise<ParsedC
     return await invoke<ParsedCsvResult>("parse_csv", { content, config });
   } catch (err) {
     logger.error("Error parsing CSV file:", err);
+    throw err;
+  }
+};
+
+/**
+ * Parse a PDF file with optional password.
+ * Tauri implementation: reads file as ArrayBuffer and invokes parse_pdf command.
+ */
+export const parsePdf = async (file: File, password?: string): Promise<ParsedPdfResult> => {
+  try {
+    const buffer = await file.arrayBuffer();
+    const content = Array.from(new Uint8Array(buffer));
+    return await invoke<ParsedPdfResult>("parse_pdf", { content, password: password || null });
+  } catch (err) {
+    logger.error("Error parsing PDF file:", err);
     throw err;
   }
 };

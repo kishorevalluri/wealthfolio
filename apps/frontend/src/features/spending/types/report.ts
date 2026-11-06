@@ -3,6 +3,11 @@ export interface PeriodSummary {
   outflow: number;
   /** Money set aside into the Savings taxonomy (transfers to investing accounts). */
   saved: number;
+  /**
+   * Money brought back from those accounts. Gross, like `saved`: net saving is
+   * `saved - fromSavings`, and `net = income - outflow - saved + fromSavings`.
+   */
+  fromSavings?: number;
   net: number;
   count: number;
 }
@@ -30,6 +35,8 @@ export interface DayCategoryBucket {
 }
 
 export interface MonthlyReport {
+  /** Currency of all monetary amounts; rates are taken at each period's end. */
+  baseCurrency: string;
   current: PeriodSummary;
   prior: PeriodSummary;
   spendingBreakdown: CategoryBreakdownRow[];

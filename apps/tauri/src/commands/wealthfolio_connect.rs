@@ -8,13 +8,13 @@ use crate::commands::device_sync::{
     get_sync_identity_from_store, sync_identity_can_run_background,
 };
 use crate::context::ServiceContext;
-use crate::database::DatabaseRuntime;
-use crate::secret_store::KeyringSecretStore;
+use crate::profiles::{ConnectAccess, NativeProfiles, ProfileAccess};
 use log::{debug, error};
 use serde::Serialize;
+#[cfg(feature = "device-sync")]
 use std::future::Future;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager};
 #[cfg(feature = "connect-sync")]
 use wealthfolio_connect::{
     prepare_post_login_broker_bootstrap, BrokerApiClient, PostLoginBrokerBootstrapDecision,
@@ -23,7 +23,6 @@ use wealthfolio_connect::{
     PostLoginBootstrapReason, PostLoginBootstrapResult, PostLoginBootstrapSyncResult,
     CLOUD_REFRESH_TOKEN_KEY,
 };
-use wealthfolio_core::secrets::SecretStore;
 #[cfg(feature = "device-sync")]
 use wealthfolio_device_sync::SyncState;
 
@@ -75,32 +74,59 @@ where
 
 #[tauri::command]
 pub async fn store_sync_session(
-    refresh_token: Option<String>,
-    state: State<'_, DatabaseRuntime>,
+    app: AppHandle,
+    refresh_token: String,
+    confirm_rebind: Option<bool>,
+    state: ProfileAccess,
+    scope_id: uuid::Uuid,
 ) -> Result<(), String> {
-    let context = state.context()?;
-    match refresh_token
-        .as_deref()
-        .map(str::trim)
-        .filter(|token| !token.is_empty())
-    {
-        Some(token) => context.connect_service().store_session(token).await?,
-        None => {
-            disconnect_cloud_session(&context).await?;
-        }
+    let token = refresh_token.trim();
+    if token.is_empty() {
+        return Err("Refresh token must not be empty.".into());
     }
+    let _transition = app
+        .state::<NativeProfiles>()
+        .begin_connect_transition(scope_id, &state)
+        .await?;
+    let context = state.context()?;
+    let _sync_lifecycle = context.sync_lifecycle.lock().await;
+    // Reserve broker sync for the complete login transition, including cleanup.
+    let _broker_guard =
+        wealthfolio_connect::acquire_broker_sync_guard(&context.broker_sync_running())
+            .ok_or("Broker sync is running. Wait for it to finish and try again.")?;
+    context
+        .connect_service()
+        .store_session(token, confirm_rebind.unwrap_or(false), || async {
+            #[cfg(feature = "device-sync")]
+            {
+                context.device_sync_runtime().clear_restore().await;
+                context
+                    .device_sync_runtime()
+                    .ensure_background_stopped()
+                    .await;
+                context.sync_approvals.clear()?;
+            }
+            context
+                .app_sync_repository()
+                .clear_connect_binding_state()
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .await?;
 
+    state.backup_scheduler.wake();
     Ok(())
 }
 
 #[tauri::command]
 pub async fn post_login_bootstrap(
     app: AppHandle,
-    state: State<'_, DatabaseRuntime>,
+    state: ConnectAccess,
 ) -> Result<PostLoginBootstrapResult, String> {
     let context = state.context()?;
     let cloned_context = context.clone();
-    let broker_sync = run_post_login_broker_bootstrap(app, Arc::clone(&cloned_context)).await;
+    let broker_sync = run_broker_bootstrap(app, Arc::clone(&cloned_context)).await;
     let device_sync = run_post_login_device_bootstrap(cloned_context).await;
 
     Ok(PostLoginBootstrapResult {
@@ -110,22 +136,15 @@ pub async fn post_login_bootstrap(
 }
 
 #[cfg(feature = "connect-sync")]
-async fn run_post_login_broker_bootstrap(
+pub(crate) async fn run_broker_bootstrap(
     app: AppHandle,
     context: Arc<ServiceContext>,
 ) -> PostLoginBootstrapSyncResult {
-    let entitlement_context = Arc::clone(&context);
     let connections_context = Arc::clone(&context);
     let guard_context = Arc::clone(&context);
 
     let decision = prepare_post_login_broker_bootstrap(
         true,
-        move || async move {
-            entitlement_context
-                .connect_service()
-                .has_broker_sync()
-                .await
-        },
         move || async move {
             let client = connections_context
                 .connect_service()
@@ -137,8 +156,8 @@ async fn run_post_login_broker_bootstrap(
     )
     .await;
 
-    let guard = match decision {
-        PostLoginBrokerBootstrapDecision::Start(guard) => guard,
+    let (guard, connections) = match decision {
+        PostLoginBrokerBootstrapDecision::Start(guard, connections) => (guard, connections),
         PostLoginBrokerBootstrapDecision::Skip(reason) => {
             return PostLoginBootstrapSyncResult::skipped(reason);
         }
@@ -146,12 +165,14 @@ async fn run_post_login_broker_bootstrap(
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        match perform_broker_sync_with_guard(&context, Some(&app_handle), guard).await {
+        match perform_broker_sync_with_guard(&context, Some(&app_handle), guard, Some(connections))
+            .await
+        {
             Ok(_result) => {
-                debug!("[Connect] Post-login broker sync completed successfully");
+                debug!("[Connect] Broker bootstrap sync completed successfully");
             }
             Err(err) => {
-                error!("[Connect] Post-login broker sync failed: {}", err);
+                error!("[Connect] Broker bootstrap sync failed: {}", err);
             }
         }
     });
@@ -160,7 +181,7 @@ async fn run_post_login_broker_bootstrap(
 }
 
 #[cfg(not(feature = "connect-sync"))]
-async fn run_post_login_broker_bootstrap(
+pub(crate) async fn run_broker_bootstrap(
     _app: AppHandle,
     _context: Arc<ServiceContext>,
 ) -> PostLoginBootstrapSyncResult {
@@ -171,7 +192,7 @@ async fn run_post_login_broker_bootstrap(
 async fn run_post_login_device_bootstrap(
     context: Arc<ServiceContext>,
 ) -> PostLoginBootstrapSyncResult {
-    let Some(identity) = get_sync_identity_from_store() else {
+    let Some(identity) = get_sync_identity_from_store(&context) else {
         return PostLoginBootstrapSyncResult::skipped(PostLoginBootstrapReason::NotEnrolled);
     };
 
@@ -231,7 +252,7 @@ async fn run_post_login_device_bootstrap(
 }
 
 #[tauri::command]
-pub async fn clear_sync_session(state: State<'_, DatabaseRuntime>) -> Result<(), String> {
+pub async fn clear_sync_session(state: ConnectAccess) -> Result<(), String> {
     let context = state.context()?;
     disconnect_cloud_session(&context).await
 }
@@ -242,10 +263,10 @@ pub struct SyncSessionStatus {
     pub is_configured: bool,
 }
 
+// Async so the keyring read runs off the UI thread: a slow or locked keyring
+// would otherwise freeze the window.
 #[tauri::command]
-pub fn get_sync_session_status(
-    state: State<'_, DatabaseRuntime>,
-) -> Result<SyncSessionStatus, String> {
+pub async fn get_sync_session_status(state: ConnectAccess) -> Result<SyncSessionStatus, String> {
     let context = state.context()?;
     Ok(SyncSessionStatus {
         is_configured: context.connect_service().is_session_configured()?,
@@ -254,11 +275,14 @@ pub fn get_sync_session_status(
 
 /// Clear explicit logout credentials and stop the worker in one transition.
 async fn disconnect_cloud_session(context: &ServiceContext) -> Result<(), String> {
+    context.backup_scheduler.wake();
     context
         .connect_service()
         .clear_session_with(|| async {
             #[cfg(feature = "device-sync")]
-            clear_min_snapshot_created_at_from_store();
+            context.device_sync_runtime().clear_restore().await;
+            #[cfg(feature = "device-sync")]
+            clear_min_snapshot_created_at_from_store(context);
             let _ = context
                 .app_sync_repository()
                 .clear_all_min_snapshot_created_at()
@@ -270,7 +294,9 @@ async fn disconnect_cloud_session(context: &ServiceContext) -> Result<(), String
                 .await;
         })
         .await
-        .map(|_| ())
+        .map(|_| {
+            context.backup_scheduler.wake();
+        })
 }
 
 #[derive(Serialize)]
@@ -282,12 +308,13 @@ pub struct RestoreSyncSessionResponse {
 
 #[tauri::command]
 pub async fn restore_sync_session(
-    state: State<'_, DatabaseRuntime>,
+    state: ConnectAccess,
 ) -> Result<RestoreSyncSessionResponse, String> {
     let context = state.context()?;
     let access_token = context.connect_service().get_valid_access_token().await?;
 
-    let refresh_token = KeyringSecretStore
+    let refresh_token = context
+        .secret_store
         .get_secret(CLOUD_REFRESH_TOKEN_KEY)
         .map_err(|e| format!("Failed to read refresh token: {}", e))?
         .ok_or_else(|| "No sync session configured".to_string())?;
@@ -325,39 +352,18 @@ mod tests {
 
     #[cfg(feature = "connect-sync")]
     #[tokio::test]
-    async fn broker_preflight_no_entitlement_skips_without_listing_connections() {
+    async fn broker_preflight_server_denial_skips_without_starting() {
         let list_calls = Arc::new(AtomicUsize::new(0));
-
+        let start_calls = Arc::new(AtomicUsize::new(0));
         let decision = prepare_post_login_broker_bootstrap(
             true,
-            || async { Ok(false) },
             {
                 let list_calls = Arc::clone(&list_calls);
                 move || async move {
                     list_calls.fetch_add(1, Ordering::SeqCst);
-                    Ok(vec![broker_connection(Some("connected"), false)])
+                    Err("API error 403: SUBSCRIPTION_CANCELED".to_string())
                 }
             },
-            || Some(()),
-        )
-        .await;
-
-        assert!(matches!(
-            decision,
-            PostLoginBrokerBootstrapDecision::Skip(PostLoginBootstrapReason::NotEntitled)
-        ));
-        assert_eq!(list_calls.load(Ordering::SeqCst), 0);
-    }
-
-    #[cfg(feature = "connect-sync")]
-    #[tokio::test]
-    async fn broker_preflight_zero_connections_skips_without_starting() {
-        let start_calls = Arc::new(AtomicUsize::new(0));
-
-        let decision = prepare_post_login_broker_bootstrap(
-            true,
-            || async { Ok(true) },
-            || async { Ok(vec![]) },
             {
                 let start_calls = Arc::clone(&start_calls);
                 move || {
@@ -366,6 +372,27 @@ mod tests {
                 }
             },
         )
+        .await;
+        assert!(matches!(
+            decision,
+            PostLoginBrokerBootstrapDecision::Skip(PostLoginBootstrapReason::NotEntitled)
+        ));
+        assert_eq!(list_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(start_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[cfg(feature = "connect-sync")]
+    #[tokio::test]
+    async fn broker_preflight_zero_connections_skips_without_starting() {
+        let start_calls = Arc::new(AtomicUsize::new(0));
+
+        let decision = prepare_post_login_broker_bootstrap(true, || async { Ok(vec![]) }, {
+            let start_calls = Arc::clone(&start_calls);
+            move || {
+                start_calls.fetch_add(1, Ordering::SeqCst);
+                Some(())
+            }
+        })
         .await;
 
         assert!(matches!(
@@ -380,7 +407,6 @@ mod tests {
     async fn broker_preflight_requires_active_usable_connection() {
         let decision = prepare_post_login_broker_bootstrap(
             true,
-            || async { Ok(true) },
             || async {
                 Ok(vec![
                     broker_connection(Some("disconnected"), false),
@@ -403,7 +429,6 @@ mod tests {
     async fn broker_preflight_active_connection_starts() {
         let decision = prepare_post_login_broker_bootstrap(
             true,
-            || async { Ok(true) },
             || async { Ok(vec![broker_connection(Some("connected"), false)]) },
             || Some("guard"),
         )
@@ -411,7 +436,7 @@ mod tests {
 
         assert!(matches!(
             decision,
-            PostLoginBrokerBootstrapDecision::Start("guard")
+            PostLoginBrokerBootstrapDecision::Start("guard", _)
         ));
     }
 
@@ -420,7 +445,6 @@ mod tests {
     async fn broker_preflight_already_running_skips() {
         let decision = prepare_post_login_broker_bootstrap(
             true,
-            || async { Ok(true) },
             || async { Ok(vec![broker_connection(Some("connected"), false)]) },
             || None::<()>,
         )

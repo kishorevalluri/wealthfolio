@@ -1,10 +1,24 @@
+import { useIsMobileViewport } from "@/hooks/use-platform";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetTrigger,
+} from "@wealthfolio/ui/components/ui/sheet";
 import { searchTicker } from "@/adapters";
 import { getExchangeDisplayName } from "@/lib/constants";
 import { debounce } from "@/lib/debounce";
 import { SymbolSearchResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
-import { useAmountFormatting } from "@wealthfolio/ui";
+import {
+  SheetScreen,
+  SheetScreenTrigger,
+  useAmountFormatting,
+  useInSheetNavigation,
+} from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import {
   Command,
@@ -54,6 +68,8 @@ interface SearchProps {
   hideCustomCreate?: boolean;
   /** Test ID for e2e testing */
   "data-testid"?: string;
+  /** Accessible name for the trigger, e.g. to disambiguate multiple pickers in one form */
+  "aria-label"?: string;
 }
 
 interface SearchResultsProps {
@@ -107,6 +123,13 @@ const SearchResults = memo(
           </CommandPrimitive.Loading>
         ) : null}
 
+        {/* Before a search, say what the empty list is for. */}
+        {!isLoading && !query.trim() && (
+          <div className="text-muted-foreground px-2 py-6 text-center text-sm">
+            {t("ui:search.typeToSearch")}
+          </div>
+        )}
+
         {/* No results message */}
         {showNoResults && (
           <div className="text-muted-foreground px-2 py-3 text-center text-sm">
@@ -127,17 +150,26 @@ const SearchResults = memo(
                 key={itemKey}
                 onSelect={() => onSelect(ticker)}
                 value={itemKey}
-                className="flex items-center justify-between rounded-none py-2"
+                className="flex items-center justify-between gap-3 rounded-none py-2"
               >
-                <div className="flex flex-col">
-                  <span className="font-mono text-xs font-semibold uppercase">{ticker.symbol}</span>
-                  <span className="text-muted-foreground line-clamp-1 text-xs">{displayName}</span>
+                {/* The name gives way to a long exchange; on a phone screen both read larger. */}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-mono text-xs font-semibold uppercase in-[[data-sheet-screen]]:text-base">
+                    {ticker.symbol}
+                  </span>
+                  <span className="text-muted-foreground line-clamp-1 text-xs in-[[data-sheet-screen]]:text-sm">
+                    {displayName}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                   <div className="flex flex-col items-end">
-                    <span className="text-muted-foreground text-xs">{exchangeDisplay}</span>
+                    <span className="text-muted-foreground text-xs in-[[data-sheet-screen]]:text-sm">
+                      {exchangeDisplay}
+                    </span>
                     {ticker.currency && (
-                      <span className="text-muted-foreground text-[10px]">{ticker.currency}</span>
+                      <span className="text-muted-foreground text-2xs in-[[data-sheet-screen]]:text-xs">
+                        {ticker.currency}
+                      </span>
                     )}
                   </div>
                   {isSelected && <Icons.Check className="size-4" />}
@@ -146,8 +178,8 @@ const SearchResults = memo(
             );
           })}
 
-        {/* Create custom asset option - always visible unless hidden */}
-        {!isLoading && !hideCustomCreate && (
+        {/* A custom asset starts with a symbol, rather than an empty placeholder. */}
+        {!isLoading && !hideCustomCreate && !!query.trim() && (
           <>
             {hasResults && <CommandSeparator />}
             <CommandItem
@@ -157,10 +189,10 @@ const SearchResults = memo(
             >
               <Icons.PlusCircle className="text-muted-foreground size-4" />
               <div className="flex flex-col">
-                <span className="font-mono text-xs font-semibold uppercase">
-                  {query.trim().toUpperCase() || "..."}
+                <span className="font-mono text-xs font-semibold uppercase in-[[data-sheet-screen]]:text-base">
+                  {query.trim().toUpperCase()}
                 </span>
-                <span className="text-muted-foreground text-xs">
+                <span className="text-muted-foreground text-xs in-[[data-sheet-screen]]:text-sm">
                   {t("common:component.create_custom_manual")}
                 </span>
               </div>
@@ -224,10 +256,14 @@ const TickerSearchInput = forwardRef<HTMLButtonElement, SearchProps>(
       onClear,
       hideCustomCreate,
       "data-testid": testId,
+      "aria-label": ariaLabel,
     },
     ref,
   ) => {
     const amountFormatting = useAmountFormatting();
+    const isMobile = useIsMobileViewport();
+    const inSheetNavigation = useInSheetNavigation();
+    const fillsSheet = isMobile || inSheetNavigation;
     const { t } = useTranslation();
     const resolvedPlaceholder = placeholder ?? t("common:component.select_symbol");
     const isControlled = openProp !== undefined;
@@ -281,7 +317,8 @@ const TickerSearchInput = forwardRef<HTMLButtonElement, SearchProps>(
     });
     const inputRef = useRef<HTMLInputElement>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
-    const closeFocusIntentRef = useRef<null | "next" | "prev">(null);
+    // Tab in the search field closes the list and moves on from the trigger.
+    const [tabCloseDirection, setTabCloseDirection] = useState<null | "next" | "prev">(null);
     const composedTriggerRef = useComposedRefs(ref, triggerRef);
 
     // Create debounced search function
@@ -354,7 +391,7 @@ const TickerSearchInput = forwardRef<HTMLButtonElement, SearchProps>(
       const next = exchangeDisplay ? `${current} (${exchangeDisplay})` : current;
       setSelected((prev) => (prev === next ? prev : next));
       setSelectedTicker({ symbol: current, name: "", exchangeDisplay: exchangeDisplay || "" });
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+      // oxlint-disable-next-line react/exhaustive-deps
     }, [defaultValue, selectedExchangeMic, selectedResult, value]);
 
     // Handle "Create custom asset" click
@@ -381,7 +418,7 @@ const TickerSearchInput = forwardRef<HTMLButtonElement, SearchProps>(
       if (defaultValue && defaultValue.length > 1) {
         setDebouncedQuery(defaultValue);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+      // oxlint-disable-next-line react/exhaustive-deps
     }, []);
 
     // Use debounced query for API call
@@ -439,19 +476,10 @@ const TickerSearchInput = forwardRef<HTMLButtonElement, SearchProps>(
     );
 
     // Handle focus events
-    const handleOpenAutoFocus = useCallback(
-      (e: Event) => {
-        if (!autoFocusSearch) return;
-        e.preventDefault();
-        inputRef.current?.focus();
-      },
-      [autoFocusSearch],
-    );
-
     const handleInputKeyDown = useCallback(
       (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key !== "Tab") return;
-        closeFocusIntentRef.current = e.shiftKey ? "prev" : "next";
+        setTabCloseDirection(e.shiftKey ? "prev" : "next");
         e.preventDefault();
         if (isControlled) {
           onOpenChange?.(false);
@@ -462,132 +490,194 @@ const TickerSearchInput = forwardRef<HTMLButtonElement, SearchProps>(
       [isControlled, onOpenChange],
     );
 
-    const handleCloseAutoFocus = useCallback((e: Event) => {
-      const intent = closeFocusIntentRef.current;
-      closeFocusIntentRef.current = null;
-      if (!intent) return;
+    const handleOpenChangeComplete = useCallback(
+      (isOpen: boolean) => {
+        if (isOpen || !tabCloseDirection) return;
+        setTabCloseDirection(null);
+        const trigger = triggerRef.current;
+        if (!trigger) return;
+        requestAnimationFrame(() => {
+          focusRelativeTo(trigger, tabCloseDirection);
+        });
+      },
+      [tabCloseDirection],
+    );
 
-      e.preventDefault();
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-      requestAnimationFrame(() => {
-        focusRelativeTo(trigger, intent);
-      });
-    }, []);
+    const triggerContent = (
+      <>
+        {selectedTicker ? (
+          <div className="flex w-full min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              {/* Row 1: Symbol + Name (left) — Clear (right) */}
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="shrink-0 text-sm font-semibold tracking-tight">
+                  {selectedTicker.symbol}
+                </span>
+                {selectedTicker.name && (
+                  <span className="text-muted-foreground truncate text-sm">
+                    {selectedTicker.name}
+                  </span>
+                )}
+              </div>
+              {/* Row 2: Exchange (left) — Price + Currency (right) */}
+              <div className="flex items-center justify-between gap-2 text-xs">
+                {selectedTicker.exchangeDisplay ? (
+                  <span className="text-muted-foreground shrink-0 uppercase">
+                    {selectedTicker.exchangeDisplay}
+                  </span>
+                ) : (
+                  <span />
+                )}
+                <div className="flex shrink-0 items-center gap-1">
+                  {quoteInfo?.isLoading ? (
+                    <Skeleton className="h-3 w-12" />
+                  ) : (
+                    quoteInfo?.price != null && (
+                      <span className="tabular-nums">
+                        {amountFormatting.formatPrice(
+                          quoteInfo.price,
+                          quoteInfo.currency ?? "USD",
+                          false,
+                        )}
+                      </span>
+                    )
+                  )}
+                  {quoteInfo?.currency && !quoteInfo.isLoading && (
+                    <span className="text-muted-foreground font-light">{quoteInfo.currency}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+            {onClear && (
+              <span
+                onMouseDown={handleClearMouseDown}
+                onClick={handleClearClick}
+                className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-0.5"
+              >
+                <Icons.Close className="size-3.5" />
+              </span>
+            )}
+          </div>
+        ) : (
+          <>
+            <span className="text-muted-foreground">{resolvedPlaceholder}</span>
+            <Icons.Search className="ms-2 h-4 w-4 shrink-0 opacity-50" />
+          </>
+        )}
+      </>
+    );
+    const triggerButton = (
+      <Button
+        id={id}
+        variant="field"
+        role="combobox"
+        className={cn(
+          "min-h-input-height h-auto w-full justify-between px-3 py-2",
+          open && "ring-ring ring-2",
+          className,
+        )}
+        ref={composedTriggerRef}
+        aria-expanded={open}
+        aria-haspopup={isMobile ? "dialog" : "listbox"}
+        aria-label={ariaLabel}
+        data-testid={testId}
+      >
+        {triggerContent}
+      </Button>
+    );
+    const commandContent = (
+      <Command
+        shouldFilter={false}
+        className={cn(
+          "border-none",
+          fillsSheet &&
+            "h-auto min-h-0 flex-auto rounded-none bg-transparent [&_[data-slot=command-input-wrapper]]:shrink-0 [&_[data-slot=command-list]]:max-h-none [&_[data-slot=command-list]]:min-h-0 [&_[data-slot=command-list]]:flex-auto",
+        )}
+      >
+        <CommandInput
+          ref={inputRef}
+          autoFocus={autoFocusSearch}
+          value={searchQuery}
+          onValueChange={handleSearchChange}
+          placeholder={t("common:search_symbol")}
+          // In a sheet's screen, Tab stays in the screen: the form behind is inert.
+          onKeyDown={inSheetNavigation ? undefined : handleInputKeyDown}
+        />
+
+        <SearchResults
+          isLoading={isLoading}
+          isError={isError}
+          query={searchQuery}
+          results={sortedTickers}
+          selectedResult={selectedResult}
+          onSelect={handleSelectResult}
+          onCreateCustomAsset={handleCreateCustomAsset}
+          hideCustomCreate={hideCustomCreate}
+        />
+      </Command>
+    );
 
     return (
       <>
-        <Popover open={open} onOpenChange={handleOpenChange}>
-          <PopoverTrigger asChild>
-            <Button
-              id={id}
-              variant="outline"
-              role="combobox"
-              className={cn(
-                "min-h-input-height h-auto w-full justify-between rounded-md px-3 py-2",
-                open && "ring-ring ring-2",
-                className,
-              )}
-              ref={composedTriggerRef}
-              aria-expanded={open}
-              aria-haspopup="listbox"
-              data-testid={testId}
+        {inSheetNavigation ? (
+          // A phone form's sheet shows the search as a screen of that sheet.
+          <>
+            <SheetScreenTrigger
+              render={triggerButton}
+              open={open}
+              onOpenChange={handleOpenChange}
+            />
+            <SheetScreen
+              open={open}
+              onOpenChange={handleOpenChange}
+              title={t("common:component.select_symbol_title")}
+              initialFocus={inputRef}
             >
-              {selectedTicker ? (
-                <div className="flex w-full min-w-0 items-center gap-2">
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    {/* Row 1: Symbol + Name (left) — Clear (right) */}
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="shrink-0 text-sm font-semibold tracking-tight">
-                        {selectedTicker.symbol}
-                      </span>
-                      {selectedTicker.name && (
-                        <span className="text-muted-foreground truncate text-sm">
-                          {selectedTicker.name}
-                        </span>
-                      )}
-                    </div>
-                    {/* Row 2: Exchange (left) — Price + Currency (right) */}
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      {selectedTicker.exchangeDisplay ? (
-                        <span className="text-muted-foreground shrink-0 uppercase">
-                          {selectedTicker.exchangeDisplay}
-                        </span>
-                      ) : (
-                        <span />
-                      )}
-                      <div className="flex shrink-0 items-center gap-1">
-                        {quoteInfo?.isLoading ? (
-                          <Skeleton className="h-3 w-12" />
-                        ) : (
-                          quoteInfo?.price != null && (
-                            <span className="tabular-nums">
-                              {amountFormatting.formatPrice(
-                                quoteInfo.price,
-                                quoteInfo.currency ?? "USD",
-                                false,
-                              )}
-                            </span>
-                          )
-                        )}
-                        {quoteInfo?.currency && !quoteInfo.isLoading && (
-                          <span className="text-muted-foreground font-light">
-                            {quoteInfo.currency}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {onClear && (
-                    <span
-                      onMouseDown={handleClearMouseDown}
-                      onClick={handleClearClick}
-                      className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-0.5"
-                    >
-                      <Icons.Close className="size-3.5" />
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <span className="text-muted-foreground">{resolvedPlaceholder}</span>
-                  <Icons.Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </>
-              )}
-            </Button>
-          </PopoverTrigger>
-
-          <PopoverContent
-            side="bottom"
-            align="start"
-            className="w-(--radix-popover-trigger-width) h-auto min-w-[280px] p-0"
-            onOpenAutoFocus={handleOpenAutoFocus}
-            onCloseAutoFocus={handleCloseAutoFocus}
-            onWheel={(e) => e.stopPropagation()}
+              {commandContent}
+            </SheetScreen>
+          </>
+        ) : isMobile ? (
+          <Sheet
+            open={open}
+            onOpenChange={handleOpenChange}
+            onOpenChangeComplete={handleOpenChangeComplete}
           >
-            <Command shouldFilter={false} className="border-none">
-              <CommandInput
-                ref={inputRef}
-                autoFocus={autoFocusSearch}
-                value={searchQuery}
-                onValueChange={handleSearchChange}
-                placeholder={t("common:search_symbol")}
-                onKeyDown={handleInputKeyDown}
-              />
+            <SheetTrigger render={triggerButton} />
+            <SheetContent
+              side="bottom"
+              className="mx-1 flex flex-col gap-0 overflow-hidden rounded-t-4xl p-0 [--overlay-max-height:85dvh]"
+              initialFocus={inputRef}
+              finalFocus={tabCloseDirection === null}
+            >
+              <SheetHeader className="shrink-0 border-b px-4 py-4 pe-16 text-start">
+                <SheetTitle>{t("common:component.select_symbol_title")}</SheetTitle>
+                <SheetDescription>
+                  {t("common:component.search_symbol_description")}
+                </SheetDescription>
+              </SheetHeader>
+              {commandContent}
+            </SheetContent>
+          </Sheet>
+        ) : (
+          <Popover
+            open={open}
+            onOpenChange={handleOpenChange}
+            onOpenChangeComplete={handleOpenChangeComplete}
+          >
+            <PopoverTrigger render={triggerButton} />
 
-              <SearchResults
-                isLoading={isLoading}
-                isError={isError}
-                query={searchQuery}
-                results={sortedTickers}
-                selectedResult={selectedResult}
-                onSelect={handleSelectResult}
-                onCreateCustomAsset={handleCreateCustomAsset}
-                hideCustomCreate={hideCustomCreate}
-              />
-            </Command>
-          </PopoverContent>
-        </Popover>
+            <PopoverContent
+              side="bottom"
+              align="start"
+              className="h-auto w-(--anchor-width) min-w-70 p-0"
+              initialFocus={autoFocusSearch ? inputRef : undefined}
+              finalFocus={tabCloseDirection === null}
+              onWheel={(e) => e.stopPropagation()}
+            >
+              {commandContent}
+            </PopoverContent>
+          </Popover>
+        )}
 
         {/* Custom Asset Creation Dialog */}
         <CreateCustomAssetDialog

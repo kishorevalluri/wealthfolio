@@ -1,4 +1,15 @@
-import { fireEvent, render, screen, waitFor } from "@/test/render";
+import userEvent from "@testing-library/user-event";
+import { FormattingProvider } from "@wealthfolio/ui";
+import { DirectionProvider } from "@wealthfolio/ui/components/ui/direction";
+import { createInstance, type i18n } from "i18next";
+import { I18nextProvider, initReactI18next } from "react-i18next";
+import enCommon from "@/i18n/locales/en/common.json";
+import enTaxonomies from "@/i18n/locales/en/taxonomies.json";
+import zhCommon from "@/i18n/locales/zh/common.json";
+import zhTaxonomies from "@/i18n/locales/zh/taxonomies.json";
+import enAi from "@/i18n/locales/en/ai.json";
+import zhAi from "@/i18n/locales/zh/ai.json";
+import { act, fireEvent, render, screen, waitFor } from "@/test/render";
 import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpdateToolResultRequest } from "@/adapters/types";
@@ -142,7 +153,12 @@ function ambiguousResult(overrides: Partial<PrepareAssetClassificationOutput> = 
   });
 }
 
-function renderWidget(output: unknown) {
+function renderWidget(
+  output: unknown,
+  i18n?: i18n,
+  locale = "US",
+  direction: "ltr" | "rtl" = "ltr",
+) {
   return render(
     <AssetClassificationToolUIContentImpl
       args={{ assetQuery: "AAPL", taxonomyId: "asset-class", assignments: [] }}
@@ -155,6 +171,15 @@ function renderWidget(output: unknown) {
       addResult={vi.fn()}
       resume={vi.fn()}
     />,
+    {
+      wrapper: ({ children }) => (
+        <DirectionProvider direction={direction}>
+          <FormattingProvider locale={locale}>
+            {i18n ? <I18nextProvider i18n={i18n}>{children}</I18nextProvider> : children}
+          </FormattingProvider>
+        </DirectionProvider>
+      ),
+    },
   );
 }
 
@@ -171,6 +196,22 @@ describe("AssetClassificationToolUIContentImpl", () => {
     taxonomyHookMocks.replaceMutateAsync.mockResolvedValue([
       { id: "assignment-equity", categoryId: "equity", weight: 10000 },
     ]);
+  });
+
+  it("restores the existing proposal when its percent draft is empty", async () => {
+    renderWidget(result());
+    const input = screen.getByRole("textbox", { name: "New Equity percent" });
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(input).toHaveValue("100");
+    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    await waitFor(() =>
+      expect(taxonomyHookMocks.replaceMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assignments: [expect.objectContaining({ categoryId: "equity", weight: 10000 })],
+        }),
+      ),
+    );
   });
 
   it("disables confirm for applied drafts", () => {
@@ -428,3 +469,108 @@ describe("AssetClassificationToolUIContentImpl", () => {
     });
   });
 });
+
+describe("classification display localization", () => {
+  async function setup() {
+    const i18n = createInstance();
+    await i18n.use(initReactI18next).init({
+      lng: "zh",
+      fallbackLng: "en",
+      interpolation: { escapeValue: false },
+      resources: {
+        en: { common: enCommon, taxonomies: enTaxonomies, ai: enAi },
+        zh: { common: zhCommon, taxonomies: zhTaxonomies, ai: zhAi },
+      },
+    });
+    const draft = result({
+      taxonomy: { taxonomyId: "asset_classes", name: "Asset Classes", isSingleSelect: false },
+      currentAssignments: [],
+      proposedAssignments: [
+        {
+          categoryId: "EQUITY",
+          categoryName: "Equity",
+          categoryKey: "equity",
+          weightBasisPoints: 10000,
+          source: "ai",
+        },
+      ],
+    });
+    return { i18n, draft };
+  }
+
+  it("localizes accessible weight labels while preserving edited proposal and mutation data", async () => {
+    vi.clearAllMocks();
+    taxonomyHookMocks.replaceMutateAsync.mockResolvedValue([]);
+    adapterMocks.updateToolResult.mockResolvedValue(undefined);
+    const { i18n, draft } = await setup();
+    const original = structuredClone(draft);
+    renderWidget(draft, i18n);
+    const label = i18n.t("ai:assetClassification.newPercentLabel", { categoryName: "股票" });
+    fireEvent.change(screen.getByRole("textbox", { name: label }), { target: { value: "75" } });
+    await act(() => i18n.changeLanguage("en"));
+    expect(screen.getByRole("textbox", { name: "New Equity percent" })).toHaveValue("75");
+    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    await waitFor(() => expect(taxonomyHookMocks.replaceMutateAsync).toHaveBeenCalled());
+    expect(taxonomyHookMocks.replaceMutateAsync.mock.lastCall?.[0]).toMatchObject({
+      taxonomyId: "asset_classes",
+      assignments: [expect.objectContaining({ categoryId: "EQUITY", weight: 7500 })],
+    });
+    expect(
+      adapterMocks.updateToolResult.mock.lastCall?.[0].resultPatch.proposedAssignments,
+    ).toEqual([
+      expect.objectContaining({
+        categoryName: "Equity",
+        sourceLabel: "Equity",
+        weightBasisPoints: 7500,
+      }),
+    ]);
+    expect(draft).toEqual(original);
+  });
+
+  it("uses translated built-ins in validation errors", async () => {
+    const { i18n, draft } = await setup();
+    draft.proposedAssignments = [
+      { ...draft.proposedAssignments[0], weightBasisPoints: 11000 },
+      { ...draft.proposedAssignments[0], weightBasisPoints: 1000 },
+    ];
+    renderWidget(draft, i18n);
+    expect(
+      screen.getByText(i18n.t("ai:assetClassification.invalidWeight", { categoryName: "股票" })),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t("ai:assetClassification.duplicateCategory", { categoryName: "股票" }),
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+it.each(["ltr", "rtl"] as const)(
+  "persists an in-place Spain classification weight edit in %s",
+  async (direction) => {
+    const output = result();
+    output.proposedAssignments![0].weightBasisPoints = 3330;
+    vi.clearAllMocks();
+    taxonomyHookMocks.replaceMutateAsync.mockResolvedValue([]);
+    adapterMocks.updateToolResult.mockResolvedValue(undefined);
+    const english = createInstance();
+    await english.use(initReactI18next).init({
+      lng: "en",
+      resources: { en: { common: enCommon, taxonomies: enTaxonomies, ai: enAi } },
+    });
+    renderWidget(output, english, "ES", direction);
+    const user = userEvent.setup();
+    const input = screen.getByRole("textbox", { name: "New Equity percent" });
+    await user.click(input);
+    await user.keyboard("{End}{Backspace}5{Tab}");
+    expect(input).toHaveValue("33,35");
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    await waitFor(() =>
+      expect(taxonomyHookMocks.replaceMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assignments: [expect.objectContaining({ categoryId: "equity", weight: 3335 })],
+        }),
+      ),
+    );
+  },
+);

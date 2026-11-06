@@ -68,7 +68,7 @@ describe("asset history marker helpers", () => {
     expect(isAssetMarkerActivity(activity, "BTC-USD")).toBe(true);
     expect(activityMarkerVariant(activity.activityType)).toBe("activity");
     expect(activityMarkerLabel(activity.activityType)).toBe("D");
-    expect(activityMarkerTone(activity.activityType)).toBe("success");
+    expect(activityMarkerTone(activity.activityType)).toBe("info");
   });
 
   it("uses badge tones for other relevant asset activity types", () => {
@@ -76,6 +76,7 @@ describe("asset history marker helpers", () => {
     expect(activityMarkerTone(ActivityType.ADJUSTMENT)).toBe("secondary");
     expect(activityMarkerLabel(ActivityType.TRANSFER_OUT)).toBe("T");
     expect(activityMarkerTone(ActivityType.TRANSFER_OUT)).toBe("destructive");
+    expect(activityMarkerLabel(ActivityType.TAX)).toBe("TX");
   });
 
   it("rejects unrelated and cash-only activities", () => {

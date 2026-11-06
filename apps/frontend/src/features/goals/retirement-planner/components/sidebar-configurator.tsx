@@ -1,3 +1,7 @@
+import { useSettingsContext } from "@/lib/settings-provider";
+import { generateId } from "@/lib/id";
+import { formatZonedDateKey } from "@/features/spending/lib/timezone";
+import { parseLocalDate } from "@/lib/utils";
 import { GoalFundingEditor } from "@/features/goals/components/goal-funding-editor";
 import {
   DEFAULT_RETURN_SLIDER_MAX,
@@ -18,13 +22,13 @@ import {
   CardHeader,
   CardTitle,
   Input,
-  useAmountFormatting,
+  useNumericDraft,
   useNumberFormatting,
 } from "@wealthfolio/ui";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
 import type { TFunction } from "i18next";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_DC_PAYOUT_ESTIMATE_RATE } from "../lib/constants";
 import {
@@ -52,6 +56,7 @@ import type {
   RetirementPlan,
   TaxProfile,
 } from "../types";
+import { usePrivateAmountFormatting } from "../hooks/use-private-amount-formatting";
 
 const DEFAULT_INFLATION_SLIDER_MAX = 0.06;
 const DEFAULT_FEE_SLIDER_MAX = 0.03;
@@ -82,14 +87,16 @@ function InfoLabel({ label, children }: { label: string; children: React.ReactNo
     <span className="inline-flex items-center gap-1">
       <span>{label}</span>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            className="text-muted-foreground/70 hover:text-foreground inline-flex rounded-full transition-colors"
-            aria-label={t("goals:sidebar.more_info_about", { label })}
-          >
-            <Icons.Info className="h-3 w-3" />
-          </button>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className="text-muted-foreground/70 hover:text-foreground inline-flex rounded-full transition-colors"
+              aria-label={t("goals:sidebar.more_info_about", { label })}
+            />
+          }
+        >
+          <Icons.Info className="h-3 w-3" />
         </TooltipTrigger>
         <TooltipContent className="max-w-xs text-xs">{children}</TooltipContent>
       </Tooltip>
@@ -101,7 +108,7 @@ function ConfigRow({ label, children }: { label: React.ReactNode; children: Reac
   return (
     <div className="flex items-center justify-between gap-2 py-2.5 first:pt-1 last:pb-1">
       <span className="text-foreground/85 text-sm">{label}</span>
-      <span className="text-right text-sm font-semibold tabular-nums">{children}</span>
+      <span className="text-end text-sm font-semibold tabular-nums">{children}</span>
     </div>
   );
 }
@@ -118,12 +125,12 @@ function SidebarMonthlyRow({
   amount: number;
   currency: string;
 }) {
-  const formatting = useAmountFormatting();
+  const formatting = usePrivateAmountFormatting();
   const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between gap-3 py-3 first:pt-1 last:pb-1">
       <div className="min-w-0">
-        <div className="text-foreground text-sm font-semibold leading-tight">{label}</div>
+        <div className="text-foreground text-sm leading-tight font-semibold">{label}</div>
         {meta && <div className="text-muted-foreground mt-0.5 text-xs leading-tight">{meta}</div>}
       </div>
       <div className="whitespace-nowrap tabular-nums">
@@ -138,11 +145,11 @@ function SidebarMonthlyRow({
 
 /** Sidebar totals row: uppercase tracked label on the left, amount + /mo on the right. */
 function SidebarTotalRow({ amount, currency }: { amount: number; currency: string }) {
-  const formatting = useAmountFormatting();
+  const formatting = usePrivateAmountFormatting();
   const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between gap-3 py-3">
-      <span className="text-muted-foreground text-xs uppercase tracking-[0.15em]">
+      <span className="text-muted-foreground text-xs tracking-[0.15em] uppercase">
         {t("common:total")}
       </span>
       <div className="whitespace-nowrap tabular-nums">
@@ -256,7 +263,7 @@ function AgeBoundInput({
             setDraftValue(null);
           }
         }}
-        className="bg-muted/70 text-foreground h-8 w-full rounded-md border px-2.5 text-right text-sm tabular-nums outline-none placeholder:text-left placeholder:text-xs"
+        className="bg-muted/70 text-foreground h-8 w-full rounded-md border px-2.5 text-end text-sm tabular-nums outline-none placeholder:text-start placeholder:text-xs"
       />
     </label>
   );
@@ -273,37 +280,27 @@ function PercentOverrideInput({
   max: number;
   onChange: (value: number | undefined) => void;
 }) {
-  const formatDraft = useCallback(
-    (next?: number) => (next === undefined ? "" : (next * 100).toFixed(1)),
-    [],
-  );
-  const [draft, setDraft] = useState<string | null>(null);
-  const displayValue = draft ?? formatDraft(value);
+  const draft = useNumericDraft(value === undefined ? undefined : value * 100, {
+    acceptPercent: true,
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
 
   return (
     <div className="bg-muted/70 flex h-8 w-full items-center gap-1 rounded-md border px-2.5">
       <input
         type="text"
         inputMode="decimal"
-        value={displayValue}
+        {...draft.inputProps}
         placeholder={placeholder}
-        onFocus={() => setDraft(formatDraft(value))}
-        onBlur={() => {
-          setDraft(null);
+        onBlur={draft.reset}
+        onChange={(event) => {
+          const result = draft.setText(event.currentTarget.value);
+          if (result.status === "empty") onChange(undefined);
+          if (result.status === "valid")
+            onChange(Math.min(max * 100, Math.max(0, result.value)) / 100);
         }}
-        onChange={(e) => {
-          const raw = e.target.value.replace(/,/g, "");
-          setDraft(raw);
-          if (!raw.trim()) {
-            onChange(undefined);
-            return;
-          }
-          const parsed = parseFloat(raw);
-          if (!Number.isNaN(parsed)) {
-            onChange(Math.min(max * 100, Math.max(0, parsed)) / 100);
-          }
-        }}
-        className="text-foreground min-w-0 flex-1 bg-transparent text-right text-sm tabular-nums outline-none placeholder:text-left placeholder:text-xs"
+        className="text-foreground min-w-0 flex-1 bg-transparent text-end text-sm tabular-nums outline-none placeholder:text-start placeholder:text-xs"
       />
       <span className="text-muted-foreground text-xs tabular-nums">%</span>
     </div>
@@ -349,7 +346,7 @@ function SidebarCard({
       <CardHeader className="flex-row items-start justify-between pb-4">
         <div className="min-w-0">
           {kicker && (
-            <div className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-[0.15em]">
+            <div className="text-muted-foreground mb-1 text-xs font-medium tracking-[0.15em] uppercase">
               {kicker}
             </div>
           )}
@@ -403,8 +400,17 @@ export function SidebarConfigurator({
   goalId?: string;
   dcLinkedAccountIds?: string[];
 }) {
-  const amountFormatting = useAmountFormatting();
+  const { settings } = useSettingsContext();
+  const todayISO = formatZonedDateKey(new Date(), settings?.timezone);
+  const today = useMemo(() => parseLocalDate(todayISO), [todayISO]);
+  const amountFormatting = usePrivateAmountFormatting();
   const numberFormatting = useNumberFormatting();
+  const formatRate = (value: number, digits = 1) =>
+    numberFormatting.formatDecimal(value * 100, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+      useGrouping: false,
+    });
 
   const { t } = useTranslation();
   const [draft, setDraft] = useState<RetirementPlan>(() => structuredClone(plan));
@@ -414,6 +420,11 @@ export function SidebarConfigurator({
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
   const [expandedIncomeId, setExpandedIncomeId] = useState<string | null>(null);
   const moneyPrefix = amountFormatting.formatCurrencySymbol(currency);
+  // Savings goals plan their own monthly amounts; say so where the retirement
+  // contribution is entered, so the same money isn't counted twice.
+  const goalsMonthly = retirementOverview?.savingsGoalsMonthlyContribution ?? 0;
+  const goalsMonthlyAmount =
+    goalsMonthly > 0 ? amountFormatting.formatAmount(goalsMonthly, currency) : null;
 
   const update = useCallback((updater: (d: RetirementPlan) => RetirementPlan) => {
     setDraft((prev) => updater(prev));
@@ -421,12 +432,12 @@ export function SidebarConfigurator({
   }, []);
 
   const saveDraft = useCallback(() => {
-    onSavePlan?.(normalizeDashboardRetirementPlan(draft), draftMode);
+    onSavePlan?.(normalizeDashboardRetirementPlan(draft, today), draftMode);
     setDirty(false);
     setEditingSection(null);
     setExpandedExpenseId(null);
     setExpandedIncomeId(null);
-  }, [draft, draftMode, onSavePlan]);
+  }, [draft, draftMode, onSavePlan, today]);
 
   const cancelEdit = useCallback(() => {
     setDraft(structuredClone(plan));
@@ -495,7 +506,7 @@ export function SidebarConfigurator({
   };
 
   const addStream = (preset?: Partial<RetirementIncomeStream>) => {
-    const id = crypto.randomUUID?.() ?? `stream-${Date.now()}`;
+    const id = generateId();
     update((d) => ({
       ...d,
       incomeStreams: [
@@ -549,11 +560,11 @@ export function SidebarConfigurator({
     (draft.tax?.taxFreeWithdrawalRate ?? 0) === 0;
 
   const birthYearMonth =
-    draft.personal.birthYearMonth ?? inferBirthYearMonthFromAge(draft.personal.currentAge);
-  const maxBirthYearMonth = inferBirthYearMonthFromAge(0);
+    draft.personal.birthYearMonth ?? inferBirthYearMonthFromAge(draft.personal.currentAge, today);
+  const maxBirthYearMonth = inferBirthYearMonthFromAge(0, today);
   const updateBirthYearMonth = (nextBirthYearMonth: string) => {
     if (!nextBirthYearMonth) return;
-    const nextAge = ageFromBirthYearMonth(nextBirthYearMonth) ?? draft.personal.currentAge;
+    const nextAge = ageFromBirthYearMonth(nextBirthYearMonth, today) ?? draft.personal.currentAge;
     update((d) => {
       const targetRetirementAge = Math.max(nextAge + 1, d.personal.targetRetirementAge);
       const planningHorizonAge = Math.max(targetRetirementAge + 1, d.personal.planningHorizonAge);
@@ -607,7 +618,20 @@ export function SidebarConfigurator({
             >
               {draft.personal.planningHorizonAge}
             </ConfigRow>
-            <ConfigRow label={t("goals:sidebar.plan.monthly_contribution_until_retirement")}>
+            <ConfigRow
+              label={
+                <>
+                  {t("goals:sidebar.plan.monthly_contribution_until_retirement")}
+                  {goalsMonthlyAmount && (
+                    <span className="text-muted-foreground mt-0.5 block text-xs">
+                      {t("goals:sidebar.plan.savings_goals_contribution", {
+                        amount: goalsMonthlyAmount,
+                      })}
+                    </span>
+                  )}
+                </>
+              }
+            >
               {amountFormatting.formatAmount(draft.investment.monthlyContribution, currency)}
             </ConfigRow>
           </div>
@@ -618,7 +642,7 @@ export function SidebarConfigurator({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold">{t("goals:sidebar.plan.plan_type")}</p>
-                  <p className="text-muted-foreground mt-1 max-w-[260px] text-xs leading-snug">
+                  <p className="text-muted-foreground mt-1 max-w-65 text-xs leading-snug">
                     {t("goals:sidebar.plan.plan_type_help")}
                   </p>
                 </div>
@@ -635,7 +659,7 @@ export function SidebarConfigurator({
                 />
               </div>
               {draftMode !== plannerMode && (
-                <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+                <p className="bg-warning-subtle text-warning-subtle-foreground rounded-md px-3 py-2 text-xs leading-relaxed">
                   {t("goals:sidebar.plan.mode_change_prefix")}{" "}
                   {draftMode === "traditional"
                     ? t("goals:sidebar.plan.mode_change_traditional")
@@ -646,20 +670,21 @@ export function SidebarConfigurator({
             <div className="py-4 first:pt-1 last:pb-1">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-foreground text-sm font-semibold leading-tight">
+                  <div className="text-foreground text-sm leading-tight font-semibold">
                     {t("goals:sidebar.plan.birth_month")}
                   </div>
-                  <div className="text-muted-foreground mt-1 max-w-[240px] text-xs leading-tight">
+                  <div className="text-muted-foreground mt-1 max-w-60 text-xs leading-tight">
                     {t("goals:sidebar.plan.birth_month_help")}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <input
                     type="month"
+                    aria-label={t("goals:sidebar.plan.birth_month")}
                     value={birthYearMonth}
                     max={maxBirthYearMonth}
                     onChange={(e) => updateBirthYearMonth(e.target.value)}
-                    className="bg-muted/70 text-foreground h-8 w-36 rounded-md border px-2.5 text-right text-sm tabular-nums outline-none"
+                    className="bg-muted/70 text-foreground h-8 w-36 rounded-md border px-2.5 text-end text-sm tabular-nums outline-none"
                   />
                   <span className="text-muted-foreground text-xs">
                     {t("goals:sidebar.plan.current_age_value", { age: draft.personal.currentAge })}
@@ -718,7 +743,14 @@ export function SidebarConfigurator({
             />
             <LeverRow
               label={t("goals:sidebar.plan.monthly_contribution")}
-              hint={t("goals:sidebar.plan.monthly_contribution_hint")}
+              hint={
+                goalsMonthlyAmount
+                  ? `${t("goals:sidebar.plan.monthly_contribution_hint")} ${t(
+                      "goals:sidebar.plan.savings_goals_contribution_hint",
+                      { amount: goalsMonthlyAmount },
+                    )}`
+                  : t("goals:sidebar.plan.monthly_contribution_hint")
+              }
               kind="money"
               value={draft.investment.monthlyContribution}
               onChange={(v) => setInvestment("monthlyContribution", v)}
@@ -744,7 +776,7 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_RETURN}
               step={0.001}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
               warning={highReturnWarning(draft.investment.preRetirementAnnualReturn, t)}
             />
             <LeverRow
@@ -762,7 +794,7 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_RETURN}
               step={0.001}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
               warning={highReturnWarning(draft.investment.retirementAnnualReturn, t)}
             />
             <LeverRow
@@ -780,7 +812,7 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_FEE}
               step={0.0005}
               suffix="%"
-              format={(v) => (v * 100).toFixed(2)}
+              format={(v) => formatRate(v, 2)}
               warning={highFeeWarning(draft.investment.annualInvestmentFeeRate, t)}
             />
             <LeverRow
@@ -798,7 +830,7 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_INFLATION}
               step={0.001}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
               warning={highInflationWarning(draft.investment.inflationRate, t)}
             />
           </div>
@@ -845,10 +877,7 @@ export function SidebarConfigurator({
                       : t("goals:sidebar.spending.flexible"),
                     it.inflationRate !== undefined
                       ? t("goals:sidebar.spending.inflation_meta", {
-                          pct: numberFormatting.formatDecimal(it.inflationRate * 100, {
-                            minimumFractionDigits: 1,
-                            maximumFractionDigits: 1,
-                          }),
+                          pct: numberFormatting.formatPercent(it.inflationRate, { digits: 1 }),
                         })
                       : undefined,
                   ]
@@ -873,10 +902,7 @@ export function SidebarConfigurator({
                   : t("goals:sidebar.spending.flexible"),
                 item.inflationRate !== undefined
                   ? t("goals:sidebar.spending.inflation_meta", {
-                      pct: numberFormatting.formatDecimal(item.inflationRate * 100, {
-                        minimumFractionDigits: 1,
-                        maximumFractionDigits: 1,
-                      }),
+                      pct: numberFormatting.formatPercent(item.inflationRate, { digits: 1 }),
                     })
                   : undefined,
               ].join(" · ");
@@ -892,7 +918,7 @@ export function SidebarConfigurator({
                     <button
                       type="button"
                       onClick={() => setExpandedExpenseId(expanded ? null : item.id)}
-                      className="hover:bg-muted/30 flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors"
+                      className="hover:bg-muted/30 flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-start transition-colors"
                       aria-expanded={expanded}
                     >
                       <Icons.ChevronDown
@@ -904,7 +930,7 @@ export function SidebarConfigurator({
                         <span className="text-foreground block truncate text-sm font-semibold">
                           {item.label || t("goals:sidebar.spending.default_label")}
                         </span>
-                        <span className="text-muted-foreground mt-0.5 block truncate text-[11px]">
+                        <span className="text-muted-foreground text-2xs mt-0.5 block truncate">
                           {meta}
                         </span>
                       </span>
@@ -918,7 +944,7 @@ export function SidebarConfigurator({
                     <button
                       type="button"
                       onClick={() => removeExpenseItem(item.id)}
-                      className="text-muted-foreground hover:text-foreground disabled:hover:text-muted-foreground mr-2 rounded-md p-1 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                      className="text-muted-foreground hover:text-foreground disabled:hover:text-muted-foreground me-2 rounded-md p-1 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                       aria-label={t("goals:sidebar.spending.remove", {
                         label: item.label || t("goals:sidebar.spending.item_fallback"),
                       })}
@@ -928,7 +954,7 @@ export function SidebarConfigurator({
                   </div>
 
                   {expanded && (
-                    <div className="space-y-4 border-t px-3 pb-3 pt-3">
+                    <div className="space-y-4 border-t px-3 pt-3 pb-3">
                       <Input
                         value={item.label}
                         onChange={(e) => updateExpenseItem(item.id, { label: e.target.value })}
@@ -971,7 +997,7 @@ export function SidebarConfigurator({
                             <div className="text-foreground text-xs font-semibold">
                               {t("goals:sidebar.spending.spending_type")}
                             </div>
-                            <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                            <div className="text-muted-foreground text-2xs mt-0.5 leading-tight">
                               {t("goals:sidebar.spending.spending_type_help")}
                             </div>
                           </div>
@@ -993,7 +1019,7 @@ export function SidebarConfigurator({
                             <div className="text-foreground text-xs font-semibold">
                               {t("goals:sidebar.spending.inflation_override")}
                             </div>
-                            <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                            <div className="text-muted-foreground text-2xs mt-0.5 leading-tight">
                               {t("goals:sidebar.spending.inflation_override_help")}
                             </div>
                           </div>
@@ -1130,10 +1156,7 @@ export function SidebarConfigurator({
               const growthMeta =
                 s.annualGrowthRate !== undefined
                   ? t("goals:sidebar.income.growth_meta", {
-                      pct: numberFormatting.formatDecimal(s.annualGrowthRate * 100, {
-                        minimumFractionDigits: 1,
-                        maximumFractionDigits: 1,
-                      }),
+                      pct: numberFormatting.formatPercent(s.annualGrowthRate, { digits: 1 }),
                     })
                   : s.adjustForInflation
                     ? t("goals:sidebar.income.inflation_indexed")
@@ -1160,7 +1183,7 @@ export function SidebarConfigurator({
                     <button
                       type="button"
                       onClick={() => setExpandedIncomeId(expanded ? null : s.id)}
-                      className="hover:bg-muted/30 flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left transition-colors"
+                      className="hover:bg-muted/30 flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-start transition-colors"
                       aria-expanded={expanded}
                     >
                       <Icons.ChevronDown
@@ -1172,7 +1195,7 @@ export function SidebarConfigurator({
                         <span className="text-foreground block truncate text-sm font-semibold">
                           {s.label || t("goals:sidebar.income.income")}
                         </span>
-                        <span className="text-muted-foreground mt-0.5 block truncate text-[11px]">
+                        <span className="text-muted-foreground text-2xs mt-0.5 block truncate">
                           {meta}
                         </span>
                       </span>
@@ -1186,7 +1209,7 @@ export function SidebarConfigurator({
                     <button
                       type="button"
                       onClick={() => removeStream(s.id)}
-                      className="text-muted-foreground hover:text-foreground mr-2 rounded-md p-1 transition-colors"
+                      className="text-muted-foreground hover:text-foreground me-2 rounded-md p-1 transition-colors"
                       aria-label={t("goals:sidebar.income.remove", {
                         label: s.label || t("goals:sidebar.income.item_fallback"),
                       })}
@@ -1196,7 +1219,7 @@ export function SidebarConfigurator({
                   </div>
 
                   {expanded && (
-                    <div className="space-y-4 border-t px-3 pb-3 pt-3">
+                    <div className="space-y-4 border-t px-3 pt-3 pb-3">
                       <Input
                         value={s.label}
                         onChange={(e) => updateStream(s.id, { label: e.target.value })}
@@ -1208,7 +1231,7 @@ export function SidebarConfigurator({
                           <div className="text-foreground text-xs font-semibold">
                             {t("goals:sidebar.income.income_type")}
                           </div>
-                          <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                          <div className="text-muted-foreground text-2xs mt-0.5 leading-tight">
                             {t("goals:sidebar.income.income_type_help")}
                           </div>
                         </div>
@@ -1274,6 +1297,7 @@ export function SidebarConfigurator({
                             />
                             <LeverRow
                               label={t("goals:sidebar.income.fund_return_before_payout")}
+                              hint={t("goals:sidebar.income.fund_return_hint")}
                               value={s.accumulationReturn ?? planAccumulationReturn(draft)}
                               onChange={(v) => updateStream(s.id, { accumulationReturn: v })}
                               min={MIN_RETIREMENT_RETURN}
@@ -1286,7 +1310,7 @@ export function SidebarConfigurator({
                               inputMax={MAX_RETIREMENT_RETURN}
                               step={0.001}
                               suffix="%"
-                              format={(v) => (v * 100).toFixed(1)}
+                              format={formatRate}
                               warning={highReturnWarning(
                                 s.accumulationReturn ?? planAccumulationReturn(draft),
                                 t,
@@ -1306,14 +1330,14 @@ export function SidebarConfigurator({
                               inputMax={MAX_RETIREMENT_DC_PAYOUT_RATE}
                               step={0.001}
                               suffix="%"
-                              format={(v) => (v * 100).toFixed(1)}
+                              format={formatRate}
                             />
                             <div className="grid gap-2 px-1 py-3 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-3">
                               <div className="min-w-0">
                                 <div className="text-foreground text-xs font-semibold">
                                   {t("goals:sidebar.income.fund_payout_mode")}
                                 </div>
-                                <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                                <div className="text-muted-foreground text-2xs mt-0.5 leading-tight">
                                   {t("goals:sidebar.income.fund_payout_mode_help")}
                                 </div>
                               </div>
@@ -1331,6 +1355,7 @@ export function SidebarConfigurator({
                             {s.payoutMode === "drawdown" && (
                               <LeverRow
                                 label={t("goals:sidebar.income.fund_return_during_payout")}
+                                hint={t("goals:sidebar.income.fund_return_hint")}
                                 value={payoutPhaseReturn(s, draft)}
                                 onChange={(v) => updateStream(s.id, { postPayoutReturn: v })}
                                 min={MIN_RETIREMENT_RETURN}
@@ -1343,7 +1368,7 @@ export function SidebarConfigurator({
                                 inputMax={MAX_RETIREMENT_RETURN}
                                 step={0.001}
                                 suffix="%"
-                                format={(v) => (v * 100).toFixed(1)}
+                                format={formatRate}
                                 warning={highReturnWarning(payoutPhaseReturn(s, draft), t)}
                               />
                             )}
@@ -1361,15 +1386,15 @@ export function SidebarConfigurator({
                                 format={(v) => String(Math.round(v))}
                               />
                             )}
-                            <p className="text-muted-foreground px-1 text-[11px] leading-relaxed">
+                            <p className="text-muted-foreground text-2xs px-1 leading-relaxed">
                               {t(
                                 s.payoutMode === "drawdown"
                                   ? "goals:sidebar.income.drawdown_note"
                                   : "goals:sidebar.income.payout_estimate_note",
                                 {
-                                  pct: numberFormatting.formatDecimal(
-                                    (s.payoutRate ?? DEFAULT_DC_PAYOUT_ESTIMATE_RATE) * 100,
-                                    { minimumFractionDigits: 1, maximumFractionDigits: 1 },
+                                  pct: numberFormatting.formatPercent(
+                                    s.payoutRate ?? DEFAULT_DC_PAYOUT_ESTIMATE_RATE,
+                                    { digits: 1 },
                                   ),
                                 },
                               )}
@@ -1392,7 +1417,7 @@ export function SidebarConfigurator({
                             <div className="text-foreground text-xs font-semibold">
                               {t("goals:sidebar.income.income_growth")}
                             </div>
-                            <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                            <div className="text-muted-foreground text-2xs mt-0.5 leading-tight">
                               {t("goals:sidebar.income.income_growth_help")}
                             </div>
                           </div>
@@ -1417,7 +1442,7 @@ export function SidebarConfigurator({
                             <div className="text-foreground text-xs font-semibold">
                               {t("goals:sidebar.income.custom_annual_growth")}
                             </div>
-                            <div className="text-muted-foreground mt-0.5 text-[11px] leading-tight">
+                            <div className="text-muted-foreground text-2xs mt-0.5 leading-tight">
                               {t("goals:sidebar.income.custom_annual_growth_help")}
                             </div>
                           </div>
@@ -1518,6 +1543,7 @@ export function SidebarConfigurator({
           <div className="divide-border -my-1 divide-y">
             <LeverRow
               label={t("goals:sidebar.assumptions.return_before_retirement")}
+              hint={t("goals:sidebar.plan.return_before_hint")}
               value={draft.investment.preRetirementAnnualReturn}
               onChange={(v) => setInvestment("preRetirementAnnualReturn", v)}
               min={0}
@@ -1530,11 +1556,12 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_RETURN}
               step={0.001}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
               warning={highReturnWarning(draft.investment.preRetirementAnnualReturn, t)}
             />
             <LeverRow
               label={t("goals:sidebar.assumptions.return_during_retirement")}
+              hint={t("goals:sidebar.plan.return_during_hint")}
               value={draft.investment.retirementAnnualReturn}
               onChange={(v) => setInvestment("retirementAnnualReturn", v)}
               min={0}
@@ -1547,7 +1574,7 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_RETURN}
               step={0.001}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
               warning={highReturnWarning(draft.investment.retirementAnnualReturn, t)}
             />
             <LeverRow
@@ -1564,7 +1591,7 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_FEE}
               step={0.0005}
               suffix="%"
-              format={(v) => (v * 100).toFixed(2)}
+              format={(v) => formatRate(v, 2)}
               warning={highFeeWarning(draft.investment.annualInvestmentFeeRate, t)}
             />
             <LeverRow
@@ -1585,7 +1612,7 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_VOLATILITY}
               step={0.005}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
               warning={highVolatilityWarning(draft.investment.annualVolatility, t)}
             />
             <LeverRow
@@ -1602,7 +1629,7 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_INFLATION}
               step={0.001}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
               warning={highInflationWarning(draft.investment.inflationRate, t)}
             />
             <LeverRow
@@ -1619,7 +1646,7 @@ export function SidebarConfigurator({
               inputMax={MAX_RETIREMENT_CONTRIBUTION_GROWTH}
               step={0.001}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
               warning={highContributionGrowthWarning(draft.investment.contributionGrowthRate, t)}
             />
           </div>
@@ -1700,17 +1727,19 @@ export function SidebarConfigurator({
 
             {taxBucketBalances && taxBucketTotal > 0 && (
               <div className="border-t pt-3">
-                <p className="text-muted-foreground mb-1.5 flex items-center gap-1 text-[10px] uppercase tracking-wider">
+                <p className="text-muted-foreground text-2xs mb-1.5 flex items-center gap-1 tracking-wider uppercase">
                   {t("goals:sidebar.taxes.account_buckets")}
                   <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="text-muted-foreground/70 hover:text-foreground rounded-full transition-colors"
-                        aria-label={t("goals:sidebar.taxes.account_buckets_aria")}
-                      >
-                        <Icons.Info className="h-3 w-3" />
-                      </button>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          className="text-muted-foreground/70 hover:text-foreground rounded-full transition-colors"
+                          aria-label={t("goals:sidebar.taxes.account_buckets_aria")}
+                        />
+                      }
+                    >
+                      <Icons.Info className="h-3 w-3" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs text-xs">
                       {t("goals:sidebar.taxes.account_buckets_tip")}
@@ -1726,7 +1755,7 @@ export function SidebarConfigurator({
                     }
                   >
                     {amountFormatting.formatAmount(taxBucketBalances.taxable, currency)}{" "}
-                    <span className="text-muted-foreground ml-1 font-normal">
+                    <span className="text-muted-foreground ms-1 font-normal">
                       {pctOfTotal(taxBucketBalances.taxable, taxBucketTotal, numberFormatting)}
                     </span>
                   </ConfigRow>
@@ -1738,7 +1767,7 @@ export function SidebarConfigurator({
                     }
                   >
                     {amountFormatting.formatAmount(taxBucketBalances.taxDeferred, currency)}{" "}
-                    <span className="text-muted-foreground ml-1 font-normal">
+                    <span className="text-muted-foreground ms-1 font-normal">
                       {pctOfTotal(taxBucketBalances.taxDeferred, taxBucketTotal, numberFormatting)}
                     </span>
                   </ConfigRow>
@@ -1750,7 +1779,7 @@ export function SidebarConfigurator({
                     }
                   >
                     {amountFormatting.formatAmount(taxBucketBalances.taxFree, currency)}{" "}
-                    <span className="text-muted-foreground ml-1 font-normal">
+                    <span className="text-muted-foreground ms-1 font-normal">
                       {pctOfTotal(taxBucketBalances.taxFree, taxBucketTotal, numberFormatting)}
                     </span>
                   </ConfigRow>
@@ -1759,7 +1788,7 @@ export function SidebarConfigurator({
             )}
 
             {allTaxRatesZero && taxBucketTotal > 0 && (
-              <p className="text-muted-foreground text-[10px]">
+              <p className="text-muted-foreground text-2xs">
                 {t("goals:sidebar.taxes.zero_rates_note")}
               </p>
             )}
@@ -1779,7 +1808,7 @@ export function SidebarConfigurator({
               max={0.6}
               step={0.005}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
             />
             <LeverRow
               label={
@@ -1793,7 +1822,7 @@ export function SidebarConfigurator({
               max={0.6}
               step={0.005}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
             />
             <LeverRow
               label={
@@ -1807,7 +1836,7 @@ export function SidebarConfigurator({
               max={0.3}
               step={0.005}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
             />
             <LeverRow
               label={
@@ -1822,7 +1851,7 @@ export function SidebarConfigurator({
               max={0.3}
               step={0.005}
               suffix="%"
-              format={(v) => (v * 100).toFixed(1)}
+              format={formatRate}
             />
             <LeverRow
               label={

@@ -20,16 +20,21 @@ use crate::request_metadata::{
 };
 use wealthfolio_core::errors::{Error, Result};
 
-use super::broker::{BrokerApiClient, BrokerTrackingMode};
+use super::broker::{BrokerAccountContext, BrokerApiClient, BrokerTrackingMode};
 
 /// Default timeout for API requests.
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
 const TRACKING_MODE_HEADER_NAME: HeaderName =
     HeaderName::from_static("x-wealthfolio-tracking-mode");
+const ACCOUNT_TYPE_HEADER_NAME: HeaderName = HeaderName::from_static("x-wealthfolio-account-type");
+const ACCOUNT_RAW_TYPE_HEADER_NAME: HeaderName =
+    HeaderName::from_static("x-wealthfolio-account-raw-type");
 
 /// Default base URL for Wealthfolio Connect cloud service.
-pub const DEFAULT_CLOUD_API_URL: &str = "https://api.wealthfolio.app";
+pub fn default_cloud_api_url() -> &'static str {
+    &wealthfolio_core::connect_config::connect_defaults().api_url
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API Response Types (internal, for parsing cloud API responses)
@@ -147,10 +152,6 @@ pub struct ConnectApiClient {
     auth_header: HeaderValue,
 }
 
-fn subscription_allows_sync(status: Option<&str>) -> bool {
-    matches!(status, Some("active" | "trialing" | "past_due"))
-}
-
 impl ConnectApiClient {
     /// Create a new Connect API client.
     ///
@@ -195,18 +196,36 @@ impl ConnectApiClient {
         &self,
         client_request_id: &str,
         tracking_mode: BrokerTrackingMode,
+        account_context: Option<&BrokerAccountContext>,
     ) -> Result<HeaderMap> {
         let mut headers = self.headers(client_request_id)?;
         headers.insert(
             TRACKING_MODE_HEADER_NAME,
             HeaderValue::from_static(tracking_mode.as_header_value()),
         );
+        if let Some(context) = account_context {
+            for (name, value) in [
+                (ACCOUNT_TYPE_HEADER_NAME, context.account_type.as_deref()),
+                (ACCOUNT_RAW_TYPE_HEADER_NAME, context.raw_type.as_deref()),
+            ] {
+                if let Some(value) = value
+                    .filter(|value| !value.bytes().any(|byte| byte.is_ascii_control()))
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty() && value.len() <= 64 && value.is_ascii())
+                {
+                    // Malformed optional metadata must never stop a brokerage sync.
+                    if let Ok(value) = HeaderValue::from_str(value) {
+                        headers.insert(name, value);
+                    }
+                }
+            }
+        }
         Ok(headers)
     }
 
     /// Make a GET request and parse the response.
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        self.get_with_tracking_mode(path, None).await
+        self.get_with_tracking_mode(path, None, None).await
     }
 
     /// Make an account-scoped GET request with the account's configured tracking mode.
@@ -215,19 +234,21 @@ impl ConnectApiClient {
         path: &str,
         tracking_mode: BrokerTrackingMode,
     ) -> Result<T> {
-        self.get_with_tracking_mode(path, Some(tracking_mode)).await
+        self.get_with_tracking_mode(path, Some(tracking_mode), None)
+            .await
     }
 
     async fn get_with_tracking_mode<T: DeserializeOwned>(
         &self,
         path: &str,
         tracking_mode: Option<BrokerTrackingMode>,
+        account_context: Option<&BrokerAccountContext>,
     ) -> Result<T> {
         let context = CloudRequestContext::new("GET", path, None);
         let url = format!("{}{}", self.base_url, path);
         let headers = match tracking_mode {
             Some(tracking_mode) => {
-                self.account_headers(&context.client_request_id, tracking_mode)?
+                self.account_headers(&context.client_request_id, tracking_mode, account_context)?
             }
             None => self.headers(&context.client_request_id)?,
         };
@@ -269,6 +290,10 @@ impl ConnectApiClient {
                     .message
                     .or(err.error)
                     .unwrap_or_else(|| format!("HTTP {}", status));
+                let msg = match err.code {
+                    Some(code) => format!("{code}: {msg}"),
+                    None => msg,
+                };
                 return Err(Error::Unexpected(format!(
                     "API error {}: {} ({})",
                     status.as_u16(),
@@ -319,10 +344,12 @@ impl ConnectApiClient {
     /// * `end_date` - Optional end date filter (YYYY-MM-DD)
     /// * `offset` - Pagination offset
     /// * `limit` - Maximum number of results per page
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_account_activities(
         &self,
         account_id: &str,
         tracking_mode: BrokerTrackingMode,
+        account_context: &BrokerAccountContext,
         start_date: Option<&str>,
         end_date: Option<&str>,
         offset: Option<i64>,
@@ -350,7 +377,8 @@ impl ConnectApiClient {
 
         debug!("[ConnectApi] Fetching activities from: {}", path);
 
-        self.get_account_scoped(&path, tracking_mode).await
+        self.get_with_tracking_mode(&path, Some(tracking_mode), Some(account_context))
+            .await
     }
 
     /// Fetch current holdings for a broker account.
@@ -412,52 +440,6 @@ impl ConnectApiClient {
     /// Get available subscription plans (authenticated).
     pub async fn get_subscription_plans(&self) -> Result<PlansResponse> {
         self.get("/api/v1/subscription/plans").await
-    }
-
-    /// Every paid plan includes device sync. Unknown/inactive subscriptions deny access.
-    pub async fn has_device_sync(&self) -> Result<bool> {
-        let info = self.get_user_info().await?;
-        Ok(info
-            .team
-            .as_ref()
-            .is_some_and(|team| subscription_allows_sync(team.subscription_status.as_deref())))
-    }
-
-    /// Check if the current user's plan includes broker sync.
-    ///
-    /// Returns true when the user has an active subscription AND their plan
-    /// is not "basic" (basic plan only includes device sync).
-    pub async fn has_broker_sync(&self) -> Result<bool> {
-        let user_info = self.get_user_info().await?;
-
-        let team = match &user_info.team {
-            Some(t) => t,
-            None => {
-                debug!("[ConnectApi] No team info, broker sync not available");
-                return Ok(false);
-            }
-        };
-
-        let is_active = subscription_allows_sync(team.subscription_status.as_deref());
-        if !is_active {
-            debug!("[ConnectApi] No active subscription, broker sync not available");
-            return Ok(false);
-        }
-
-        let plan = match team.plan.as_deref() {
-            Some(p) => p,
-            None => {
-                debug!("[ConnectApi] No plan metadata, broker sync not available");
-                return Ok(false);
-            }
-        };
-        if plan == "basic" {
-            debug!("[ConnectApi] Basic plan, broker sync not available");
-            return Ok(false);
-        }
-
-        debug!("[ConnectApi] Broker sync is available");
-        Ok(true)
     }
 }
 
@@ -541,6 +523,7 @@ impl BrokerApiClient for ConnectApiClient {
         &self,
         account_id: &str,
         tracking_mode: BrokerTrackingMode,
+        context: &BrokerAccountContext,
         start_date: Option<&str>,
         end_date: Option<&str>,
         offset: Option<i64>,
@@ -551,6 +534,7 @@ impl BrokerApiClient for ConnectApiClient {
             self,
             account_id,
             tracking_mode,
+            context,
             start_date,
             end_date,
             offset,
@@ -719,6 +703,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn profile_edge_rate_limits_keep_the_status_marker() {
+        for body in [
+            r#"{"error":"rate_limited","message":"Please try again in 60 seconds."}"#,
+            "<html><body>Too many requests</body></html>",
+        ] {
+            let (base_url, _, handle) = start_one_request_server(429, body, None);
+            let client = ConnectApiClient::new(&base_url, "test-token").unwrap();
+            let error = client.get_user_info().await.unwrap_err();
+            assert!(error.to_string().contains("API error 429"));
+            handle.join().expect("server thread");
+        }
+    }
+
+    #[tokio::test]
     async fn account_scoped_requests_send_configured_tracking_mode() {
         for (tracking_mode, expected) in [
             (BrokerTrackingMode::Holdings, "holdings"),
@@ -729,7 +727,15 @@ mod tests {
             let client = ConnectApiClient::new(&base_url, "test-token").unwrap();
 
             client
-                .get_account_activities("broker-account", tracking_mode, None, None, None, None)
+                .get_account_activities(
+                    "broker-account",
+                    tracking_mode,
+                    &BrokerAccountContext::default(),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -762,6 +768,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn activity_request_sends_account_context_without_changing_tracking_mode() {
+        let (base_url, captured, handle) =
+            start_one_request_server(200, r#"{"data":[],"pagination":{}}"#, None);
+        let client = ConnectApiClient::new(&base_url, "test-token").unwrap();
+        client
+            .get_account_activities(
+                "broker-account",
+                BrokerTrackingMode::Transactions,
+                &BrokerAccountContext {
+                    account_type: Some("SECURITIES".into()),
+                    raw_type: Some("TFSA".into()),
+                },
+                None,
+                None,
+                Some(500),
+                Some(500),
+            )
+            .await
+            .unwrap();
+        let headers = captured.lock().unwrap().clone().expect("captured request");
+        assert_eq!(
+            headers
+                .get(ACCOUNT_TYPE_HEADER_NAME.as_str())
+                .map(String::as_str),
+            Some("SECURITIES")
+        );
+        assert_eq!(
+            headers
+                .get(ACCOUNT_RAW_TYPE_HEADER_NAME.as_str())
+                .map(String::as_str),
+            Some("TFSA")
+        );
+        assert_eq!(
+            headers
+                .get(TRACKING_MODE_HEADER_NAME.as_str())
+                .map(String::as_str),
+            Some("transactions")
+        );
+        handle.join().expect("server thread");
+    }
+
+    #[test]
+    fn optional_account_context_never_breaks_request_headers() {
+        let client = ConnectApiClient::new("https://api.wealthfolio.app", "test-token").unwrap();
+        for raw_type in ["", "\r\ninjected: value", "épargne", &"X".repeat(65)] {
+            let headers = client
+                .account_headers(
+                    "app:request",
+                    BrokerTrackingMode::Holdings,
+                    Some(&BrokerAccountContext {
+                        account_type: None,
+                        raw_type: Some(raw_type.into()),
+                    }),
+                )
+                .unwrap();
+            assert!(!headers.contains_key(ACCOUNT_RAW_TYPE_HEADER_NAME));
+            assert_eq!(headers.get(TRACKING_MODE_HEADER_NAME).unwrap(), "holdings");
+        }
+        let headers = client
+            .account_headers("app:request", BrokerTrackingMode::Holdings, None)
+            .unwrap();
+        assert!(!headers.contains_key(ACCOUNT_TYPE_HEADER_NAME));
+        assert!(!headers.contains_key(ACCOUNT_RAW_TYPE_HEADER_NAME));
+    }
+
+    #[tokio::test]
     async fn failed_request_error_includes_client_and_server_request_ids() {
         let (base_url, captured, handle) = start_one_request_server(
             500,
@@ -786,59 +858,18 @@ mod tests {
         handle.join().expect("server thread");
     }
 
-    #[test]
-    fn subscription_status_gates_sync_without_affecting_authentication() {
-        for status in ["active", "trialing", "past_due"] {
-            assert!(subscription_allows_sync(Some(status)));
-        }
-        for status in [
-            None,
-            Some("canceled"),
-            Some("unpaid"),
-            Some("incomplete"),
-            Some("incomplete_expired"),
-            Some("paused"),
-            Some("unknown"),
-        ] {
-            assert!(!subscription_allows_sync(status));
-        }
-    }
-
     #[tokio::test]
-    async fn device_sync_requires_subscription_but_accepts_basic_plan() {
-        for (body, allowed) in [
-            (r#"{"id":"user-1","team":null}"#, false),
-            (
-                r#"{"id":"user-1","team":{"id":"team-1","plan":"basic","subscriptionStatus":null}}"#,
-                false,
-            ),
-            (
-                r#"{"id":"user-1","team":{"id":"team-1","plan":"basic","subscriptionStatus":"canceled"}}"#,
-                false,
-            ),
-            (
-                r#"{"id":"user-1","team":{"id":"team-1","plan":"basic","subscriptionStatus":"active"}}"#,
-                true,
-            ),
-        ] {
-            let (base_url, _captured, handle) = start_one_request_server(200, body, None);
-            let client = ConnectApiClient::new(&base_url, "test-token").unwrap();
-            assert_eq!(client.has_device_sync().await.unwrap(), allowed);
-            handle.join().unwrap();
-        }
-    }
-
-    #[tokio::test]
-    async fn broker_sync_allows_past_due_grace_period() {
-        let (base_url, _captured, handle) = start_one_request_server(
-            200,
-            r#"{"id":"user-1","team":{"id":"team-1","plan":"essentials","subscriptionStatus":"past_due"}}"#,
+    async fn protected_request_preserves_subscription_error_code() {
+        let (base_url, _, handle) = start_one_request_server(
+            403,
+            r#"{"code":"SUBSCRIPTION_CANCELED","message":"Subscription required"}"#,
             None,
         );
         let client = ConnectApiClient::new(&base_url, "test-token").unwrap();
-
-        assert!(client.has_broker_sync().await.unwrap());
-        handle.join().expect("server thread");
+        let error = client.list_connections().await.unwrap_err().to_string();
+        assert!(error.contains("API error 403: SUBSCRIPTION_CANCELED:"));
+        assert!(crate::is_subscription_denial(&error));
+        handle.join().unwrap();
     }
 
     fn start_one_request_server(

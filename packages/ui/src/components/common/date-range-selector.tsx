@@ -22,70 +22,86 @@ const ranges = [
   {
     label: "1D",
     name: "Last Day",
-    getValue: () => ({ from: subDays(new Date(), 1), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: subDays(asOf, 1), to: asOf }),
   },
   {
     label: "1W",
     name: "Last Week",
-    getValue: () => ({ from: subDays(new Date(), 7), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: subDays(asOf, 7), to: asOf }),
   },
   {
     label: "1M",
     name: "Last Month",
-    getValue: () => ({ from: subMonths(new Date(), 1), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: subMonths(asOf, 1), to: asOf }),
   },
   {
     label: "3M",
     name: "Last 3 Months",
-    getValue: () => ({ from: subMonths(new Date(), 3), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: subMonths(asOf, 3), to: asOf }),
   },
   {
     label: "6M",
     name: "Last 6 Months",
-    getValue: () => ({ from: subMonths(new Date(), 6), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: subMonths(asOf, 6), to: asOf }),
   },
   {
     label: "YTD",
     name: "Year to Date",
-    getValue: () => ({ from: startOfYear(new Date()), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: startOfYear(asOf), to: asOf }),
   },
   {
     label: "1Y",
     name: "Last Year",
-    getValue: () => ({ from: subYears(new Date(), 1), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: subYears(asOf, 1), to: asOf }),
   },
   {
     label: "3Y",
     name: "Last 3 Years",
-    getValue: () => ({ from: subYears(new Date(), 3), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: subYears(asOf, 3), to: asOf }),
   },
   {
     label: "5Y",
     name: "Last 5 Years",
-    getValue: () => ({ from: subYears(new Date(), 5), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: subYears(asOf, 5), to: asOf }),
   },
   {
     label: "ALL",
     name: "All Time",
-    getValue: () => ({ from: new Date(1970, 0, 1), to: new Date() }),
+    getValue: (asOf: Date) => ({ from: new Date(1970, 0, 1), to: asOf }),
   },
 ] as const;
 
 type DateRangePresetLabel = (typeof ranges)[number]["label"];
 
 interface DateRangeSelectorProps {
+  /** Calendar date used to anchor relative presets. */
+  asOf?: Date;
   value: DateRange | undefined;
   onChange: (range: DateRange | undefined) => void;
   hiddenRanges?: readonly DateRangePresetLabel[];
+  /**
+   * Earliest date represented by the ALL preset (e.g. the selected account's
+   * first data point). Only affects what the calendar displays and anchors to;
+   * the stored ALL value keeps its sentinel start so consumers can still
+   * detect all-time ranges.
+   */
+  allTimeFrom?: Date;
 }
 
-export function DateRangeSelector({ value, onChange, hiddenRanges = [] }: DateRangeSelectorProps) {
+export function DateRangeSelector({
+  value,
+  onChange,
+  hiddenRanges = [],
+  asOf = new Date(),
+  allTimeFrom,
+}: DateRangeSelectorProps) {
   const { t } = useTranslation();
   const formatting = useDateFormatting();
   const isMobile = useIsMobile();
   const [isCustomPickerOpen, setIsCustomPickerOpen] = React.useState(false);
   const [draftRange, setDraftRange] = React.useState<DateRange | undefined>(value);
   const visibleRanges = ranges.filter((range) => !hiddenRanges.includes(range.label));
+  const allTimeRange = visibleRanges.find((range) => range.label === "ALL")?.getValue(asOf);
 
   // Helper function to compare dates ignoring time
   const compareDates = (date1: Date | undefined, date2: Date | undefined) => {
@@ -93,14 +109,28 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [] }: DateRa
     return isSameDay(date1, date2);
   };
 
+  const isAllTimeRange = (range: DateRange | undefined) => {
+    if (!allTimeRange) return false;
+    if (!range) return true;
+    const from = range.from;
+    // Match the local and ISO/UTC sentinel constructors used by callers.
+    return (
+      !!from &&
+      (compareDates(from, allTimeRange.from) ||
+        (from.getUTCFullYear() === allTimeRange.from.getFullYear() &&
+          from.getUTCMonth() === allTimeRange.from.getMonth() &&
+          from.getUTCDate() === allTimeRange.from.getDate()))
+    );
+  };
+
   // Check if current range matches any predefined range and get the selected label
   const getSelectedRange = () => {
-    if (!value && visibleRanges.some((range) => range.label === "ALL")) {
+    if (isAllTimeRange(value)) {
       return "ALL";
     }
 
     const selected = visibleRanges.find((range) => {
-      const predefinedRange = range.getValue();
+      const predefinedRange = range.getValue(asOf);
       return compareDates(value?.from, predefinedRange.from) && compareDates(value?.to, predefinedRange.to);
     });
     return selected?.label;
@@ -109,7 +139,12 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [] }: DateRa
   const selectedLabel = getSelectedRange();
   const isCustomRange = !selectedLabel;
   const isDraftRangeComplete = !draftRange || (!!draftRange.from && !!draftRange.to);
-  const allTimeRange = visibleRanges.find((range) => range.label === "ALL")?.getValue();
+  // Keep the sentinel in selections and drafts. Only the calendar and its date
+  // labels use the loaded start; without history, open at asOf instead of 1970.
+  const displayRange = (range: DateRange | undefined) =>
+    isAllTimeRange(range) ? { from: allTimeFrom, to: asOf } : range;
+  const calendarRange = displayRange(value);
+  const draftCalendarRange = displayRange(draftRange);
   const appliedDraftRange = draftRange ?? allTimeRange;
 
   const handleCustomPickerOpenChange = (open: boolean) => {
@@ -149,31 +184,34 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [] }: DateRa
   );
 
   return (
-    <div className="flex items-center space-x-1">
+    // data-no-swipe-drag: on a swipe page, a sideways drag scrolls the presets instead of
+    // switching the page's view.
+    <div className="flex items-center space-x-1" data-no-swipe-drag>
       <AnimatedToggleGroup
         items={visibleRanges.map((range) => ({
           value: range.label,
           label: range.label,
           title: t("ui:dateRange.presets." + range.label, range.name),
         }))}
-        value={selectedLabel}
+        // Null keeps the group controlled, so a custom range highlights no preset.
+        value={selectedLabel ?? null}
         onValueChange={(newValue) => {
           if (!newValue) {
             return;
           }
           const selectedRange = visibleRanges.find((r) => r.label === newValue);
           if (selectedRange) {
-            onChange(selectedRange.getValue());
+            onChange(selectedRange.getValue(asOf));
           }
         }}
-        size="sm"
+        size={isMobile ? "compact" : "sm"}
         variant="secondary"
       />
 
       {isMobile ? (
         <Sheet open={isCustomPickerOpen} onOpenChange={handleCustomPickerOpenChange}>
-          <SheetTrigger asChild>{triggerButton}</SheetTrigger>
-          <SheetContent side="bottom" className="rounded-t-4xl mx-1 flex max-h-[85vh] flex-col p-0">
+          <SheetTrigger render={triggerButton} />
+          <SheetContent side="bottom" className="mx-1 flex flex-col rounded-t-4xl p-0 [--overlay-max-height:85vh]">
             <SheetHeader className="border-border border-b px-6 py-4">
               <SheetTitle>{t("ui:dateRange.customRange", "Custom range")}</SheetTitle>
             </SheetHeader>
@@ -183,22 +221,25 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [] }: DateRa
                 <div className="border-border/70 bg-muted/30 rounded-lg border px-3 py-2">
                   <div className="text-muted-foreground text-xs font-medium">{t("ui:dateRange.start", "Start")}</div>
                   <div className="text-foreground mt-1 truncate text-sm font-medium">
-                    {formatRangeDate(draftRange?.from)}
+                    {formatRangeDate(draftCalendarRange?.from)}
                   </div>
                 </div>
                 <div className="border-border/70 bg-muted/30 rounded-lg border px-3 py-2">
                   <div className="text-muted-foreground text-xs font-medium">{t("ui:dateRange.end", "End")}</div>
                   <div className="text-foreground mt-1 truncate text-sm font-medium">
-                    {formatRangeDate(draftRange?.to)}
+                    {formatRangeDate(draftCalendarRange?.to)}
                   </div>
                 </div>
               </div>
 
               <div className="mt-5 flex justify-center">
                 <Calendar
+                  // defaultMonth is read on mount. Refresh an untouched ALL
+                  // calendar when its history loads, while preserving edits.
+                  key={isAllTimeRange(draftRange) ? allTimeFrom?.getTime() : undefined}
                   mode="range"
-                  defaultMonth={draftRange?.from}
-                  selected={draftRange as DayPickerDateRange | undefined}
+                  defaultMonth={draftCalendarRange?.from ?? asOf}
+                  selected={draftCalendarRange as DayPickerDateRange | undefined}
                   onSelect={(selectedRange: DayPickerDateRange | undefined) => {
                     setDraftRange(selectedRange as DateRange | undefined);
                   }}
@@ -208,7 +249,7 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [] }: DateRa
               </div>
             </div>
 
-            <SheetFooter className="border-border flex-row gap-2 border-t px-6 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]">
+            <SheetFooter className="border-border flex-row gap-2 border-t px-6 py-4 pb-4">
               <Button
                 type="button"
                 variant="ghost"
@@ -220,7 +261,7 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [] }: DateRa
               </Button>
               <Button
                 type="button"
-                className="ml-auto"
+                className="ms-auto"
                 onClick={handleApplyDraftRange}
                 disabled={!isDraftRangeComplete}
               >
@@ -231,15 +272,16 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [] }: DateRa
         </Sheet>
       ) : (
         <Popover>
-          <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
+          <PopoverTrigger render={triggerButton} />
           <PopoverContent
-            className="max-h-[min(var(--radix-popover-content-available-height,80vh),80vh)] w-auto overflow-y-auto overscroll-contain p-0 [-webkit-overflow-scrolling:touch]"
+            className="max-h-[min(var(--available-height,80vh),80vh)] w-auto overflow-y-auto overscroll-contain p-0 [-webkit-overflow-scrolling:touch]"
             align="end"
           >
             <Calendar
+              key={isAllTimeRange(value) ? allTimeFrom?.getTime() : undefined}
               mode="range"
-              defaultMonth={value?.from}
-              selected={value as DayPickerDateRange | undefined}
+              defaultMonth={calendarRange?.from ?? asOf}
+              selected={calendarRange as DayPickerDateRange | undefined}
               onSelect={(selectedRange: DayPickerDateRange | undefined) => {
                 onChange(selectedRange as DateRange | undefined);
               }}

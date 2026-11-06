@@ -13,11 +13,13 @@ mod holdings_phase;
 use log::{debug, info};
 
 use super::models::{
-    BrokerSyncStatusDetail, NewAccountInfo, SyncActivitiesResponse, SyncHoldingsResponse,
-    SyncResult,
+    BrokerConnection, BrokerSyncStatusDetail, NewAccountInfo, SyncActivitiesResponse,
+    SyncHoldingsResponse, SyncResult,
 };
 use super::progress::SyncProgressReporter;
-use super::traits::{BrokerApiClient, BrokerSyncServiceTrait, BrokerTrackingMode};
+use super::traits::{
+    BrokerAccountContext, BrokerApiClient, BrokerSyncServiceTrait, BrokerTrackingMode,
+};
 use wealthfolio_core::accounts::{Account, TrackingMode};
 
 /// Configuration for sync operations.
@@ -44,6 +46,7 @@ pub(super) struct AccountSyncJob {
     account_name: String,
     broker_account_id: String,
     tracking_mode: BrokerTrackingMode,
+    account_context: BrokerAccountContext,
 }
 
 impl AccountSyncJob {
@@ -60,6 +63,7 @@ impl AccountSyncJob {
             }
         };
         Some(Self {
+            account_context: BrokerAccountContext::from_account(&account),
             account_id: account.id,
             account_name: account.name,
             broker_account_id: account.provider_account_id?,
@@ -154,11 +158,20 @@ impl<P: SyncProgressReporter> SyncOrchestrator<P> {
     /// This is the main entry point for broker synchronization.
     /// Always emits sync-start and sync-complete/error events.
     pub async fn sync_all(&self, api_client: &dyn BrokerApiClient) -> Result<SyncResult, String> {
+        self.sync_all_with_connections(api_client, None).await
+    }
+
+    /// Reuse connections already fetched by the caller for this sync run.
+    pub async fn sync_all_with_connections(
+        &self,
+        api_client: &dyn BrokerApiClient,
+        connections: Option<Vec<BrokerConnection>>,
+    ) -> Result<SyncResult, String> {
         info!("Starting broker data sync...");
         self.progress_reporter.report_sync_start();
 
         // Run the sync and ensure we always emit completion event
-        let result = self.sync_all_internal(api_client).await;
+        let result = self.sync_all_internal(api_client, connections).await;
 
         match &result {
             Ok(sync_result) => {
@@ -186,12 +199,16 @@ impl<P: SyncProgressReporter> SyncOrchestrator<P> {
     async fn sync_all_internal(
         &self,
         api_client: &dyn BrokerApiClient,
+        connections: Option<Vec<BrokerConnection>>,
     ) -> Result<SyncResult, String> {
         // Step 1: Sync connections (platforms)
-        let connections = api_client
-            .list_connections()
-            .await
-            .map_err(|e| e.to_string())?;
+        let connections = match connections {
+            Some(connections) => connections,
+            None => api_client
+                .list_connections()
+                .await
+                .map_err(|e| e.to_string())?,
+        };
 
         let connections_result = self
             .sync_service
@@ -501,14 +518,17 @@ mod tests {
     #[derive(Default)]
     struct MockBrokerApiClient {
         broker_accounts: Vec<BrokerAccount>,
+        connection_calls: Mutex<usize>,
         activity_pages: Mutex<Vec<PaginatedUniversalActivity>>,
         activity_calls: Mutex<Vec<BrokerTrackingMode>>,
+        activity_contexts: Mutex<Vec<BrokerAccountContext>>,
         holdings_calls: Mutex<Vec<BrokerTrackingMode>>,
     }
 
     #[async_trait]
     impl BrokerApiClient for MockBrokerApiClient {
         async fn list_connections(&self) -> Result<Vec<BrokerConnection>> {
+            *self.connection_calls.lock().unwrap() += 1;
             Ok(Vec::new())
         }
 
@@ -527,12 +547,14 @@ mod tests {
             &self,
             _account_id: &str,
             tracking_mode: BrokerTrackingMode,
+            context: &BrokerAccountContext,
             _start_date: Option<&str>,
             _end_date: Option<&str>,
             _offset: Option<i64>,
             _limit: Option<i64>,
         ) -> Result<PaginatedUniversalActivity> {
             self.activity_calls.lock().unwrap().push(tracking_mode);
+            self.activity_contexts.lock().unwrap().push(context.clone());
             let mut pages = self.activity_pages.lock().unwrap();
             if pages.is_empty() {
                 return Ok(PaginatedUniversalActivity::default());
@@ -781,6 +803,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sync_reuses_connections_from_the_protected_request() {
+        let service = Arc::new(MockSyncService::default());
+        let api = MockBrokerApiClient::default();
+        orchestrator(service.clone())
+            .sync_all_with_connections(&api, Some(vec![]))
+            .await
+            .unwrap();
+        assert_eq!(*api.connection_calls.lock().unwrap(), 0);
+        orchestrator(service).sync_all(&api).await.unwrap();
+        assert_eq!(*api.connection_calls.lock().unwrap(), 1);
+    }
+
+    #[tokio::test]
     async fn cursor_blocked_activity_sync_reports_upserts_without_advancing_cursor() {
         let service = Arc::new(MockSyncService {
             accounts: vec![synced_account(
@@ -837,6 +872,63 @@ mod tests {
         let calls = service.calls.lock().unwrap();
         assert_eq!(calls.activity_successes.len(), 0);
         assert_eq!(calls.activity_needs_review.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn every_activity_page_receives_the_account_context() {
+        let context = BrokerAccountContext {
+            account_type: Some("SECURITIES".into()),
+            raw_type: Some("TFSA".into()),
+        };
+        let account = Account {
+            account_type: "SECURITIES".into(),
+            meta: Some(r#"{"raw_type":"TFSA"}"#.into()),
+            ..synced_account("account-1", "broker-1", TrackingMode::Transactions)
+        };
+        let service = Arc::new(MockSyncService {
+            accounts: vec![account],
+            ..MockSyncService::default()
+        });
+        let api = MockBrokerApiClient {
+            activity_pages: Mutex::new(vec![
+                PaginatedUniversalActivity {
+                    data: vec![AccountUniversalActivity {
+                        id: Some("activity-1".into()),
+                        ..AccountUniversalActivity::default()
+                    }],
+                    pagination: Some(PaginationDetails {
+                        has_more: Some(true),
+                        total: Some(2),
+                        ..PaginationDetails::default()
+                    }),
+                },
+                PaginatedUniversalActivity {
+                    data: vec![AccountUniversalActivity {
+                        id: Some("activity-2".into()),
+                        ..AccountUniversalActivity::default()
+                    }],
+                    pagination: Some(PaginationDetails {
+                        has_more: Some(false),
+                        total: Some(2),
+                        ..PaginationDetails::default()
+                    }),
+                },
+            ]),
+            ..MockBrokerApiClient::default()
+        };
+        orchestrator(service)
+            .sync_account_data(
+                &api,
+                &HashSet::from(["broker-1".into()]),
+                &HashMap::from([("broker-1".into(), ready_status("2026-05-22", None))]),
+                &HashMap::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            *api.activity_contexts.lock().unwrap(),
+            vec![context.clone(), context]
+        );
     }
 
     #[tokio::test]

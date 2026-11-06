@@ -1,5 +1,6 @@
 import type { useNetWorthHistory } from "@/hooks/use-alternative-assets";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const queryMocks = vi.hoisted(() => ({
@@ -12,6 +13,9 @@ const intervalMocks = vi.hoisted(() => ({ period: "ALL" as "ALL" | "1M" | "YTD" 
 vi.mock("@/hooks/use-alternative-assets", () => queryMocks);
 vi.mock("@/hooks/use-portfolio-allocations", () => ({
   usePortfolioAllocations: () => ({ allocations: undefined }),
+}));
+vi.mock("@/hooks/use-health", () => ({
+  useHealthStatus: () => ({ data: undefined, isLoading: false }),
 }));
 vi.mock("@/hooks/use-platform", () => ({ useIsMobileViewport: () => false }));
 vi.mock("@/lib/net-worth-category-label", () => ({
@@ -26,20 +30,31 @@ vi.mock("@/components/dashboard-card", () => ({
   DashboardCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("@/pages/dashboard/balance", () => ({ default: () => <div /> }));
+vi.mock("@/components/privacy-toggle", () => ({ PrivacyToggle: () => null }));
 vi.mock("@/pages/holdings/components/allocation-detail-sheet", () => ({
   AllocationDetailSheet: () => null,
 }));
 vi.mock("./components/breakdown-table", () => ({ BreakdownTable: () => <div /> }));
 vi.mock("./components/category-detail-sheet", () => ({ CategoryDetailSheet: () => null }));
+vi.mock("./components/net-worth-attention", () => ({ NetWorthAttention: () => null }));
 vi.mock("./components/momentum-card", () => ({ MomentumCard: () => null }));
-vi.mock("./components/velocity-card", () => ({ VelocityCard: () => null }));
+vi.mock("./components/velocity-card", () => ({
+  VelocityCard: ({ trailingYearMonthly }: { trailingYearMonthly?: number }) => (
+    <span data-testid="trailing-average">{trailingYearMonthly ?? "none"}</span>
+  ),
+}));
 vi.mock("./net-worth-chart", () => ({ NetWorthChart: () => null }));
+vi.mock("@/features/spending/components/spending-date-picker", () => ({
+  SpendingDatePicker: () => null,
+}));
 vi.mock("@wealthfolio/ui", async () => {
   const { getInitialIntervalData } =
     await import("@wealthfolio/ui/components/financial/interval-selector");
   return {
-    GainAmount: () => null,
-    GainPercent: () => null,
+    GainAmount: ({ value }: { value: number }) => <span data-testid="change-amount">{value}</span>,
+    GainPercent: ({ value }: { value: number }) => (
+      <span data-testid="change-percent">{value}</span>
+    ),
     IntervalSelector: ({
       onIntervalSelect,
     }: {
@@ -55,8 +70,12 @@ vi.mock("@wealthfolio/ui", async () => {
       </button>
     ),
     getInitialIntervalData,
-    useNumberFormatting: () => ({}),
-    usePersistentState: () => [intervalMocks.period, vi.fn()],
+    useNumberFormatting: () => ({
+      formatDecimal: (value: number) =>
+        new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value),
+    }),
+    usePersistentState: () => useState(intervalMocks.period),
+    useDateFormatting: () => ({ formatCalendarDate: () => "" }),
   };
 });
 vi.mock("@wealthfolio/ui/components/ui/icons", () => ({
@@ -96,9 +115,9 @@ describe("NetWorthContent current-date queries", () => {
     intervalMocks.period = "ALL";
     queryMocks.useNetWorth.mockReturnValue({
       data: {
-        netWorth: "100",
-        assets: { total: "100", breakdown: [] },
-        liabilities: { total: "0", breakdown: [] },
+        netWorth: 100,
+        assets: { total: 100, breakdown: [] },
+        liabilities: { total: 0, breakdown: [] },
         currency: "USD",
         staleAssets: [],
       },
@@ -147,7 +166,7 @@ describe("NetWorthContent current-date queries", () => {
 
   it("uses the configured day when a new period is selected", () => {
     queryMocks.useNetWorthHistory.mockReturnValue({
-      data: [{ date: "2026-09-15", netWorth: "100" }],
+      data: [{ date: "2026-09-15", netWorth: 100 }],
       isLoading: false,
     });
     vi.setSystemTime(new Date("2026-09-15T16:30:00Z"));
@@ -178,4 +197,65 @@ describe("NetWorthContent current-date queries", () => {
     expect(latestEnabledHistoryCall()?.endDate).toBe("2026-09-15");
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it.each([
+    { series: [-100000, -80000], amount: 20000, percent: null },
+    { series: [-100, 100], amount: 200, percent: null },
+    { series: [100, -100], amount: -200, percent: null },
+    { series: [100, -50, 150], amount: 50, percent: 0.5 },
+    { series: [0, 100], amount: 100, percent: null },
+    { series: [100, 150], amount: 50, percent: 0.5 },
+    { series: [100, 0], amount: -100, percent: -1 },
+  ])(
+    "displays the unchanged amount with the appropriate percentage for $series",
+    ({ series, amount, percent }) => {
+      queryMocks.useNetWorthHistory.mockReturnValue({
+        data: series.map((netWorth, index) => ({
+          date: `2026-09-${10 + index}`,
+          netWorth,
+        })),
+        isLoading: false,
+      });
+      render(<NetWorthContent />);
+      expect(screen.getByTestId("change-amount")).toHaveTextContent(String(amount));
+      if (percent === null) expect(screen.queryByTestId("change-percent")).not.toBeInTheDocument();
+      else expect(screen.getByTestId("change-percent")).toHaveTextContent(String(percent));
+    },
+  );
+
+  it.each([{ series: [100, 12330] }, { series: [100, -50, 12330] }])(
+    "keeps the growth multiple for $series",
+    ({ series }) => {
+      queryMocks.useNetWorthHistory.mockReturnValue({
+        data: series.map((netWorth, index) => ({
+          date: `2026-09-${10 + index}`,
+          netWorth,
+        })),
+        isLoading: false,
+      });
+      render(<NetWorthContent />);
+      expect(screen.getByText("123.3×")).toBeInTheDocument();
+      expect(screen.getByTestId("change-amount")).toHaveTextContent("12230");
+    },
+  );
+
+  it.each([
+    { start: "2026-03-15", available: false },
+    { start: "2025-09-15", available: true },
+  ])(
+    "only offers a 12-month comparison with a full year of history ($start)",
+    ({ start, available }) => {
+      intervalMocks.period = "1M";
+      queryMocks.useNetWorthHistory.mockImplementation(({ startDate }) => ({
+        data: [
+          { date: startDate === "2026-08-15" ? startDate : start, netWorth: 100 },
+          { date: "2026-09-15", netWorth: 110 },
+        ],
+        isLoading: false,
+      }));
+      render(<NetWorthContent />);
+      if (available) expect(screen.getByTestId("trailing-average")).not.toHaveTextContent("none");
+      else expect(screen.getByTestId("trailing-average")).toHaveTextContent("none");
+    },
+  );
 });

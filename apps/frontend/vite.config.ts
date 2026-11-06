@@ -12,7 +12,8 @@ const serverProxy = enableProxy
   ? {
       "/api": {
         target: apiTarget,
-        changeOrigin: true,
+        // Profile admission validates the browser Origin against the original Host.
+        changeOrigin: false,
       },
       "/docs": {
         target: apiTarget,
@@ -25,6 +26,25 @@ const serverProxy = enableProxy
 // Default to "tauri" for local development - use BUILD_TARGET=web for web builds
 // TAURI_DEV_HOST is only set for mobile/network dev, so we can't rely on it
 const buildTarget = process.env.BUILD_TARGET || "tauri";
+
+// Modules that are imported both statically and with import(), on purpose:
+// addons-core breaks its import cycle with addons-loader, i18n.ts loads every
+// catalog lazily while a few English catalogs are needed synchronously, and the
+// Tauri adapter imports these Tauri APIs statically. Vite warns that such an
+// import() can't split the module out; the warning stays on for other module paths.
+const intendedMixedImports = [
+  "/@tauri-apps/api/core.js",
+  "/@tauri-apps/api/event.js",
+  "/@tauri-apps/plugin-dialog/dist-js/index.js",
+  "/@tauri-apps/plugin-fs/dist-js/index.js",
+  "/src/addons/addons-loader.ts",
+  "/src/i18n/locales/en/activity.json",
+  "/src/i18n/locales/en/settings.json",
+  "/src/i18n/locales/en/spending.json",
+  "/src/i18n/locales/en/taxonomies.json",
+];
+const mixedImportWarning =
+  /\(!\) (.+?) is dynamically imported by .* dynamic import will not move module into another chunk/s;
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -82,7 +102,15 @@ export default defineConfig({
   },
   // 3. to make use of `TAURI_DEBUG` and other env variables
   // https://tauri.app/v1/api/config#buildconfig.beforedevcommand
-  envPrefix: ["VITE_", "TAURI_", "CONNECT_"],
+  // Connect storage settings belong to Rust; expose only public app configuration.
+  envPrefix: [
+    "VITE_",
+    "TAURI_",
+    "CONNECT_API_URL",
+    "CONNECT_AUTH_URL",
+    "CONNECT_AUTH_PUBLISHABLE_KEY",
+    "CONNECT_OAUTH_CALLBACK_URL",
+  ],
   build: {
     target: ["chrome107", "edge107", "firefox104", "safari16"],
     // Output to project root's dist folder (for Tauri)
@@ -95,6 +123,12 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, "index.html"),
         "addon-sandbox": path.resolve(__dirname, "addon-sandbox.html"),
+      },
+      onwarn(warning, warn) {
+        if (warning.plugin !== "vite:reporter") return warn(warning);
+        const id = warning.message.match(mixedImportWarning)?.[1];
+        if (id && intendedMixedImports.some((suffix) => id.endsWith(suffix))) return;
+        warn(warning);
       },
     },
     // don't minify for debug builds

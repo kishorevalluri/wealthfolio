@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@/test/render";
-import type { ReactNode } from "react";
+import { Activity, useState, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Asset } from "@/lib/types";
@@ -33,6 +33,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQuery: () => ({ data: [], isLoading: false }),
 }));
 
+vi.mock("@/components/asset-logo/asset-logo-dialog", () => ({ AssetLogoDialog: () => null }));
 vi.mock("@/hooks/use-custom-providers", () => ({ useCustomProviders: () => ({ data: [] }) }));
 vi.mock("@/hooks/use-market-data-providers", () => ({
   useMarketDataProviders: () => ({ data: [] }),
@@ -232,5 +233,126 @@ describe("AssetEditSheet bond spec", () => {
     setInputValue(screen.getByTestId("asset-coupon-rate"), "1");
 
     expect((await saveAndGetMetadata()).bond).toMatchObject({ faceValue: 100 });
+  });
+});
+
+describe("AssetEditSheet preferred provider hint", () => {
+  function renderMarketData(asset: Asset) {
+    return render(
+      <AssetEditSheet asset={asset} open onOpenChange={vi.fn()} defaultTab="market-data" />,
+    );
+  }
+
+  it("explains that a custom provider is the only source for the security", () => {
+    renderMarketData(
+      buildAsset({
+        providerConfig: { preferred_provider: "CUSTOM_SCRAPER", custom_provider_code: "fund" },
+      }),
+    );
+
+    expect(screen.getByText(/come only from this custom provider/i)).toBeInTheDocument();
+    expect(screen.queryByText(/which provider to try first/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the try-first hint for built-in providers", () => {
+    renderMarketData(buildAsset({ providerConfig: { preferred_provider: "YAHOO" } }));
+
+    expect(screen.getByText(/which provider to try first/i)).toBeInTheDocument();
+  });
+});
+
+describe("AssetEditSheet automatic updates", () => {
+  it("says whether automatic updates are on from the trigger itself", () => {
+    const { unmount } = render(
+      <AssetEditSheet asset={buildAsset()} open onOpenChange={vi.fn()} defaultTab="market-data" />,
+    );
+    expect(screen.getByRole("button", { name: "Automatic updates" })).toHaveAccessibleDescription(
+      "Prices sync automatically from market data providers.",
+    );
+    unmount();
+
+    render(
+      <AssetEditSheet
+        asset={buildAsset({ quoteMode: "MANUAL" })}
+        open
+        onOpenChange={vi.fn()}
+        defaultTab="market-data"
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Automatic updates" })).toHaveAccessibleDescription(
+      "Automatic syncing is off. You manage prices manually.",
+    );
+  });
+});
+
+describe("AssetEditSheet on a screen kept out of sight", () => {
+  beforeEach(() => mutateAsync.mockReset());
+
+  it("keeps an unsaved edit when the screen is shown again", () => {
+    const asset = buildAsset();
+    const view = (hidden: boolean) => (
+      <Activity mode={hidden ? "hidden" : "visible"}>
+        <AssetEditSheet asset={asset} open onOpenChange={vi.fn()} />
+      </Activity>
+    );
+    const { rerender } = render(view(false));
+    setInputValue(screen.getByTestId("asset-contract-multiplier"), "25");
+
+    rerender(view(true));
+    rerender(view(false));
+    expect(screen.getByTestId("asset-contract-multiplier")).toHaveValue("25");
+  });
+});
+
+describe("AssetEditSheet unfinished edits", () => {
+  beforeEach(() => {
+    mutateAsync.mockReset();
+    mutateAsync.mockResolvedValue(undefined);
+  });
+
+  it("closes a pristine editor without prompting or saving", () => {
+    const onOpenChange = vi.fn();
+    render(<AssetEditSheet asset={buildAsset()} open onOpenChange={onOpenChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("keeps a dirty draft until the user explicitly discards it", async () => {
+    const onOpenChange = vi.fn();
+    render(<AssetEditSheet asset={buildAsset()} open onOpenChange={onOpenChange} />);
+    const name = screen.getByRole("textbox", { name: "Name" });
+    setInputValue(name, "Unfinished name");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep Editing" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(name).toHaveValue("Unfinished name");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("clears discarded edits even when the parent keeps the same asset object", async () => {
+    const asset = buildAsset();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Reopen editor</button>
+          <AssetEditSheet asset={asset} open={open} onOpenChange={setOpen} />
+        </>
+      );
+    }
+    render(<Harness />);
+    setInputValue(screen.getByRole("textbox", { name: "Name" }), "Discard this draft");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reopen editor" }));
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Test Asset");
+    expect(mutateAsync).not.toHaveBeenCalled();
   });
 });

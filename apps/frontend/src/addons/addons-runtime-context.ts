@@ -43,6 +43,16 @@ import {
   rerunCategorizationRules,
   upsertCategorizationRule,
 } from "@/adapters";
+import {
+  searchCashActivities,
+  assignActivityCategory,
+  unassignActivityCategory,
+  setActivityEvent,
+} from "@/features/spending/adapters/cash-activities";
+import { getSpendingContext } from "@/features/spending/adapters/settings";
+import { getBudgetReadonly, upsertBudgetTarget } from "@/features/spending/adapters/budget";
+import { listEvents, listEventTypes } from "@/features/spending/adapters/events";
+import { getSpendingReport } from "@/features/spending/adapters/reports";
 import { openCsvFileDialog, openFileSaveDialog } from "@/adapters";
 import { createGoal, getGoals, getGoalFunding, saveGoalFunding, updateGoal } from "@/adapters";
 import {
@@ -472,6 +482,16 @@ export function createAddonHostAPI(
       getExchangeRatesForDates,
 
       isSpendingEnabled,
+      getSpendingContext,
+      getBudgetReadonly,
+      upsertBudgetTarget,
+      listSpendingEvents: listEvents,
+      listSpendingEventTypes: listEventTypes,
+      assignSpendingCategory: assignActivityCategory,
+      unassignSpendingCategory: unassignActivityCategory,
+      setSpendingEvent: setActivityEvent,
+      searchCashActivities,
+      getSpendingReport,
       getSpendCategories,
       listCategorizationRules,
       upsertCategorizationRule,

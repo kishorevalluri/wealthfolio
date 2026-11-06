@@ -152,7 +152,7 @@ pub(crate) struct Claims {
     exp: usize,
     iat: usize,
     #[serde(default)]
-    sid: String,
+    pub(crate) sid: String,
 }
 
 /// Stable across sliding JWT refreshes; scopes transient whole-database jobs.
@@ -350,6 +350,19 @@ pub fn derive_database_key(master: &[u8]) -> [u8; 32] {
     key
 }
 
+/// New profiles have independent database keys; the migrated default keeps
+/// `derive_database_key` unchanged for existing encrypted files and backups.
+pub(crate) fn derive_profile_database_key(master: &[u8], profile_id: uuid::Uuid) -> [u8; 32] {
+    let mut key = [0u8; 32];
+    hkdf::Hkdf::<sha2::Sha256>::new(None, master)
+        .expand(
+            format!("wealthfolio-db-profile-v1:{profile_id}").as_bytes(),
+            &mut key,
+        )
+        .expect("32 bytes is a valid HKDF-SHA256 output length");
+    key
+}
+
 pub fn decode_secret_key(raw: &str) -> anyhow::Result<Vec<u8>> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -458,10 +471,32 @@ pub(crate) async fn require_backup_session(
     next: Next,
 ) -> Result<Response, AuthError> {
     let Some(auth) = auth else {
+        let existing = request
+            .headers()
+            .get(axum::http::header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| {
+                v.split(';').find_map(|c| {
+                    c.trim()
+                        .strip_prefix("wf_browser=")
+                        .and_then(|id| uuid::Uuid::parse_str(id).ok())
+                })
+            });
+        let id = existing.unwrap_or_else(uuid::Uuid::new_v4);
         request
             .extensions_mut()
-            .insert(BackupSession("local-no-auth".into()));
-        return Ok(next.run(request).await);
+            .insert(BackupSession(id.to_string()));
+        let mut response = next.run(request).await;
+        if existing.is_none() {
+            response.headers_mut().append(
+                SET_COOKIE,
+                HeaderValue::from_str(&format!(
+                    "wf_browser={id}; Path=/; HttpOnly; SameSite=Strict"
+                ))
+                .expect("UUID cookie"),
+            );
+        }
+        return Ok(response);
     };
 
     let token = extract_token(&request)?;
@@ -495,7 +530,7 @@ pub(crate) async fn require_backup_session(
     Ok(response)
 }
 
-fn extract_token(request: &Request<Body>) -> Result<String, AuthError> {
+pub(crate) fn extract_token(request: &Request<Body>) -> Result<String, AuthError> {
     // 1. Authorization header (Bearer token)
     if let Some(header_value) = request
         .headers()
@@ -632,5 +667,60 @@ mod tests {
     fn never_with_https_header() {
         let mgr = make_manager(CookieSecurePolicy::Never);
         assert!(!mgr.should_secure_cookie(&headers_with_proto("https")));
+    }
+
+    // Golden vectors: produced today from a fixed synthetic WF_SECRET_KEY. Existing databases,
+    // secrets.json files and password hashes depend on them, so a dependency upgrade must
+    // reproduce them exactly. Never regenerate these values to make an upgrade pass.
+    const GOLDEN_SECRET_KEY: &str = "CzBVep/E6Q4zWH2ix+wRNluApcrvFDleg6jN8hc8YYY=";
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[test]
+    fn golden_keys_derived_from_secret_key() {
+        let master = decode_secret_key(GOLDEN_SECRET_KEY).unwrap();
+        let (jwt_key, secrets_key) = derive_keys(&master);
+        assert_eq!(
+            hex(&jwt_key),
+            "0825b47988ad0e531ade9f71d7137a785d65ad0a80a4c2c2d0eeed3d87134b4d"
+        );
+        assert_eq!(
+            hex(&secrets_key),
+            "ddb041db149be5cc0fca55ee729fe8a7d6b0ae42ea6c407faa8b6e8fe51e2f29"
+        );
+        assert_eq!(
+            hex(&derive_database_key(&master)),
+            "372d954aff0b15ec76c3c0f8265e024a1a5004a7c938fc91ad44a62644a5d8a6"
+        );
+        let profile = uuid::Uuid::parse_str("3f2b8c1e-5d4a-4b6c-9e7f-1a2b3c4d5e6f").unwrap();
+        assert_eq!(
+            hex(&derive_profile_database_key(&master, profile)),
+            "012e39074d51d515327044fa7ad93cbe125c8bbc3e61a22e3b476a0a0417734b"
+        );
+    }
+
+    #[test]
+    fn golden_password_hash_verifies_and_wrong_password_is_unauthorized() {
+        // The default parameters of the argon2 CLI the README documents (m=4096, t=3, p=1).
+        let manager = AuthManager::new(&AuthConfig {
+            password_hash: Some(
+                "$argon2id$v=19$m=4096,t=3,p=1$d2VhbHRoZm9saW8tc2FsdA$H+IzgsqdErEeLxJGkDfCqgOLLhq9LURZCFy+YZAygFg"
+                    .into(),
+            ),
+            jwt_secret: vec![0u8; 32],
+            access_token_ttl: Duration::from_secs(3600),
+            cookie_secure: CookieSecurePolicy::Auto,
+        })
+        .unwrap();
+        manager
+            .verify_password("correct horse battery staple")
+            .unwrap();
+        let error = manager
+            .verify_password("correct horse battery stapler")
+            .unwrap_err();
+        assert!(matches!(error, AuthError::InvalidCredentials), "{error:?}");
+        assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);
     }
 }

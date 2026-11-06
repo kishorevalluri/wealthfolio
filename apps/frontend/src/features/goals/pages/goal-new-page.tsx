@@ -1,6 +1,8 @@
+import { useBackNavigation } from "@/pages/layouts/mobile-stack/use-mobile-stack";
+import { formatZonedDateKey } from "@/features/spending/lib/timezone";
 import type { Goal, GoalType, PlannerMode } from "@/lib/types";
 import { useSettingsContext } from "@/lib/settings-provider";
-import { formatDateISO } from "@/lib/utils";
+import { formatDateISO, parseLocalDate } from "@/lib/utils";
 import {
   Button,
   DatePickerInput,
@@ -20,7 +22,8 @@ import {
 } from "@wealthfolio/ui/components/ui/card";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Textarea } from "@wealthfolio/ui/components/ui/textarea";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useEffectOnChange } from "@/hooks/use-effect-on-change";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useCreateGoalFlow } from "../hooks/use-create-goal-flow";
@@ -33,14 +36,12 @@ import {
   inferBirthYearMonthFromAge,
   normalizeRetirementPlan,
 } from "@/features/goals/retirement-planner/lib/plan-adapter";
+import { cardSurfaceClassName } from "@wealthfolio/ui/components/ui/card";
+import { cn } from "@/lib/utils";
 
 const DEFAULT_RETIREMENT_CURRENT_AGE = 30;
 const DEFAULT_TRADITIONAL_RETIREMENT_AGE = 65;
 const DEFAULT_FIRE_INDEPENDENCE_AGE = 50;
-const DEFAULT_RETIREMENT_BIRTH_YEAR_MONTH = inferBirthYearMonthFromAge(
-  DEFAULT_RETIREMENT_CURRENT_AGE,
-);
-
 /** Cover image by convention: /goals/{goalType}.png */
 function coverImageSrc(goalType: string): string {
   return `/goals/${goalType}.png`;
@@ -62,9 +63,28 @@ function hasRetirementGoal(goals: Goal[]): boolean {
 export default function GoalNewPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const goBack = useBackNavigation("/goals");
   const createGoalFlow = useCreateGoalFlow();
+  // The new goal takes the form's place, so back from it returns to the list.
+  // Read from the saved result rather than the save's own callback: React Query
+  // skips that callback when the save ends while this screen is out of sight on
+  // a phone (another tab shown), and the form would come back ready to save again.
+  // Only a change of the result opens it, so it can't open twice.
+  const openCreatedGoal = useEffectEvent((goalId: string) =>
+    navigate(`/goals/${goalId}`, { replace: true }),
+  );
+  const createdGoalId = createGoalFlow.data?.goal.id;
+  useEffectOnChange(() => {
+    if (createdGoalId) void openCreatedGoal(createdGoalId);
+  }, [createdGoalId]);
   const { goals } = useGoals();
   const { settings } = useSettingsContext();
+  const todayISO = formatZonedDateKey(new Date(), settings?.timezone);
+  const today = useMemo(() => parseLocalDate(todayISO), [todayISO]);
+  const defaultRetirementBirthYearMonth = inferBirthYearMonthFromAge(
+    DEFAULT_RETIREMENT_CURRENT_AGE,
+    today,
+  );
   const [selectedType, setSelectedType] = useState<GoalType | null>(null);
   const [plannerMode, setPlannerMode] = useState<PlannerMode>("traditional");
   const [title, setTitle] = useState("");
@@ -72,7 +92,7 @@ export default function GoalNewPage() {
   const [targetAmount, setTargetAmount] = useState(0);
   const [targetDate, setTargetDate] = useState("");
   const [retirementBirthYearMonth, setRetirementBirthYearMonth] = useState(
-    DEFAULT_RETIREMENT_BIRTH_YEAR_MONTH,
+    defaultRetirementBirthYearMonth,
   );
   const [retirementTargetAge, setRetirementTargetAge] = useState(
     DEFAULT_TRADITIONAL_RETIREMENT_AGE,
@@ -133,10 +153,10 @@ export default function GoalNewPage() {
   const baseCurrency = settings?.baseCurrency ?? "USD";
   const trimmedTitle = title.trim();
   const trimmedDescription = description.trim();
-  const retirementBirthAge = ageFromBirthYearMonth(retirementBirthYearMonth);
+  const retirementBirthAge = ageFromBirthYearMonth(retirementBirthYearMonth, today);
   const retirementCurrentAge = retirementBirthAge ?? DEFAULT_RETIREMENT_CURRENT_AGE;
   const retirementBirthYearMonthForCreate =
-    retirementBirthAge == null ? DEFAULT_RETIREMENT_BIRTH_YEAR_MONTH : retirementBirthYearMonth;
+    retirementBirthAge == null ? defaultRetirementBirthYearMonth : retirementBirthYearMonth;
   const retirementTargetAgeLabel =
     plannerMode === "fire"
       ? t("goals:new.independence_age_label")
@@ -166,7 +186,7 @@ export default function GoalNewPage() {
     setDescription(nextTemplate.description);
     setTargetAmount(nextTemplate.defaultTarget);
     setTargetDate("");
-    setRetirementBirthYearMonth(DEFAULT_RETIREMENT_BIRTH_YEAR_MONTH);
+    setRetirementBirthYearMonth(defaultRetirementBirthYearMonth);
     setRetirementTargetAge(DEFAULT_TRADITIONAL_RETIREMENT_AGE);
   };
 
@@ -188,34 +208,30 @@ export default function GoalNewPage() {
           planKind: "retirement" as const,
           plannerMode,
           settingsJson: JSON.stringify(
-            normalizeRetirementPlan({
-              ...createDefaultRetirementPlan(baseCurrency),
-              personal: {
-                ...DEFAULT_RETIREMENT_PLAN.personal,
-                birthYearMonth: retirementBirthYearMonthForCreate,
-                currentAge: retirementCurrentAge,
-                targetRetirementAge: Math.max(retirementCurrentAge + 1, retirementTargetAge),
-                planningHorizonAge: Math.max(
-                  DEFAULT_RETIREMENT_PLAN.personal.planningHorizonAge,
-                  retirementTargetAge + 1,
-                ),
+            normalizeRetirementPlan(
+              {
+                ...createDefaultRetirementPlan(baseCurrency, today),
+                personal: {
+                  ...DEFAULT_RETIREMENT_PLAN.personal,
+                  birthYearMonth: retirementBirthYearMonthForCreate,
+                  currentAge: retirementCurrentAge,
+                  targetRetirementAge: Math.max(retirementCurrentAge + 1, retirementTargetAge),
+                  planningHorizonAge: Math.max(
+                    DEFAULT_RETIREMENT_PLAN.personal.planningHorizonAge,
+                    retirementTargetAge + 1,
+                  ),
+                },
               },
-            }),
+              today,
+            ),
           ),
         }
       : undefined;
 
-    createGoalFlow.mutate(
-      {
-        goal: goalInput,
-        initialPlan,
-      },
-      {
-        onSuccess: ({ goal }) => {
-          navigate(`/goals/${goal.id}`);
-        },
-      },
-    );
+    createGoalFlow.mutate({
+      goal: goalInput,
+      initialPlan,
+    });
   };
 
   return (
@@ -223,7 +239,7 @@ export default function GoalNewPage() {
       <PageHeader
         heading={t("goals:new.create_goal")}
         text={t("goals:new.subtitle")}
-        onBack={() => navigate("/goals")}
+        onBack={goBack}
       />
       <PageContent>
         {!selectedType ? (
@@ -233,11 +249,13 @@ export default function GoalNewPage() {
               return (
                 <div
                   key={tmpl.type}
-                  className={`border-border/60 bg-card shadow-xs group overflow-hidden rounded-xl border transition-all ${
+                  className={cn(
+                    cardSurfaceClassName,
+                    "group overflow-hidden transition-all",
                     disabled
                       ? "cursor-not-allowed opacity-50"
-                      : "hover:border-border cursor-pointer hover:shadow-md"
-                  }`}
+                      : "hover:border-border cursor-pointer hover:shadow-md",
+                  )}
                   onClick={() => handleSelectType(tmpl.type)}
                 >
                   <div className="relative h-36 overflow-hidden sm:h-40">
@@ -254,7 +272,7 @@ export default function GoalNewPage() {
                       <div className="text-muted-foreground/25">{tmpl.icon}</div>
                     </div>
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
-                    <div className="absolute bottom-3 left-4">
+                    <div className="absolute start-4 bottom-3">
                       <p className="text-base font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]">
                         {tmpl.title}
                       </p>
@@ -264,7 +282,7 @@ export default function GoalNewPage() {
                     <CardDescription className="text-xs leading-relaxed">
                       {tmpl.description}
                       {disabled && (
-                        <span className="text-muted-foreground mt-1 block text-[11px]">
+                        <span className="text-muted-foreground text-2xs mt-1 block">
                           {t("goals:new.retirement_exists_hint")}
                         </span>
                       )}
@@ -326,7 +344,7 @@ export default function GoalNewPage() {
                       <div className="grid grid-cols-2 gap-3">
                         <button
                           type="button"
-                          className={`rounded-xl border p-3 text-left transition-colors ${
+                          className={`rounded-xl border p-3 text-start transition-colors ${
                             plannerMode === "traditional"
                               ? "border-primary bg-primary/5"
                               : "border-border/60 hover:border-muted-foreground/60"
@@ -342,7 +360,7 @@ export default function GoalNewPage() {
                         </button>
                         <button
                           type="button"
-                          className={`rounded-xl border p-3 text-left transition-colors ${
+                          className={`rounded-xl border p-3 text-start transition-colors ${
                             plannerMode === "fire"
                               ? "border-primary bg-primary/5"
                               : "border-border/60 hover:border-muted-foreground/60"
@@ -377,7 +395,7 @@ export default function GoalNewPage() {
                             value={retirementBirthYearMonth}
                             onChange={(event) => {
                               const next = event.target.value;
-                              const nextAge = ageFromBirthYearMonth(next);
+                              const nextAge = ageFromBirthYearMonth(next, today);
                               setRetirementBirthYearMonth(next);
                               if (nextAge != null) {
                                 setRetirementTargetAge((prev) => Math.max(nextAge + 1, prev));
@@ -409,6 +427,7 @@ export default function GoalNewPage() {
                         <Label htmlFor="goal-target-amount">{t("goals:new.target_amount")}</Label>
                         <MoneyInput
                           name="goal-target-amount"
+                          aria-label={t("goals:new.target_amount")}
                           value={targetAmount}
                           onValueChange={(value) => setTargetAmount(value ?? 0)}
                           thousandSeparator
@@ -445,7 +464,7 @@ export default function GoalNewPage() {
                   setDescription("");
                   setTargetDate("");
                   setPlannerMode("traditional");
-                  setRetirementBirthYearMonth(DEFAULT_RETIREMENT_BIRTH_YEAR_MONTH);
+                  setRetirementBirthYearMonth(defaultRetirementBirthYearMonth);
                   setRetirementTargetAge(DEFAULT_TRADITIONAL_RETIREMENT_AGE);
                 }}
               >

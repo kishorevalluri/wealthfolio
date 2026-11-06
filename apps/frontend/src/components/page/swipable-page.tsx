@@ -1,3 +1,4 @@
+import { profilePreferenceKey, readProfilePreference } from "@/hooks/use-persistent-state";
 import { useHapticFeedback, useIsMobileViewport } from "@/hooks";
 import { cn } from "@/lib/utils";
 import { Page, SwipableView, type Icon } from "@wealthfolio/ui";
@@ -46,7 +47,7 @@ function NavigationPills({
   const layoutId = React.useId();
 
   return (
-    <nav className="bg-muted/60 inline-flex items-center rounded-full p-1">
+    <nav className="bg-muted/60 inline-flex items-center rounded-(--segmented-radius) p-1">
       {views.map((view) => {
         const isActive = currentView === view.value;
         const IconComponent = view.icon;
@@ -57,7 +58,7 @@ function NavigationPills({
             type="button"
             onClick={() => onViewChange(view.value)}
             className={cn(
-              "relative flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors duration-200",
+              "rounded-(--segmented-radius) relative flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors duration-200",
               "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
               isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground/80",
             )}
@@ -66,7 +67,8 @@ function NavigationPills({
             {isActive && (
               <motion.div
                 layoutId={`nav-pill-${layoutId}`}
-                className="bg-background absolute inset-0 rounded-full shadow-sm"
+                data-slot="segmented-thumb"
+                className="absolute inset-0 rounded-(--segmented-radius) bg-(--segmented-thumb) bg-(image:--segmented-thumb-image) shadow-(--segmented-thumb-shadow)"
                 initial={false}
                 transition={{
                   type: "spring",
@@ -99,13 +101,23 @@ function MobileNavigation({
   compact?: boolean;
 }) {
   const layoutId = React.useId();
+  const navigationRef = React.useRef<HTMLDivElement>(null);
 
+  React.useEffect(() => {
+    navigationRef.current
+      ?.querySelector('[aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [currentView]);
+
+  // The mobile reset clips .flex and sets every max-width to 100vw. Keep
+  // this strip's own scrolling and its parent's width as the limit.
   return (
     <div
+      ref={navigationRef}
       className={cn(
-        "bg-muted/50 flex items-center gap-0.5 rounded-full p-1 backdrop-blur-sm",
-        compact && "min-w-0 max-w-full",
+        "bg-muted/50 rounded-(--segmented-radius) mx-auto inline-flex w-max max-w-full! items-center gap-0.5 overflow-x-auto overscroll-x-contain p-1 backdrop-blur-sm",
       )}
+      data-no-swipe-drag
     >
       {views.map((item) => {
         const isActive = currentView === item.value;
@@ -117,10 +129,10 @@ function MobileNavigation({
             type="button"
             onClick={() => onViewChange(item.value)}
             className={cn(
-              "relative flex cursor-pointer items-center justify-center gap-1.5 rounded-full py-1.5 text-sm font-medium transition-colors duration-200",
+              // The tap area fills the strip's height; the pill keeps its compact size.
+              "rounded-(--segmented-radius) relative flex shrink-0 cursor-pointer after:absolute after:inset-x-0 after:-inset-y-1 items-center justify-center gap-1.5 py-1.5 text-sm font-medium transition-colors duration-200",
               "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
               compact ? "px-2" : "px-3",
-              isActive ? "min-w-0" : "shrink-0",
               isActive ? "text-foreground" : "text-muted-foreground",
             )}
             aria-label={item.label}
@@ -129,7 +141,8 @@ function MobileNavigation({
             {isActive && (
               <motion.div
                 layoutId={`mobile-nav-bg-${layoutId}`}
-                className="bg-background absolute inset-0 rounded-full shadow-sm"
+                data-slot="segmented-thumb"
+                className="absolute inset-0 rounded-(--segmented-radius) bg-(--segmented-thumb) bg-(image:--segmented-thumb-image) shadow-(--segmented-thumb-shadow)"
                 initial={false}
                 transition={{
                   type: "spring",
@@ -138,11 +151,9 @@ function MobileNavigation({
                 }}
               />
             )}
-            <span className={cn("relative z-10 flex items-center gap-1.5", compact && "min-w-0")}>
+            <span className="relative z-10 flex items-center gap-1.5">
               {IconComponent && <IconComponent className="size-4" />}
-              {isActive && (
-                <span className={cn("whitespace-nowrap", compact && "truncate")}>{item.label}</span>
-              )}
+              {isActive && <span className="whitespace-nowrap">{item.label}</span>}
             </span>
           </button>
         );
@@ -173,7 +184,7 @@ export function SwipablePage({
   const [persistedView, setPersistedView] = React.useState<string | null>(() => {
     if (!persistKey) return null;
     try {
-      const raw = window.localStorage.getItem(persistKey);
+      const raw = readProfilePreference(persistKey);
       return raw ? (JSON.parse(raw) as string) : null;
     } catch {
       return null;
@@ -194,16 +205,42 @@ export function SwipablePage({
     const idx = views.findIndex((v) => v.value === currentView);
     return idx === -1 ? 0 : idx;
   }, [currentView, views]);
-  const currentActions = views.find((v) => v.value === currentView)?.actions;
+  // The view a swipe has picked, shown in the header from release until the slide
+  // lands and the page follows.
+  const [swipedView, setSwipedView] = React.useState<string | null>(null);
+  const shownView = swipedView ?? currentView;
+  // Scrolls the phone carousel; set once it is built.
+  const scrollCarouselRef = React.useRef<((index: number) => void) | null>(null);
+  const currentActions = views.find((v) => v.value === shownView)?.actions;
   const mobileActionsInHeader = mobileActionsPlacement === "header";
 
+  // On phones the header floats, translucent, over the views as they scroll; each
+  // view starts below it by the header's measured height.
+  const mobileHeaderRef = React.useRef<HTMLDivElement>(null);
+  React.useLayoutEffect(() => {
+    const header = mobileHeaderRef.current;
+    const container = header?.parentElement;
+    if (!isMobile || !header || !container) return;
+    const update = () =>
+      container.style.setProperty("--page-header-height", `${header.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [isMobile]);
+
   const handleViewChange = React.useCallback(
-    (nextView: string) => {
+    (nextView: string, haptic = true) => {
+      const swipeIsPending = swipedView !== null;
+      setSwipedView(null);
       if (nextView === currentView) {
+        // A tap on the current view while a swipe still heads to another one sends the
+        // slide back; otherwise it would land and switch to the other view.
+        if (swipeIsPending) scrollCarouselRef.current?.(currentIndex);
         return;
       }
 
-      if (isMobile) {
+      if (isMobile && haptic) {
         triggerHaptic();
       }
 
@@ -215,51 +252,60 @@ export function SwipablePage({
       if (persistKey) {
         setPersistedView(nextView);
         try {
-          window.localStorage.setItem(persistKey, JSON.stringify(nextView));
+          window.localStorage.setItem(profilePreferenceKey(persistKey), JSON.stringify(nextView));
         } catch {
           // Swallow quota/serialization errors — persistence is best-effort.
         }
       }
     },
-    [currentView, setSearchParams, onViewChange, isMobile, triggerHaptic, persistKey],
+    [
+      swipedView,
+      currentView,
+      currentIndex,
+      setSearchParams,
+      onViewChange,
+      isMobile,
+      triggerHaptic,
+      persistKey,
+    ],
   );
 
   return (
     <Page className={cn("flex h-full flex-col", className)}>
       <div
         data-ptr-content
+        data-virtual-scroll-parent={!isMobile || undefined}
         className={cn("relative mx-auto flex w-full grow flex-col", contentClassName)}
       >
         {isMobile ? (
           /* Mobile: SwipableView with navigation */
-          <div className="flex h-full flex-col md:hidden">
-            {/* Mobile Navigation at top */}
-            <div className="pt-safe flex shrink-0 flex-col gap-2 px-3 pb-2">
-              <div
-                className={cn(
-                  "grid w-full items-center gap-2",
-                  mobileActionsInHeader
-                    ? "grid-cols-[2.5rem_minmax(0,1fr)_auto] min-[390px]:grid-cols-[4.5rem_minmax(0,1fr)_auto]"
-                    : "grid-cols-[1fr_auto_1fr]",
-                )}
-              >
-                <div className={mobileActionsInHeader ? "w-10 min-[390px]:w-[4.5rem]" : "w-10"} />
-                <div className={cn("min-w-0", mobileActionsInHeader && "justify-self-center")}>
+          <div className="relative flex h-full flex-col md:hidden">
+            {/* Mobile Navigation at top, floating over the views */}
+            <div
+              ref={mobileHeaderRef}
+              className="pt-safe from-background/70 to-background/25 absolute inset-x-0 top-0 z-20 flex flex-col gap-2 bg-linear-to-b px-3 pb-2 backdrop-blur-sm backdrop-saturate-150"
+            >
+              {/* Equal side columns centre the strip on the header; the actions column never
+                  drops below its content, so wider actions push the strip aside, and on a
+                  very narrow screen the strip shrinks and scrolls. */}
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,max-content)_minmax(max-content,1fr)] items-center gap-2">
+                <div />
+                <div className="min-w-0">
                   <MobileNavigation
                     views={views}
-                    currentView={currentView}
+                    currentView={shownView}
                     onViewChange={handleViewChange}
                     compact={mobileActionsInHeader}
                   />
                 </div>
-                {mobileActionsInHeader ? (
-                  <div className="flex min-w-0 shrink-0 justify-end">{currentActions}</div>
-                ) : (
-                  <div />
-                )}
+                <div className="flex min-w-max items-center justify-end gap-2">
+                  {mobileActionsInHeader && currentActions}
+                </div>
               </div>
               {currentActions && !mobileActionsInHeader && (
-                <div className="flex min-w-0 justify-end">{currentActions}</div>
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                  {currentActions}
+                </div>
               )}
             </div>
 
@@ -272,7 +318,11 @@ export function SwipablePage({
                   content: (
                     <div
                       className={cn(
-                        withPadding ? "p-2" : "pb-safe",
+                        // Without padding, a view paints its own background (the dashboard's
+                        // wash) and keeps its own nav clearance: stretch it to fill the pane,
+                        // so no plain band shows below it.
+                        withPadding ? "p-2" : "flex min-h-full flex-col [&>*]:grow",
+                        "pt-[var(--page-header-height,0px)]",
                         withMobileNavOffset && "pb-[var(--mobile-nav-total-offset)]",
                       )}
                     >
@@ -281,11 +331,18 @@ export function SwipablePage({
                   ),
                 }))}
                 displayToggle={false}
-                onViewChange={(_index: number, name: string) => {
-                  const matchedView = views.find((v) => v.label === name);
-                  if (matchedView) {
-                    handleViewChange(matchedView.value);
-                  }
+                onInit={(api) => {
+                  scrollCarouselRef.current = api ? (index) => api.scrollTo(index) : null;
+                }}
+                onSwipeStart={triggerHaptic}
+                onSelectView={(index: number) => {
+                  const view = views[index]?.value;
+                  setSwipedView(view && view !== currentView ? view : null);
+                }}
+                onViewChange={(index: number) => {
+                  const view = views[index]?.value;
+                  // The haptic fired when the swipe started.
+                  if (view) handleViewChange(view, false);
                 }}
               />
             </div>
@@ -294,8 +351,8 @@ export function SwipablePage({
           /* Desktop: Navigation at top center + content below */
           <div className="hidden h-full flex-col md:flex">
             {/* Header with Navigation and Actions */}
-            <div className="flex shrink-0 items-center justify-between gap-4 px-2 pb-3 pt-4 lg:px-4">
-              <div className="titlebar-nudge flex items-center gap-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-2 pt-4 pb-3 lg:px-4">
+              <div className="titlebar-nudge flex shrink-0 items-center gap-3">
                 {title && <h1 className="text-muted-foreground text-sm font-medium">{title}</h1>}
                 <NavigationPills
                   views={views}
@@ -304,7 +361,9 @@ export function SwipablePage({
                 />
               </div>
               {/* Actions slot - renders current view's actions */}
-              <div className="flex items-center gap-2">{currentActions}</div>
+              <div className="ms-auto flex max-w-full min-w-0 items-center gap-2">
+                {currentActions}
+              </div>
             </div>
 
             {/* Content - relative for absolute positioned actions within */}

@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import type { NetWorthHistoryPoint, TaxonomyAllocation } from "@/lib/types";
 import {
-  averageMonthlyChange,
   computeMomentum,
   computeVelocity,
   deriveChange,
   formatChangePercent,
+  hadBalanceBefore,
   investmentAllocation,
   isPlainPercent,
   parseHistory,
@@ -17,12 +17,12 @@ import {
 function rawPoint(overrides: Partial<NetWorthHistoryPoint>): NetWorthHistoryPoint {
   return {
     date: "2024-01-01",
-    portfolioValue: "0",
-    alternativeAssetsValue: "0",
-    totalLiabilities: "0",
-    totalAssets: "0",
-    netWorth: "0",
-    netContribution: "0",
+    portfolioValue: 0,
+    alternativeAssetsValue: 0,
+    totalLiabilities: 0,
+    totalAssets: 0,
+    netWorth: 0,
+    netContribution: 0,
     breakdown: {},
     currency: "USD",
     ...overrides,
@@ -44,16 +44,16 @@ function point(overrides: Partial<ParsedHistoryPoint>): ParsedHistoryPoint {
 }
 
 describe("net worth utils", () => {
-  it("parses decimal strings and breakdown values into finite numbers", () => {
+  it("parses history and breakdown values into finite numbers", () => {
     const parsed = parseHistory([
       rawPoint({
-        portfolioValue: "100.25",
-        alternativeAssetsValue: "50",
-        totalLiabilities: "25",
-        totalAssets: "150.25",
-        netWorth: "125.25",
-        netContribution: "80",
-        breakdown: { cash: "10.5", investments: "bad-value" },
+        portfolioValue: 100.25,
+        alternativeAssetsValue: 50,
+        totalLiabilities: 25,
+        totalAssets: 150.25,
+        netWorth: 125.25,
+        netContribution: 80,
+        breakdown: { cash: 10.5, investments: Number.NaN },
       }),
     ]);
 
@@ -131,6 +131,22 @@ describe("net worth utils", () => {
     expect(formatChangePercent(dustCleared, "New", formatting)).toBe("—");
   });
 
+  it("does not label a paid-off card that is used again as new", () => {
+    const formatting = createFormatter("en-US");
+    const history = [point({ date: "2025-06-01" }), point({ date: "2026-06-01" })];
+    // The card owed a balance before the range, was paid to zero, and was charged
+    // again: the same 0 -> balance series as a new card, but it is not new.
+    const reused = deriveChange([0, 300], true, hadBalanceBefore(history, "2024-01-10"));
+    expect(reused).toEqual({ amount: -300, percent: null, isNew: false });
+    expect(formatChangePercent(reused, "New", formatting)).toBe("—");
+
+    // A first balance inside the range is still new, as is a row the backend
+    // does not date.
+    expect(deriveChange([0, 300], true, hadBalanceBefore(history, "2025-09-01")).isNew).toBe(true);
+    expect(deriveChange([0, 300], true, hadBalanceBefore(history, undefined)).isNew).toBe(true);
+    expect(hadBalanceBefore([], "2024-01-10")).toBe(false);
+  });
+
   it("keeps the plain-percent range in step with the multiple threshold", () => {
     expect(isPlainPercent(9.99)).toBe(true);
     expect(isPlainPercent(-9.99)).toBe(true);
@@ -138,7 +154,7 @@ describe("net worth utils", () => {
     expect(isPlainPercent(null)).toBe(false);
   });
 
-  it("decomposes monthly velocity into market gains, contributions, and equity built", () => {
+  it("decomposes monthly velocity into portfolio gains, other asset changes, contributions, and equity built", () => {
     const history = [
       point({
         date: "2024-01-01",
@@ -165,14 +181,55 @@ describe("net worth utils", () => {
 
     expect(velocity).toMatchObject({
       netChange: 220,
-      marketGains: 150,
+      portfolioGains: 70,
+      otherAssetChanges: 80,
       contributions: 50,
       equityBuilt: 20,
     });
     expect(velocity?.months).toBeCloseTo(expectedMonths);
     expect(velocity?.perMonth).toBeCloseTo(220 / expectedMonths);
-    expect(averageMonthlyChange(history)).toBeCloseTo(220 / expectedMonths);
-    expect(averageMonthlyChange([history[0]])).toBe(0);
+  });
+
+  it("keeps portfolio gains separate from vehicle depreciation", () => {
+    const velocity = computeVelocity([
+      point({
+        date: "2024-01-01",
+        netWorth: 10000,
+        totalAssets: 10000,
+        portfolioValue: 5000,
+        alternativeAssetsValue: 5000,
+        netContribution: 5000,
+      }),
+      point({
+        date: "2024-07-01",
+        netWorth: 11100,
+        totalAssets: 11100,
+        portfolioValue: 7300,
+        alternativeAssetsValue: 3800,
+        netContribution: 7000,
+      }),
+    ]);
+    expect(velocity).toMatchObject({
+      netChange: 1100,
+      portfolioGains: 300,
+      otherAssetChanges: -1200,
+      contributions: 2000,
+      equityBuilt: 0,
+    });
+  });
+
+  it("includes newly recorded assets in other asset changes", () => {
+    expect(
+      computeVelocity([
+        point({ date: "2024-01-01" }),
+        point({
+          date: "2024-02-01",
+          netWorth: 5000,
+          totalAssets: 5000,
+          alternativeAssetsValue: 5000,
+        }),
+      ]),
+    ).toMatchObject({ portfolioGains: 0, otherAssetChanges: 5000 });
   });
 
   it("compares current momentum against an equal prior window", () => {

@@ -2,14 +2,18 @@ use async_trait::async_trait;
 use diesel::prelude::*;
 use std::sync::Arc;
 
-use super::model::AppSettingDB;
+use super::model::{AppPreferenceDB, AppSettingDB};
 use crate::db::{get_connection, DbPool, WriteHandle};
 use crate::errors::StorageError;
 use crate::schema::app_settings::dsl::*;
 use crate::schema::{accounts, assets};
 use wealthfolio_core::assets::AssetKind;
 use wealthfolio_core::errors::Result;
-use wealthfolio_core::settings::{Settings, SettingsRepositoryTrait, SettingsUpdate};
+use wealthfolio_core::settings::{
+    Settings, SettingsRepositoryTrait, SettingsUpdate, CURRENCY_FORMATTING_REGIONS_KEY,
+    DEFAULT_FONT, DEFAULT_GAIN_COLORS, DEFAULT_THEME_ID, GAIN_COLORS, GAIN_COLORS_KEY,
+    INSIGHTS_OVERVIEW_LAYOUT_KEY, TEXT_SIZE_KEY, THEME_ID_KEY,
+};
 
 pub struct SettingsRepository {
     pool: Arc<DbPool>,
@@ -36,10 +40,21 @@ impl SettingsRepositoryTrait for SettingsRepository {
 
         for (key, value) in all_settings {
             match key.as_str() {
+                THEME_ID_KEY => settings.theme_id = value,
+                GAIN_COLORS_KEY => {
+                    if GAIN_COLORS.contains(&value.as_str()) {
+                        settings.gain_colors = value;
+                    }
+                }
                 "theme" => settings.theme = value,
                 "font" => settings.font = value,
+                TEXT_SIZE_KEY => settings.text_size = Some(value),
                 "language" => settings.language = value,
                 "formatting_region" => settings.formatting_region = value,
+                CURRENCY_FORMATTING_REGIONS_KEY => {
+                    settings.currency_formatting_regions =
+                        serde_json::from_str(&value).unwrap_or_default();
+                }
                 "base_currency" => settings.base_currency = value,
                 "timezone" => settings.timezone = value,
                 "onboarding_completed" => {
@@ -58,6 +73,9 @@ impl SettingsRepositoryTrait for SettingsRepository {
                     settings.restore_reconnect_required = value == "true";
                 }
                 "default_return_metric" => settings.default_return_metric = value,
+                INSIGHTS_OVERVIEW_LAYOUT_KEY => {
+                    settings.insights_overview_layout = serde_json::from_str(&value).ok();
+                }
                 _ => {} // Ignore unknown settings
             }
         }
@@ -68,14 +86,36 @@ impl SettingsRepositoryTrait for SettingsRepository {
     async fn update_settings(&self, new_settings: &SettingsUpdate) -> Result<()> {
         let settings = new_settings.clone();
         self.writer
-            .exec(move |conn| {
+            .exec_tx(move |tx| {
+                if let Some(ref theme_id) = settings.theme_id {
+                    diesel::replace_into(app_settings)
+                        .values(&AppSettingDB {
+                            setting_key: THEME_ID_KEY.to_string(),
+                            setting_value: theme_id.clone(),
+                        })
+                        .execute(tx.conn())
+                        .map_err(StorageError::from)?;
+                }
+
+                if let Some(ref gain_colors) = settings.gain_colors {
+                    let row = AppSettingDB {
+                        setting_key: GAIN_COLORS_KEY.to_string(),
+                        setting_value: gain_colors.clone(),
+                    };
+                    diesel::replace_into(app_settings)
+                        .values(&row)
+                        .execute(tx.conn())
+                        .map_err(StorageError::from)?;
+                    tx.update(&AppPreferenceDB(&row))?;
+                }
+
                 if let Some(ref theme) = settings.theme {
                     diesel::replace_into(app_settings)
                         .values(&AppSettingDB {
                             setting_key: "theme".to_string(),
                             setting_value: theme.clone(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -85,7 +125,17 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "font".to_string(),
                             setting_value: font.clone(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
+                        .map_err(StorageError::from)?;
+                }
+
+                if let Some(ref text_size) = settings.text_size {
+                    diesel::replace_into(app_settings)
+                        .values(&AppSettingDB {
+                            setting_key: TEXT_SIZE_KEY.to_string(),
+                            setting_value: text_size.clone(),
+                        })
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -95,7 +145,7 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "language".to_string(),
                             setting_value: language.clone(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -105,7 +155,23 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "formatting_region".to_string(),
                             setting_value: formatting_region.clone(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
+                        .map_err(StorageError::from)?;
+                }
+
+                if let Some(ref regions) = settings.currency_formatting_regions {
+                    let regions: serde_json::Map<String, serde_json::Value> = regions
+                        .iter()
+                        .map(|(currency, region)| {
+                            (currency.clone(), serde_json::Value::String(region.clone()))
+                        })
+                        .collect();
+                    diesel::replace_into(app_settings)
+                        .values(&AppSettingDB {
+                            setting_key: CURRENCY_FORMATTING_REGIONS_KEY.to_string(),
+                            setting_value: serde_json::Value::Object(regions).to_string(),
+                        })
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -115,7 +181,7 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "base_currency".to_string(),
                             setting_value: base_currency.clone(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -125,7 +191,7 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "timezone".to_string(),
                             setting_value: timezone.clone(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -135,7 +201,7 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "onboarding_completed".to_string(),
                             setting_value: onboarding_completed.to_string(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -145,7 +211,7 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "auto_update_check_enabled".to_string(),
                             setting_value: auto_update_check_enabled.to_string(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -155,7 +221,7 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "menu_bar_visible".to_string(),
                             setting_value: menu_bar_visible.to_string(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -165,7 +231,7 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "sync_enabled".to_string(),
                             setting_value: sync_enabled.to_string(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
@@ -175,8 +241,20 @@ impl SettingsRepositoryTrait for SettingsRepository {
                             setting_key: "default_return_metric".to_string(),
                             setting_value: default_return_metric.clone(),
                         })
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
+                }
+
+                if let Some(ref layout) = settings.insights_overview_layout {
+                    let row = AppSettingDB {
+                        setting_key: INSIGHTS_OVERVIEW_LAYOUT_KEY.to_string(),
+                        setting_value: serde_json::Value::Object(layout.clone()).to_string(),
+                    };
+                    diesel::replace_into(app_settings)
+                        .values(&row)
+                        .execute(tx.conn())
+                        .map_err(StorageError::from)?;
+                    tx.update(&AppPreferenceDB(&row))?;
                 }
 
                 Ok(())
@@ -196,8 +274,10 @@ impl SettingsRepositoryTrait for SettingsRepository {
             Err(diesel::result::Error::NotFound) => {
                 // Return default values for known settings
                 let default_value = match setting_key_param {
+                    THEME_ID_KEY => DEFAULT_THEME_ID,
+                    GAIN_COLORS_KEY => DEFAULT_GAIN_COLORS,
                     "theme" => "light",
-                    "font" => "font-mono",
+                    "font" => DEFAULT_FONT,
                     "language" => "en",
                     "timezone" => "",
                     "onboarding_completed" => "false",
@@ -222,14 +302,16 @@ impl SettingsRepositoryTrait for SettingsRepository {
         let value = setting_value_param.to_string();
 
         self.writer
-            .exec(move |conn| {
+            .exec_tx(move |tx| {
+                let row = AppSettingDB {
+                    setting_key: key,
+                    setting_value: value,
+                };
                 diesel::replace_into(app_settings)
-                    .values(AppSettingDB {
-                        setting_key: key.clone(),     // Ensure key is cloned if used after move
-                        setting_value: value.clone(), // Ensure value is cloned if used after move
-                    })
-                    .execute(conn)
+                    .values(&row)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
+                tx.update(&AppPreferenceDB(&row))?;
                 Ok(())
             })
             .await
@@ -260,5 +342,329 @@ impl SettingsRepositoryTrait for SettingsRepository {
         all_currencies.dedup();
 
         Ok(all_currencies)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{create_pool, run_migrations, write_actor::spawn_writer, TestDir};
+    use serde_json::json;
+
+    async fn setup() -> (SettingsRepository, TestDir) {
+        let dir = TestDir::new();
+        let db_path = dir.path().join("settings.db").to_string_lossy().to_string();
+        run_migrations(&db_path).unwrap();
+        let pool = create_pool(&db_path).unwrap();
+        let writer = spawn_writer((*pool).clone()).unwrap();
+        (SettingsRepository::new(pool, writer), dir)
+    }
+
+    #[tokio::test]
+    async fn insights_layout_round_trips_and_survives_unrelated_updates() {
+        let (repo, _dir) = setup().await;
+        assert!(repo
+            .get_settings()
+            .unwrap()
+            .insights_overview_layout
+            .is_none());
+        let layout = json!({
+            "version": 1,
+            "hiddenWidgets": ["regions"],
+            "layouts": {"desktop": [{"i": "composition", "x": 0, "y": 0, "w": 9, "h": 6}]}
+        });
+        let update: SettingsUpdate = serde_json::from_value(json!({
+            "insightsOverviewLayout": layout
+        }))
+        .unwrap();
+        repo.update_settings(&update).await.unwrap();
+        let theme_update = serde_json::from_value(json!({"theme": "dark"})).unwrap();
+        repo.update_settings(&theme_update).await.unwrap();
+        let loaded = repo.get_settings().unwrap();
+        assert_eq!(loaded.theme, "dark");
+        assert_eq!(loaded.insights_overview_layout.as_ref(), layout.as_object());
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                &repo.get_setting(INSIGHTS_OVERVIEW_LAYOUT_KEY).unwrap()
+            )
+            .unwrap(),
+            layout
+        );
+        let reset = serde_json::from_value(json!({
+            "insightsOverviewLayout": {"version": 1, "hiddenWidgets": [], "layouts": {}}
+        }))
+        .unwrap();
+        repo.update_settings(&reset).await.unwrap();
+        assert_eq!(
+            repo.get_settings()
+                .unwrap()
+                .insights_overview_layout
+                .unwrap()["hiddenWidgets"],
+            json!([])
+        );
+    }
+
+    #[tokio::test]
+    async fn currency_formatting_regions_round_trip_without_syncing() {
+        use crate::schema::sync_outbox;
+        let (repo, _dir) = setup().await;
+        assert!(repo
+            .get_settings()
+            .unwrap()
+            .currency_formatting_regions
+            .is_empty());
+        let update: SettingsUpdate = serde_json::from_value(json!({
+            "currencyFormattingRegions": {"USD": "US", "INR": "IN"}
+        }))
+        .unwrap();
+        repo.update_settings(&update).await.unwrap();
+        let theme_update = serde_json::from_value(json!({"theme": "dark"})).unwrap();
+        repo.update_settings(&theme_update).await.unwrap();
+        assert_eq!(
+            Some(repo.get_settings().unwrap().currency_formatting_regions),
+            update.currency_formatting_regions
+        );
+
+        let clear = serde_json::from_value(json!({"currencyFormattingRegions": {}})).unwrap();
+        repo.update_settings(&clear).await.unwrap();
+        assert!(repo
+            .get_settings()
+            .unwrap()
+            .currency_formatting_regions
+            .is_empty());
+
+        let mut conn = get_connection(&repo.pool).unwrap();
+        let outbox: i64 = sync_outbox::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(outbox, 0, "Formatting preferences stay on this device");
+    }
+
+    #[tokio::test]
+    async fn theme_id_defaults_to_classic_and_survives_unrelated_updates() {
+        use crate::schema::sync_outbox;
+        let (repo, _dir) = setup().await;
+        assert_eq!(repo.get_settings().unwrap().theme_id, DEFAULT_THEME_ID);
+        assert_eq!(repo.get_setting(THEME_ID_KEY).unwrap(), DEFAULT_THEME_ID);
+
+        let update =
+            serde_json::from_value(json!({"themeId": "ember", "theme": "system"})).unwrap();
+        repo.update_settings(&update).await.unwrap();
+        let mode = serde_json::from_value(json!({"theme": "dark", "font": "font-sans"})).unwrap();
+        repo.update_settings(&mode).await.unwrap();
+
+        let settings = repo.get_settings().unwrap();
+        assert_eq!(settings.theme_id, "ember");
+        assert_eq!(settings.theme, "dark");
+        assert_eq!(settings.font, "font-sans");
+
+        let mut conn = get_connection(&repo.pool).unwrap();
+        let outbox: i64 = sync_outbox::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(outbox, 0, "The theme stays on this device");
+    }
+
+    #[tokio::test]
+    async fn text_size_is_unset_until_picked_and_stays_on_this_device() {
+        use crate::schema::sync_outbox;
+        let (repo, _dir) = setup().await;
+        assert_eq!(repo.get_settings().unwrap().text_size, None);
+        assert!(repo.get_setting(TEXT_SIZE_KEY).is_err());
+
+        let update = serde_json::from_value(json!({"textSize": "extra-large"})).unwrap();
+        repo.update_settings(&update).await.unwrap();
+        let unrelated =
+            serde_json::from_value(json!({"theme": "dark", "themeId": "ember"})).unwrap();
+        repo.update_settings(&unrelated).await.unwrap();
+
+        let settings = repo.get_settings().unwrap();
+        assert_eq!(settings.text_size.as_deref(), Some("extra-large"));
+        assert_eq!(settings.theme_id, "ember");
+
+        let mut conn = get_connection(&repo.pool).unwrap();
+        let outbox: i64 = sync_outbox::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(outbox, 0, "The text size stays on this device");
+    }
+
+    #[tokio::test]
+    async fn gain_colors_sync_to_other_devices_without_echo() {
+        use crate::schema::sync_outbox;
+        let (repo, _dir) = setup().await;
+        assert_eq!(
+            repo.get_settings().unwrap().gain_colors,
+            DEFAULT_GAIN_COLORS
+        );
+        assert_eq!(
+            repo.get_setting(GAIN_COLORS_KEY).unwrap(),
+            DEFAULT_GAIN_COLORS
+        );
+
+        let update: SettingsUpdate =
+            serde_json::from_value(json!({"gainColors": "red-up", "theme": "dark"})).unwrap();
+        repo.update_settings(&update).await.unwrap();
+        let mode = serde_json::from_value(json!({"theme": "light"})).unwrap();
+        repo.update_settings(&mode).await.unwrap();
+        assert_eq!(repo.get_settings().unwrap().gain_colors, "red-up");
+
+        let mut conn = get_connection(&repo.pool).unwrap();
+        let events: Vec<(String, String, String)> = sync_outbox::table
+            .select((
+                sync_outbox::entity,
+                sync_outbox::entity_id,
+                sync_outbox::payload,
+            ))
+            .load(&mut conn)
+            .unwrap();
+        assert_eq!(events.len(), 1, "Only the gain and loss colours sync");
+        assert_eq!(events[0].0, "app_preference");
+        assert_eq!(events[0].1, GAIN_COLORS_KEY);
+        let payload: serde_json::Value = serde_json::from_str(&events[0].2).unwrap();
+        assert_eq!(payload["setting_key"], GAIN_COLORS_KEY);
+        assert_eq!(payload["setting_value"], "red-up");
+
+        let (receiver, _receiver_dir) = setup().await;
+        let sync_receiver = crate::sync::app_sync::AppSyncRepository::new(
+            receiver.pool.clone(),
+            receiver.writer.clone(),
+        );
+        assert!(sync_receiver
+            .apply_remote_event_lww(
+                wealthfolio_core::sync::SyncEntity::AppPreference,
+                events[0].1.clone(),
+                wealthfolio_core::sync::SyncOperation::Update,
+                "received-gain-colors".to_string(),
+                "2026-10-27T12:00:00Z".to_string(),
+                1,
+                payload,
+            )
+            .await
+            .unwrap());
+        let received = receiver.get_settings().unwrap();
+        assert_eq!(received.gain_colors, "red-up");
+        assert_eq!(received.theme, "light", "The mode stays on each device");
+        let mut receiver_conn = get_connection(&receiver.pool).unwrap();
+        let receiver_outbox: i64 = sync_outbox::table
+            .count()
+            .get_result(&mut receiver_conn)
+            .unwrap();
+        assert_eq!(receiver_outbox, 0, "Receiving must not echo");
+    }
+
+    #[tokio::test]
+    async fn unknown_gain_colors_read_as_green_up_and_stay_stored() {
+        let (repo, _dir) = setup().await;
+        // A value from a newer version, or a damaged row, arriving by sync.
+        for unknown in ["blue-up-orange-down", "", "RED-UP"] {
+            repo.update_setting(GAIN_COLORS_KEY, unknown).await.unwrap();
+            assert_eq!(repo.get_settings().unwrap().gain_colors, "green-up");
+            assert_eq!(repo.get_setting(GAIN_COLORS_KEY).unwrap(), unknown);
+        }
+        repo.update_setting(GAIN_COLORS_KEY, "red-up-blue-down")
+            .await
+            .unwrap();
+        assert_eq!(repo.get_settings().unwrap().gain_colors, "red-up-blue-down");
+    }
+
+    #[tokio::test]
+    async fn malformed_stored_currency_formatting_regions_use_default() {
+        let (repo, _dir) = setup().await;
+        for invalid in ["not json", "null", "[]", r#"{"INR": 1}"#] {
+            repo.update_setting(CURRENCY_FORMATTING_REGIONS_KEY, invalid)
+                .await
+                .unwrap();
+            assert!(repo
+                .get_settings()
+                .unwrap()
+                .currency_formatting_regions
+                .is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_stored_insights_layout_uses_default() {
+        let (repo, _dir) = setup().await;
+        for invalid in ["not json", "null", "[]", "42"] {
+            repo.update_setting(INSIGHTS_OVERVIEW_LAYOUT_KEY, invalid)
+                .await
+                .unwrap();
+            assert!(repo
+                .get_settings()
+                .unwrap()
+                .insights_overview_layout
+                .is_none());
+        }
+    }
+    #[tokio::test]
+    async fn insights_layout_sync_outbox_is_scoped_and_transactional() {
+        use crate::schema::sync_outbox;
+        let (repo, _dir) = setup().await;
+        let update: SettingsUpdate = serde_json::from_value(json!({
+            "theme": "dark", "insightsOverviewLayout": {"version": 6, "hiddenWidgets": ["regions"]}
+        }))
+        .unwrap();
+        repo.update_settings(&update).await.unwrap();
+        repo.update_setting("font", "font-sans").await.unwrap();
+        let mut conn = get_connection(&repo.pool).unwrap();
+        let events: Vec<(String, String, String)> = sync_outbox::table
+            .select((
+                sync_outbox::entity,
+                sync_outbox::entity_id,
+                sync_outbox::payload,
+            ))
+            .load(&mut conn)
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "app_preference");
+        assert_eq!(events[0].1, INSIGHTS_OVERVIEW_LAYOUT_KEY);
+        let payload: serde_json::Value = serde_json::from_str(&events[0].2).unwrap();
+        assert_eq!(payload["setting_key"], INSIGHTS_OVERVIEW_LAYOUT_KEY);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(payload["setting_value"].as_str().unwrap())
+                .unwrap()["hiddenWidgets"],
+            json!(["regions"])
+        );
+        let (receiver, _receiver_dir) = setup().await;
+        let sync_receiver = crate::sync::app_sync::AppSyncRepository::new(
+            receiver.pool.clone(),
+            receiver.writer.clone(),
+        );
+        assert!(sync_receiver
+            .apply_remote_event_lww(
+                wealthfolio_core::sync::SyncEntity::AppPreference,
+                events[0].1.clone(),
+                wealthfolio_core::sync::SyncOperation::Update,
+                "received-layout".to_string(),
+                "2026-09-17T12:00:00Z".to_string(),
+                1,
+                payload,
+            )
+            .await
+            .unwrap());
+        assert_eq!(
+            receiver.get_settings().unwrap().insights_overview_layout,
+            update.insights_overview_layout
+        );
+        let mut receiver_conn = get_connection(&receiver.pool).unwrap();
+        let receiver_outbox: i64 = sync_outbox::table
+            .count()
+            .get_result(&mut receiver_conn)
+            .unwrap();
+        assert_eq!(
+            receiver_outbox, 0,
+            "Receiving the actual outbound payload must not echo it"
+        );
+        repo.update_setting(INSIGHTS_OVERVIEW_LAYOUT_KEY, r#"{"version":6}"#)
+            .await
+            .unwrap();
+        let count: i64 = sync_outbox::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(count, 2, "Generic layout writes also enqueue preferences");
+        diesel::sql_query("CREATE TRIGGER fail_preference_outbox BEFORE INSERT ON sync_outbox BEGIN SELECT RAISE(ABORT, 'outbox unavailable'); END").execute(&mut conn).unwrap();
+        let failing: SettingsUpdate = serde_json::from_value(
+            json!({"theme": "light", "insightsOverviewLayout": {"version": 99}}),
+        )
+        .unwrap();
+        assert!(repo.update_settings(&failing).await.is_err());
+        assert_eq!(repo.get_settings().unwrap().theme, "dark");
+        assert_eq!(
+            repo.get_setting(INSIGHTS_OVERVIEW_LAYOUT_KEY).unwrap(),
+            r#"{"version":6}"#
+        );
     }
 }

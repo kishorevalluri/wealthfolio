@@ -10,11 +10,14 @@ use std::sync::Arc;
 
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content, ErrorData as McpError, Implementation,
-    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo, Tool,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData as McpError,
+    Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
+    Tool, ToolAnnotations,
 };
 use rmcp::service::{RequestContext, RoleServer};
-use wealthfolio_agent_tools::{AgentEnvironment, AgentToolCatalog, AgentToolError};
+use wealthfolio_agent_tools::{
+    AgentEnvironment, AgentToolAccess, AgentToolCatalog, AgentToolError,
+};
 
 use crate::audit::{AuditOutcome, AuditSink, McpAuditEntry};
 use crate::auth::McpAuthContext;
@@ -61,7 +64,9 @@ impl WealthfolioMcpHandler {
             })
     }
 
-    /// MCP session id for audit grouping (`Mcp-Session-Id` header).
+    /// MCP session id for audit grouping (`Mcp-Session-Id` header). Protocol
+    /// 2026-07-28 has no sessions, so those calls record `"stateless"`; the
+    /// actor fingerprint still names the token.
     fn session_id(ctx: &RequestContext<RoleServer>) -> String {
         ctx.extensions
             .get::<http::request::Parts>()
@@ -109,17 +114,36 @@ impl WealthfolioMcpHandler {
             serde_json::Value::Object(map) => map,
             _ => serde_json::Map::new(),
         };
+        let title = tool_title(tool.name());
+        // Draft and suggest tools return previews; only write tools save.
+        let read_only = tool.access_level() != AgentToolAccess::Write;
+        let mut annotations = ToolAnnotations::with_title(title.clone()).read_only(read_only);
+        if !read_only {
+            annotations = annotations.destructive(!tool.is_additive());
+        }
         Tool::new(tool.name(), tool.description(), Arc::new(schema))
+            .with_title(title)
+            .annotate(annotations)
+    }
+}
+
+/// Display title from the stable tool name: `get_net_worth` → "Get net worth".
+fn tool_title(name: &str) -> String {
+    let words = name.replace('_', " ");
+    let mut chars = words.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => words,
     }
 }
 
 impl ServerHandler for WealthfolioMcpHandler {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let mut server_info = Implementation::default();
         server_info.name = "wealthfolio".into();
         server_info.version = env!("CARGO_PKG_VERSION").into();
 
-        let mut info = ServerInfo::default();
+        let mut info = ServerConfig::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info.server_info = server_info;
         info.instructions = self.instructions.clone();
@@ -152,7 +176,7 @@ impl ServerHandler for WealthfolioMcpHandler {
         &self,
         request: CallToolRequestParams,
         ctx: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, McpError> {
+    ) -> Result<CallToolResponse, McpError> {
         let auth = Self::auth_context(&ctx)?;
         let session_id = Self::session_id(&ctx);
         let name = request.name.as_ref();
@@ -196,9 +220,9 @@ impl ServerHandler for WealthfolioMcpHandler {
                 .await;
                 let text =
                     serde_json::to_string(&output.content).unwrap_or_else(|_| "{}".to_string());
-                let mut result = CallToolResult::success(vec![Content::text(text)]);
+                let mut result = CallToolResult::success(vec![ContentBlock::text(text)]);
                 result.structured_content = Some(output.content);
-                Ok(result)
+                Ok(result.into())
             }
             Err(err @ AgentToolError::ScopeDenied { .. }) => {
                 let message = err.to_string();
@@ -211,7 +235,7 @@ impl ServerHandler for WealthfolioMcpHandler {
                     Some(message.clone()),
                 ))
                 .await;
-                Ok(CallToolResult::error(vec![Content::text(message)]))
+                Ok(CallToolResult::error(vec![ContentBlock::text(message)]).into())
             }
             Err(err) => {
                 let message = err.to_string();
@@ -224,8 +248,58 @@ impl ServerHandler for WealthfolioMcpHandler {
                     Some(message.clone()),
                 ))
                 .await;
-                Ok(CallToolResult::error(vec![Content::text(message)]))
+                Ok(CallToolResult::error(vec![ContentBlock::text(message)]).into())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// MCP write tools that only add data. Every other write tool changes or
+    /// removes existing data: creating or importing activities can rewrite an
+    /// asset's quote mode and that day's manual quote, and linking transfers
+    /// rewrites both legs.
+    const ADDITIVE_TOOLS: &[&str] = &["commit_categorization_rule"];
+
+    #[test]
+    fn mcp_catalog_labels_each_tool_read_only_or_write() {
+        let catalog = AgentToolCatalog::mcp_catalog();
+        let mut titles = std::collections::HashSet::new();
+        let mut additive = Vec::new();
+        for tool in catalog.iter() {
+            let name = tool.name();
+            let mcp_tool = WealthfolioMcpHandler::to_mcp_tool(tool);
+            let annotations = mcp_tool.annotations.as_ref().expect("tool has annotations");
+            let title = mcp_tool.title.as_deref().expect("tool has a title");
+            assert_eq!(annotations.title.as_deref(), Some(title), "{name}");
+            assert!(titles.insert(title.to_string()), "duplicate title {title}");
+
+            let is_write = tool.access_level() == AgentToolAccess::Write;
+            assert_eq!(annotations.read_only_hint, Some(!is_write), "{name}");
+            if is_write {
+                if !annotations
+                    .destructive_hint
+                    .expect("write tools state destructiveHint")
+                {
+                    additive.push(name);
+                }
+            } else {
+                assert_eq!(annotations.destructive_hint, None, "{name}");
+            }
+        }
+        additive.sort_unstable();
+        assert_eq!(additive, ADDITIVE_TOOLS);
+    }
+
+    #[test]
+    fn tool_titles_read_as_words() {
+        assert_eq!(tool_title("get_net_worth"), "Get net worth");
+        assert_eq!(
+            tool_title("unlink_transfer_activities"),
+            "Unlink transfer activities"
+        );
     }
 }

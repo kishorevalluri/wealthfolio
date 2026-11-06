@@ -95,6 +95,10 @@ export const ACTIVITY_SUBTYPES = {
   // Liability subtypes
   LIABILITY_INTEREST_ACCRUAL: 'LIABILITY_INTEREST_ACCRUAL',
   LIABILITY_PRINCIPAL_PAYMENT: 'LIABILITY_PRINCIPAL_PAYMENT',
+
+  // Adjustment subtypes: the two rows of an in-kind conversion
+  CONVERSION_OUT: 'CONVERSION_OUT',
+  CONVERSION_IN: 'CONVERSION_IN',
 } as const;
 
 export type ActivitySubtype = (typeof ACTIVITY_SUBTYPES)[keyof typeof ACTIVITY_SUBTYPES];
@@ -373,6 +377,10 @@ interface InternalTransferPairRequestBase {
   destinationAmount: string | number;
   sourceCurrency: string;
   destinationCurrency: string;
+  /** @deprecated Execution-rate hint accepted for compatibility; cash amounts are authoritative.
+   * Never stored in Activity.fxRate (the activity-to-account valuation override).
+   * Derive the transfer rate from destinationAmount / sourceAmount instead.
+   */
   fxRate?: string | number | null;
   notes?: string | null;
   transferMode?: 'cash';
@@ -460,6 +468,12 @@ export interface ActivityImport {
    * `metadata.flow.is_external` because false is the default.
    */
   isExternal?: boolean;
+  /**
+   * Links the two rows of a conversion: ADJUSTMENT rows with subtype
+   * CONVERSION_OUT and CONVERSION_IN, imported together. Other rows ignore
+   * it; an import links a transfer's two legs itself.
+   */
+  sourceGroupId?: string;
   comment?: string;
 }
 
@@ -659,6 +673,150 @@ export interface CategorizationRuleInput {
   priority?: number;
 }
 
+export interface ActivityTaxonomyAssignment {
+  id: string;
+  activityId: string;
+  taxonomyId: string;
+  categoryId: string;
+  weight: number;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ActivitySplit {
+  id: string;
+  activityId: string;
+  taxonomyId: string;
+  categoryId: string;
+  amount: string | number;
+  note?: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CashFlowBucket = 'spending' | 'income' | 'saving' | 'neutral';
+export type TransferLinkStatus = 'linked' | 'unlinked' | 'invalid';
+export type CashActivityStatusFilter =
+  | 'all'
+  | 'needs_review'
+  | 'uncategorized'
+  | 'categorized';
+export type CashActivitySortField = 'date' | 'amount';
+export type CashActivitySortDirection = 'asc' | 'desc';
+
+export interface CashActivitySearchRequest {
+  search?: string;
+  accountIds?: string[];
+  activityTypes?: ActivityType[];
+  categoryIds?: string[];
+  subcategoryIds?: string[];
+  eventIds?: string[];
+  status?: CashActivityStatusFilter;
+  /** Inclusive RFC3339 timestamp. */
+  startDate?: string;
+  /** Inclusive RFC3339 timestamp. */
+  endDate?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  sortBy?: CashActivitySortField;
+  sortDir?: CashActivitySortDirection;
+  offset?: number;
+  limit?: number;
+}
+
+/** A cash activity enriched with its spending classification and category assignments. */
+export interface CashActivity extends Activity {
+  cashFlowBucket: CashFlowBucket;
+  assignments: ActivityTaxonomyAssignment[];
+  splits: ActivitySplit[];
+  eventId?: string | null;
+  transferLinkStatus?: TransferLinkStatus | null;
+  /** Signed cash movement in the activity's own currency. */
+  netAmount: number;
+  /** `netAmount` converted to the response's `baseCurrency`, when available. */
+  netAmountBase?: number | null;
+  /** Signed spending in the activity's own currency, after excluded portions are removed. */
+  visibleSpendingAmount?: number;
+}
+
+export interface CurrencyNet {
+  currency: string;
+  amount: number;
+}
+
+export interface NetSummary {
+  byCurrency: CurrencyNet[];
+  converted?: CurrencyNet | null;
+}
+
+export interface CashActivitySearchResponse {
+  items: CashActivity[];
+  totalCount: number;
+  /** Net over the complete filtered result. Present only on the first page. */
+  net?: NetSummary | null;
+  baseCurrency?: string | null;
+}
+
+export interface SpendingReportRequest {
+  /** Inclusive RFC3339 timestamp. */
+  startDate: string;
+  /** Inclusive RFC3339 timestamp. */
+  endDate: string;
+  accountIds?: string[];
+}
+
+/** Coverage of native FX conversion attempts, not source-data completeness. */
+export interface SpendingCalculationQuality {
+  missingFxTransactions: number;
+  missingFxCurrencies: string[];
+}
+
+export interface SpendingPeriodSummary {
+  calculationQuality?: SpendingCalculationQuality;
+  income: number;
+  outflow: number;
+  saved: number;
+  /** Money brought back from savings; `net = income - outflow - saved + fromSavings`. */
+  fromSavings?: number;
+  net: number;
+  count: number;
+}
+
+export interface SpendingCategoryBreakdownRow {
+  taxonomyId: string;
+  categoryId: string;
+  amount: number;
+  count: number;
+}
+
+export interface SpendingDayBucket {
+  date: string;
+  income: number;
+  outflow: number;
+}
+
+export interface SpendingDayCategoryBucket {
+  date: string;
+  taxonomyId: string;
+  categoryId: string;
+  amount: number;
+  count: number;
+}
+
+export interface SpendingReport {
+  /** Currency of all monetary amounts; rates are taken at each period's end. */
+  baseCurrency: string;
+  current: SpendingPeriodSummary;
+  prior: SpendingPeriodSummary;
+  spendingBreakdown: SpendingCategoryBreakdownRow[];
+  incomeBreakdown: SpendingCategoryBreakdownRow[];
+  savingsBreakdown: SpendingCategoryBreakdownRow[];
+  byDay: SpendingDayBucket[];
+  byDayByCategory: SpendingDayCategoryBucket[];
+}
+
 export interface MonetaryValue {
   local: number;
   base: number;
@@ -830,8 +988,17 @@ export interface QuoteUpdate {
 }
 
 export interface Settings {
+  /** Theme ID (palette and shape). Absent on hosts without themes. */
+  themeId?: string;
+  /**
+   * Gain and loss colours: 'green-up', 'red-up' or 'red-up-blue-down'; synced across
+   * the user's devices. Absent on older hosts, which show green up.
+   */
+  gainColors?: string;
   theme: string;
   font: string;
+  /** Text size name (small, default, large, extra-large). Absent on hosts without it. */
+  textSize?: string;
   baseCurrency: string;
   defaultReturnMetric: 'twr' | 'irr' | 'valueReturn';
   timezone?: string;
@@ -911,6 +1078,8 @@ export interface IncomeSummary {
   currency: string;
   monthlyAverage: number;
   yoyGrowth: number | null;
+  /** Currencies with no exchange rate to `currency`, left out of the converted totals. */
+  unconvertedCurrencies: string[];
 }
 
 export interface DateRange {
@@ -1296,4 +1465,243 @@ export interface SnapshotImportResult {
   snapshotsImported: number;
   snapshotsFailed: number;
   errors: string[];
+}
+
+// Spending budget and event configuration shared by the public host API.
+export type BudgetTargetType = 'category' | 'group_buffer';
+export type BudgetRolloverTargetType = 'category' | 'group';
+
+export interface BudgetGroup {
+  id: string;
+  name: string;
+  key: string;
+  color: string | null;
+  icon: string | null;
+  sortOrder: number;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewBudgetGroup {
+  id?: string;
+  name: string;
+  key?: string;
+  color?: string | null;
+  icon?: string | null;
+  sortOrder?: number;
+  isSystem?: boolean;
+}
+
+export interface UpdateBudgetGroup {
+  name?: string;
+  color?: string | null;
+  icon?: string | null;
+  sortOrder?: number;
+}
+
+export interface BudgetGroupAssignment {
+  id: string;
+  groupId: string;
+  taxonomyId: string;
+  categoryId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BudgetTarget {
+  id: string;
+  periodKey: string;
+  targetType: BudgetTargetType;
+  taxonomyId: string | null;
+  categoryId: string | null;
+  groupId: string | null;
+  amount: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewBudgetTarget {
+  id?: string;
+  periodKey: string;
+  targetType: BudgetTargetType;
+  taxonomyId?: string | null;
+  categoryId?: string | null;
+  groupId?: string | null;
+  amount: string;
+}
+
+export interface BudgetRolloverSetting {
+  id: string;
+  targetType: BudgetRolloverTargetType;
+  taxonomyId: string | null;
+  categoryId: string | null;
+  groupId: string | null;
+  enabled: boolean;
+  startMonth: string;
+  startingBalance: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewBudgetRolloverSetting {
+  id?: string;
+  targetType: BudgetRolloverTargetType;
+  taxonomyId?: string | null;
+  categoryId?: string | null;
+  groupId?: string | null;
+  enabled?: boolean;
+  startMonth: string;
+  startingBalance: string;
+}
+
+export interface BudgetCategoryRow {
+  taxonomyId: string;
+  categoryId: string;
+  groupId: string | null;
+  parentId: string | null;
+  name: string;
+  color: string | null;
+  icon: string | null;
+  target: number;
+  actual: number;
+  rolloverIn: number;
+  rolloverOut: number;
+  remaining: number;
+  overspent: boolean;
+  hasDefaultTarget: boolean;
+  hasMonthOverride: boolean;
+  rolloverEnabled: boolean;
+}
+
+export interface BudgetGroupRow {
+  group: BudgetGroup;
+  categoryTargetTotal: number;
+  buffer: number;
+  plannedTotal: number;
+  actual: number;
+  rolloverIn: number;
+  rolloverOut: number;
+  remaining: number;
+  overspent: boolean;
+  rolloverEnabled: boolean;
+  categories: BudgetCategoryRow[];
+}
+
+export interface BudgetTotals {
+  spendingPlanned: number;
+  spendingActual: number;
+  spendingRemaining: number;
+  incomePlanned: number;
+  incomeActual: number;
+  groupBuffer: number;
+  rolloverIn: number;
+  rolloverOut: number;
+  overspentCount: number;
+}
+
+export interface BudgetSnapshot {
+  state: {
+    groups: BudgetGroup[];
+    groupAssignments: BudgetGroupAssignment[];
+    targets: BudgetTarget[];
+    rolloverSettings: BudgetRolloverSetting[];
+  };
+  computed: {
+    /** Includes conversions for historical months needed by rollovers. */
+    calculationQuality?: SpendingCalculationQuality;
+    currency: string;
+    periodKey: string;
+    fxAsOf: string | null;
+    groupRows: BudgetGroupRow[];
+    ungroupedRows: BudgetCategoryRow[];
+    incomeRows: BudgetCategoryRow[];
+    totals: BudgetTotals;
+  };
+}
+
+export interface EventType {
+  id: string;
+  /** Stable slug for seeded types (Travel, Wedding, ...). User-created types
+   *  have this `null`. UIs can use it as an i18n lookup key. */
+  key?: string | null;
+  name: string;
+  color?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewEventType {
+  id?: string | null;
+  name: string;
+  color?: string | null;
+}
+
+export interface SpendingEvent {
+  id: string;
+  name: string;
+  description?: string | null;
+  eventTypeId: string;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewSpendingEvent {
+  id?: string | null;
+  name: string;
+  description?: string | null;
+  eventTypeId: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface UpdateSpendingEvent {
+  name?: string;
+  description?: string | null;
+  eventTypeId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+/** Event joined with its EventType.name for UI display. */
+export interface EventWithTypeName extends SpendingEvent {
+  eventTypeName: string;
+}
+
+export interface EventCategorySpending {
+  categoryId: string | null;
+  categoryName: string;
+  color: string | null;
+  amount: number;
+  transactionCount: number;
+}
+
+export interface EventSpendingSummary {
+  calculationQuality?: SpendingCalculationQuality;
+  eventId: string;
+  eventName: string;
+  eventTypeId: string;
+  eventTypeName: string;
+  eventTypeColor: string | null;
+  startDate: string;
+  endDate: string;
+  totalSpending: number;
+  transactionCount: number;
+  currency: string;
+  byCategory: Record<string, EventCategorySpending>;
+  dailySpending: Record<string, number>;
+}
+
+export interface EventSummariesRequest {
+  startDate?: string | null;
+  endDate?: string | null;
+  currency?: string | null;
+}
+
+export interface SpendingContext {
+  enabled: boolean;
+  accountIds: string[];
+  excludedCategoryIds: string[];
 }

@@ -3,6 +3,7 @@
 import argparse
 import base64
 import http.client
+import http.cookiejar
 import json
 import pathlib
 import subprocess
@@ -11,6 +12,27 @@ import tempfile
 import urllib.error
 import urllib.request
 import uuid
+
+
+def make_request(origin):
+    # Export tickets belong to the browser session that created them.
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+    )
+
+    def request(path, data=None, method=None, *, content_type="application/json",
+                timeout=3, expected=200):
+        req = urllib.request.Request(
+            origin + path,
+            data=data if isinstance(data, bytes) or data is None else json.dumps(data).encode(),
+            headers={"Content-Type": content_type, "X-Wealthfolio-Backup": "1"},
+            method=method or ("GET" if data is None else "PUT"),
+        )
+        with opener.open(req, timeout=timeout) as response:
+            assert response.status == expected, (path, response.status)
+            return response.read()
+
+    return request
 
 
 def portable_export(request, encrypted):
@@ -49,7 +71,11 @@ def main():
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--image")
     target.add_argument("--package", type=pathlib.Path)
+    parser.add_argument("--user", help="Override the image's numeric UID:GID (e.g. 99:100 for Unraid)")
     args = parser.parse_args()
+    if args.user and (not args.image or len(args.user.split(":")) != 2
+                      or not all(part.isdecimal() for part in args.user.split(":"))):
+        parser.error("--user requires --image and a numeric UID:GID")
     name = "wf-encryption-smoke-" + uuid.uuid4().hex[:12]
     volume = name + "-data"
     key = base64.b64encode(b"a" * 32).decode()
@@ -60,10 +86,20 @@ def main():
         "--mount", f"type=bind,src={args.package.resolve()},dst=/opt/wealthfolio,readonly"
     ]
     static = "/app/dist" if args.image else "/opt/wealthfolio/dist"
+    data_mount = ["-v", f"{volume}:/data"]
+    runtime_options = []
+    if args.image:
+        # Match the production Compose filesystem restrictions; also exercise Unraid's UID override.
+        runtime_options = ["--read-only", "--tmpfs", "/tmp:size=64M",
+                           "--security-opt", "no-new-privileges:true"]
+        if args.user:
+            runtime_options += ["--user", args.user]
+            # Preserve the fixture's appdata ownership, as an Unraid bind mount does.
+            data_mount = ["--mount", f"type=volume,src={volume},dst=/data,volume-nocopy"]
 
     def command(encrypted, secret=key):
         return [
-            "--name", name, "-v", f"{volume}:/data", *mounts,
+            "--name", name, *data_mount, *mounts, *runtime_options,
             "-e", f"WF_SECRET_KEY={secret}",
             "-e", f"WF_DB_REQUIRE_ENCRYPTION={int(encrypted)}",
             "-e", "WF_DB_PATH=/data/wealthfolio.db",
@@ -75,23 +111,20 @@ def main():
     def remove():
         docker("rm", "-f", name, check=False)
 
-    def boot(encrypted, seed=False):
-        docker("run", "-d", *command(encrypted), "-p", "127.0.0.1::8088", image, binary)
+    def boot(encrypted, seed=False, wrong_key=False):
+        secret = base64.b64encode(b"b" * 32).decode() if wrong_key else key
+        healthcheck = []
+        if args.image:
+            # The exact BusyBox command shipped in the Unraid template and Compose healthcheck.
+            healthcheck = [
+                "--health-cmd", "wget --quiet --tries=1 --spider http://127.0.0.1:8088/api/v1/healthz || exit 1",
+                "--health-interval", "1s", "--health-timeout", "10s", "--health-retries", "3",
+            ]
+        docker("run", "-d", *command(encrypted, secret), *healthcheck,
+               "-p", "127.0.0.1::8088", image, binary)
         try:
             port = json.loads(docker("inspect", name))[0]["NetworkSettings"]["Ports"]["8088/tcp"][0]["HostPort"]
-            origin = f"http://127.0.0.1:{port}"
-
-            def request(path, data=None, method=None, *, content_type="application/json",
-                        timeout=3, expected=200):
-                req = urllib.request.Request(
-                    origin + path,
-                    data=data if isinstance(data, bytes) or data is None else json.dumps(data).encode(),
-                    headers={"Content-Type": content_type, "X-Wealthfolio-Backup": "1"},
-                    method=method or ("GET" if data is None else "PUT"),
-                )
-                with urllib.request.urlopen(req, timeout=timeout) as response:
-                    assert response.status == expected, (path, response.status)
-                    return response.read()
+            request = make_request(f"http://127.0.0.1:{port}")
 
             deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
@@ -99,11 +132,32 @@ def main():
                     raise RuntimeError("Server exited before becoming healthy")
                 try:
                     request("/api/v1/healthz")
+                    if args.image and docker("inspect", "--format", "{{.State.Health.Status}}", name) != "healthy":
+                        time.sleep(0.5)
+                        continue
                     break
                 except (OSError, urllib.error.URLError, http.client.HTTPException):
                     time.sleep(0.5)
             else:
                 raise RuntimeError("Server health timeout")
+            if args.image:
+                uid, gid = (args.user or "1000:1000").split(":")
+                assert docker("exec", name, "id", "-u") == uid, "Wrong container UID"
+                assert docker("exec", name, "id", "-g") == gid, "Wrong container GID"
+                print(f"PASS user={uid}:{gid}, BusyBox healthcheck, read-only runtime", flush=True)
+            if wrong_key:
+                # Profiles open lazily: health can succeed before the database is read.
+                try:
+                    request("/api/v1/settings")
+                except urllib.error.HTTPError as error:
+                    with error:
+                        assert error.code == 500, ("Wrong-key response", error.code)
+                        body = error.read()
+                        assert b"PROFILE_STARTUP_FAILED" in body, "Expected profile startup failure"
+                        assert b"key did not open it" in body, "Expected database key rejection"
+                    print("PASS wrong key rejected on profile access", flush=True)
+                    return
+                raise AssertionError("Wrong key unexpectedly allowed database access")
             assert b"<html" in request("/").lower(), "Packaged frontend missing"
             status = json.loads(request("/api/v1/utilities/database/encryption"))
             assert status["enabled"] == encrypted, status
@@ -153,6 +207,10 @@ def main():
 
     docker("volume", "create", volume)
     try:
+        if args.user:
+            # Only the disposable fixture volume: model appdata owned by Unraid's nobody:users.
+            docker("run", "--rm", "--user", "0:0", *data_mount,
+                   "--entrypoint", "chown", image, args.user, "/data")
         if args.package:
             # Model a normal Debian installation, including the CA trust store used by HTTPS.
             # This only prepares the runtime; the supplied server is never recompiled.
@@ -163,14 +221,7 @@ def main():
             ))
         restore(boot(True, seed=True), True)
         boot(True)
-        # A wrong key must cause an actual startup failure, not a health timeout.
-        docker("run", "-d", *command(True, base64.b64encode(b"b" * 32).decode()), image, binary)
-        try:
-            code = docker("wait", name)
-            assert code != "0", "Wrong key unexpectedly accepted"
-            print("PASS wrong key rejected", flush=True)
-        finally:
-            remove()
+        boot(True, wrong_key=True)
         convert("decrypt")
         restore(boot(False), False)
         convert("encrypt")

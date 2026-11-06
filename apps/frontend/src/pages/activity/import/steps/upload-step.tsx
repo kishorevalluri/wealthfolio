@@ -1,5 +1,6 @@
 import {
   parseCsv,
+  parsePdf,
   listImportTemplates,
   getAccountImportMapping,
   linkAccountTemplate,
@@ -41,6 +42,7 @@ import type { TFunction } from "i18next";
 import { CSVFileViewer, type CSVLine } from "../components/csv-file-viewer";
 import { FileDropzone } from "../components/file-dropzone";
 import { HelpTooltip } from "../components/help-tooltip";
+import { PdfPasswordDialog } from "../components/pdf-password-dialog";
 import {
   setAccountId,
   setFile,
@@ -64,6 +66,8 @@ import {
   mergeActivityMappingsForImportProfile,
   sanitizeImportMappingForProfile,
 } from "../utils/activity-import-profile";
+import { mergeDetectedParseConfig } from "../utils/import-flow-utils";
+import { badgeVariants } from "@wealthfolio/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CSV Preview Component
@@ -82,16 +86,17 @@ function CsvPreviewTable({ headers, rows, maxRows = 50 }: CsvPreviewTableProps) 
 
   return (
     <>
-      <table className="w-full">
+      {/* `allow-select` keeps the CSV text selectable under the desktop app's lockdown */}
+      <table className="allow-select w-full">
         <thead className="bg-muted sticky top-0">
           <tr>
-            <th className="text-muted-foreground bg-muted w-12 border-r px-2 py-1.5 text-right font-mono text-xs">
+            <th className="text-muted-foreground bg-muted w-12 border-e px-2 py-1.5 text-end font-mono text-xs">
               #
             </th>
             {headers.map((header, idx) => (
               <th
                 key={idx}
-                className="border-r px-2 py-1.5 text-left font-mono text-xs font-semibold last:border-r-0"
+                className="border-e px-2 py-1.5 text-start font-mono text-xs font-semibold last:border-e-0"
               >
                 {header || (
                   <span className="text-muted-foreground italic">
@@ -112,13 +117,13 @@ function CsvPreviewTable({ headers, rows, maxRows = 50 }: CsvPreviewTableProps) 
                 "hover:bg-muted/50",
               )}
             >
-              <td className="text-muted-foreground bg-muted/20 w-12 border-r px-2 py-1 text-right">
+              <td className="text-muted-foreground bg-muted/20 w-12 border-e px-2 py-1 text-end">
                 {rowIdx + 1}
               </td>
               {row.map((cell, cellIdx) => (
                 <td
                   key={cellIdx}
-                  className="max-w-[200px] truncate border-r px-2 py-1 last:border-r-0"
+                  className="max-w-50 truncate border-e px-2 py-1 last:border-e-0"
                   title={cell}
                 >
                   {cell || <span className="text-muted-foreground italic">-</span>}
@@ -126,7 +131,7 @@ function CsvPreviewTable({ headers, rows, maxRows = 50 }: CsvPreviewTableProps) 
               ))}
               {row.length < headers.length &&
                 Array.from({ length: headers.length - row.length }).map((_, idx) => (
-                  <td key={`empty-${idx}`} className="border-r px-2 py-1 last:border-r-0">
+                  <td key={`empty-${idx}`} className="border-e px-2 py-1 last:border-e-0">
                     <span className="text-muted-foreground italic">-</span>
                   </td>
                 ))}
@@ -196,7 +201,8 @@ function CsvPreviewTabs({
         </CardHeader>
         <CardContent className="p-0">
           <TabsContent value="parsed" className="m-0 border-0 p-0">
-            <div className="max-h-[300px] overflow-auto border-t">
+            {/* `isolate` stops WebKitGTK painting the sticky header over this scrollbar inside a scrolling parent */}
+            <div className="isolate max-h-75 overflow-auto border-t">
               <CsvPreviewTable headers={headers} rows={rows} maxRows={50} />
             </div>
           </TabsContent>
@@ -228,7 +234,11 @@ function DateFormatPicker({
   const { t } = useTranslation();
   const DATE_FORMAT_SELECT_OPTIONS = useMemo(
     () => [
-      ...dateFormatSelectOptions,
+      ...dateFormatSelectOptions.map((option) => ({
+        ...option,
+        label:
+          option.value === "auto" ? t("activity:import.parseSettings.autoDetect") : option.label,
+      })),
       { value: "__custom__", label: t("activity:import.parseSettings.custom") },
     ],
     [t],
@@ -288,6 +298,7 @@ function formatConfigValue(t: TFunction, key: string, value: string | number | b
       ",": t("activity:import.parseSettings.valueComma"),
       ";": t("activity:import.parseSettings.valueSemicolon"),
       "\t": t("activity:import.parseSettings.valueTab"),
+      "\\t": t("activity:import.parseSettings.valueTab"),
     };
     return delimiterLabels[value as string] || String(value);
   }
@@ -387,37 +398,45 @@ function TemplateSelector({
 
       {/* Parse Settings — collapsible */}
       <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <CollapsibleTrigger asChild>
-          <div
-            className={cn(
-              "hover:bg-muted/40 flex cursor-pointer items-center justify-between px-3 py-2 transition-colors",
-              "border-t",
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <Icons.Settings2 className="text-muted-foreground h-3.5 w-3.5" />
-              <span className="text-muted-foreground text-xs font-medium">
-                {t("activity:import.parseSettings.title")}
-              </span>
-              {hasConfigErrors && (
-                <span className="bg-destructive/10 text-destructive rounded-full px-2 py-px text-[10px]">
-                  {t("activity:import.parseSettings.adjustToFix")}
-                </span>
-              )}
-              {!settingsOpen && !hasConfigErrors && (
-                <span className="text-muted-foreground text-[11px]">{configSummary}</span>
-              )}
-            </div>
-            <Icons.ChevronDown
+        <CollapsibleTrigger
+          nativeButton={false}
+          render={
+            <div
               className={cn(
-                "text-muted-foreground h-3.5 w-3.5 transition-transform duration-200",
-                settingsOpen && "rotate-180",
+                "hover:bg-muted/40 flex cursor-pointer items-center justify-between px-3 py-2 transition-colors",
+                "border-t",
               )}
             />
+          }
+        >
+          <div className="flex items-center gap-2">
+            <Icons.Settings2 className="text-muted-foreground h-3.5 w-3.5" />
+            <span className="text-muted-foreground text-xs font-medium">
+              {t("activity:import.parseSettings.title")}
+            </span>
+            {hasConfigErrors && (
+              <span
+                className={cn(
+                  badgeVariants({ variant: "destructive-subtle" }),
+                  "text-2xs py-px font-normal",
+                )}
+              >
+                {t("activity:import.parseSettings.adjustToFix")}
+              </span>
+            )}
+            {!settingsOpen && !hasConfigErrors && (
+              <span className="text-muted-foreground text-2xs">{configSummary}</span>
+            )}
           </div>
+          <Icons.ChevronDown
+            className={cn(
+              "text-muted-foreground h-3.5 w-3.5 transition-transform duration-200",
+              settingsOpen && "rotate-180",
+            )}
+          />
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="border-t px-3 pb-4 pt-3">
+          <div className="border-t px-3 pt-3 pb-4">
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
               {/* Header row checkbox spans full width on mobile */}
               <div className="col-span-2 flex items-center gap-2 sm:col-span-3">
@@ -469,7 +488,15 @@ function TemplateSelector({
                 </Label>
                 <Select
                   value={config.delimiter}
-                  onValueChange={(value) => onConfigChange({ delimiter: value })}
+                  items={{
+                    auto: t("activity:import.parseSettings.delimiterAuto"),
+                    ",": t("activity:import.parseSettings.delimiterComma"),
+                    ";": t("activity:import.parseSettings.delimiterSemicolon"),
+                    "\\t": t("activity:import.parseSettings.delimiterTab"),
+                  }}
+                  onValueChange={(value) => {
+                    if (value !== null) onConfigChange({ delimiter: value });
+                  }}
                 >
                   <SelectTrigger id="delimiter" className="h-8 text-sm">
                     <SelectValue placeholder={t("activity:import.parseSettings.selectDelimiter")} />
@@ -499,7 +526,14 @@ function TemplateSelector({
                 </Label>
                 <Select
                   value={config.decimalSeparator}
-                  onValueChange={(value) => onConfigChange({ decimalSeparator: value })}
+                  items={{
+                    auto: t("activity:import.parseSettings.decimalAuto"),
+                    ".": t("activity:import.parseSettings.decimalPeriod"),
+                    ",": t("activity:import.parseSettings.decimalComma"),
+                  }}
+                  onValueChange={(value) => {
+                    if (value !== null) onConfigChange({ decimalSeparator: value });
+                  }}
                 >
                   <SelectTrigger id="decimalSeparator" className="h-8 text-sm">
                     <SelectValue placeholder={t("activity:import.parseSettings.selectSeparator")} />
@@ -570,7 +604,10 @@ export function UploadStep() {
       : state.selectedTemplateId;
 
   const applyTemplate = useCallback(
-    async (template: ImportTemplateData, options?: { selectTemplate?: boolean }) => {
+    async (
+      template: ImportTemplateData,
+      options?: { selectTemplate?: boolean; overrideHeaders?: string[] },
+    ) => {
       const selectTemplate = options?.selectTemplate ?? true;
       const nextParseConfig =
         importType === ImportType.ACTIVITY && isDefaultActivityTemplateId(template.id)
@@ -583,13 +620,15 @@ export function UploadStep() {
 
       // Re-parse with the template's config to get fresh headers, then compute mappings
       // so auto-detected columns (e.g., ISIN) are merged with the saved template mappings.
-      let headers = state.headers;
-      if (state.file) {
+      let headers = options?.overrideHeaders ?? state.headers;
+      if (state.file && !state.file.name.toLowerCase().endsWith(".pdf")) {
         try {
           const result = await parseCsv(state.file, nextParseConfig);
           setParseError(null);
           dispatch(setParsedData(result.headers, result.rows));
-          dispatch(setParseConfig(result.detectedConfig));
+          dispatch(
+            setParseConfig(mergeDetectedParseConfig(nextParseConfig, result.detectedConfig)),
+          );
           headers = result.headers;
         } catch (err) {
           setParseError(
@@ -661,12 +700,14 @@ export function UploadStep() {
 
     dispatch(setParseConfig(baselineParseConfig));
     dispatch(setMapping(createEmptyHoldingsMapping(state.accountId || "")));
-    if (state.file) {
+    if (state.file && !state.file.name.toLowerCase().endsWith(".pdf")) {
       parseCsv(state.file, baselineParseConfig)
         .then((result) => {
           setParseError(null);
           dispatch(setParsedData(result.headers, result.rows));
-          dispatch(setParseConfig(result.detectedConfig));
+          dispatch(
+            setParseConfig(mergeDetectedParseConfig(baselineParseConfig, result.detectedConfig)),
+          );
         })
         .catch((error) => {
           setParseError(
@@ -702,12 +743,16 @@ export function UploadStep() {
       } else {
         dispatch(setParseConfig(baselineParseConfig));
         dispatch(setMapping(createEmptyHoldingsMapping(state.accountId || "")));
-        if (state.file) {
+        if (state.file && !state.file.name.toLowerCase().endsWith(".pdf")) {
           parseCsv(state.file, baselineParseConfig)
             .then((result) => {
               setParseError(null);
               dispatch(setParsedData(result.headers, result.rows));
-              dispatch(setParseConfig(result.detectedConfig));
+              dispatch(
+                setParseConfig(
+                  mergeDetectedParseConfig(baselineParseConfig, result.detectedConfig),
+                ),
+              );
             })
             .catch((error) => {
               setParseError(
@@ -732,7 +777,7 @@ export function UploadStep() {
       .catch(() => {
         /* no saved mapping — ignore */
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [
     applyTemplate,
     baselineParseConfig,
@@ -774,7 +819,7 @@ export function UploadStep() {
     };
     dispatch(setParseConfig(updates));
 
-    if (fileRef.current) {
+    if (fileRef.current && !fileRef.current.name.toLowerCase().endsWith(".pdf")) {
       const newConfig = { ...parseConfigRef.current, ...updates };
       parseCsv(fileRef.current, newConfig)
         .then((result) => {
@@ -796,12 +841,72 @@ export function UploadStep() {
     [dispatch],
   );
 
+  const [isPdfPasswordOpen, setIsPdfPasswordOpen] = useState(false);
+  const [pdfPasswordError, setPdfPasswordError] = useState<string | null>(null);
+  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
+  const [isPdfParsing, setIsPdfParsing] = useState(false);
+
+  const handlePdfParse = useCallback(
+    async (file: File, password?: string) => {
+      setIsPdfParsing(true);
+      setPdfPasswordError(null);
+      try {
+        const result = await parsePdf(file, password);
+        setIsPdfPasswordOpen(false);
+        setPendingPdfFile(null);
+        setParseError(null);
+        let rows = result.parsed.rows;
+        if (importType === ImportType.HOLDINGS) {
+          const hasHoldings = rows.some((r) => r[1] === "HOLDING BALANCE");
+          if (hasHoldings) {
+            rows = rows.filter((r) => r[1] === "HOLDING BALANCE");
+          }
+        } else if (importType === ImportType.ACTIVITY) {
+          const hasTxns = rows.some((r) => r[1] !== "HOLDING BALANCE");
+          if (hasTxns) {
+            rows = rows.filter((r) => r[1] !== "HOLDING BALANCE");
+          }
+        }
+
+        dispatch(setParsedData(result.parsed.headers, rows));
+        dispatch(setParseConfig(result.parsed.detectedConfig));
+
+        if (result.recommendedTemplateId) {
+          const recTemplate = templates.find((t) => t.id === result.recommendedTemplateId);
+          if (recTemplate) {
+            void applyTemplate(recTemplate, { overrideHeaders: result.parsed.headers });
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          msg.toLowerCase().includes("encrypted") ||
+          msg.toLowerCase().includes("password") ||
+          msg.toLowerCase().includes("decrypt")
+        ) {
+          setPendingPdfFile(file);
+          setPdfPasswordError(
+            password
+              ? msg || t("activity:import.upload.pdfDecryptionFailed")
+              : null,
+          );
+          setIsPdfPasswordOpen(true);
+        } else {
+          setParseError(msg || t("activity:import.upload.failedToParse"));
+        }
+      } finally {
+        setIsPdfParsing(false);
+      }
+    },
+    [applyTemplate, dispatch, t, templates],
+  );
+
   const { mutate: parseFile, isPending } = useMutation({
     mutationFn: (file: File) => parseCsv(file, state.parseConfig),
     onSuccess: (result) => {
       setParseError(null);
       dispatch(setParsedData(result.headers, result.rows));
-      dispatch(setParseConfig(result.detectedConfig));
+      dispatch(setParseConfig(mergeDetectedParseConfig(state.parseConfig, result.detectedConfig)));
     },
     onError: (error) => {
       setParseError(
@@ -814,19 +919,40 @@ export function UploadStep() {
     (file: File | null) => {
       if (file) {
         dispatch(setFile(file));
-        parseFile(file);
+        if (file.name.toLowerCase().endsWith(".pdf")) {
+          setPendingPdfFile(file);
+          void handlePdfParse(file);
+        } else {
+          setPendingPdfFile(null);
+          parseFile(file);
+        }
       } else {
         dispatch(setFile(null as unknown as File));
         dispatch(setParsedData([], []));
+        setPendingPdfFile(null);
+        setIsPdfPasswordOpen(false);
       }
     },
-    [dispatch, parseFile],
+    [dispatch, handlePdfParse, parseFile],
+  );
+
+  const handlePdfPasswordSubmit = useCallback(
+    (password: string) => {
+      if (pendingPdfFile) {
+        void handlePdfParse(pendingPdfFile, password);
+      }
+    },
+    [handlePdfParse, pendingPdfFile],
   );
 
   const handleConfigChange = useCallback(
     (updates: Partial<ParseConfig>) => {
       dispatch(setParseConfig(updates));
       if (state.file) {
+        if (state.file.name.toLowerCase().endsWith(".pdf")) {
+          // PDFs use detected text tables
+          return;
+        }
         const newConfig = { ...state.parseConfig, ...updates };
         parseCsv(state.file, newConfig)
           .then((result) => {
@@ -852,11 +978,11 @@ export function UploadStep() {
         {/* Account */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground font-mono text-[10px] tabular-nums">01</span>
+            <span className="text-muted-foreground text-2xs font-mono tabular-nums">01</span>
             <h2 className="text-sm font-semibold">{t("activity:import.upload.selectAccount")}</h2>
             <HelpTooltip content={t("activity:import.upload.selectAccountHelp")} />
           </div>
-          <div className="h-[116px]">
+          <div className="h-29">
             {isMobile ? (
               <div
                 className={cn(
@@ -907,16 +1033,16 @@ export function UploadStep() {
         {/* File upload */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground font-mono text-[10px] tabular-nums">02</span>
+            <span className="text-muted-foreground text-2xs font-mono tabular-nums">02</span>
             <h2 className="text-sm font-semibold">{t("activity:import.upload.uploadCsv")}</h2>
             <HelpTooltip content={t("activity:import.upload.uploadCsvHelp")} />
           </div>
-          <div className="h-[116px]">
+          <div className="h-29">
             <FileDropzone
               file={state.file}
               onFileChange={handleFileSelect}
-              isLoading={isPending}
-              accept=".csv"
+              isLoading={isPending || isPdfParsing}
+              accept=".csv,.pdf"
               isValid={!hasParseErrors}
               error={parseError}
             />
@@ -927,9 +1053,9 @@ export function UploadStep() {
       {/* Select Format */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground font-mono text-[10px] tabular-nums">03</span>
+          <span className="text-muted-foreground text-2xs font-mono tabular-nums">03</span>
           <h2 className="text-sm font-semibold">{t("activity:import.upload.selectFormat")}</h2>
-          <span className="text-muted-foreground rounded border px-1.5 py-px text-[10px] leading-none">
+          <span className="text-muted-foreground text-2xs rounded border px-1.5 py-px leading-none">
             {t("activity:import.upload.optional")}
           </span>
         </div>
@@ -948,10 +1074,19 @@ export function UploadStep() {
         />
       </div>
 
-      {/* CSV Preview */}
+      {/* CSV / PDF Preview */}
       {state.file && state.headers.length > 0 && (
         <CsvPreviewTabs file={state.file} headers={state.headers} rows={state.parsedRows} />
       )}
+
+      {/* PDF Password Dialog */}
+      <PdfPasswordDialog
+        open={isPdfPasswordOpen}
+        onOpenChange={setIsPdfPasswordOpen}
+        onSubmit={handlePdfPasswordSubmit}
+        isLoading={isPdfParsing}
+        error={pdfPasswordError}
+      />
     </div>
   );
 }

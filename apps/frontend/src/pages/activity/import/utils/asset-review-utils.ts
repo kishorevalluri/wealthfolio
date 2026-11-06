@@ -263,6 +263,10 @@ export function buildSyntheticDraftsFromHoldings(
 
   const drafts: DraftActivity[] = [];
 
+  const isinIndex = headers.findIndex(
+    (h) => h.trim().toUpperCase() === "ISIN" || h.trim().toUpperCase().includes("ISIN"),
+  );
+
   for (let i = 0; i < parsedRows.length; i++) {
     const row = parsedRows[i];
     const rawSymbol = row[symbolIndex]?.trim().toUpperCase();
@@ -272,6 +276,8 @@ export function buildSyntheticDraftsFromHoldings(
     const currency =
       (currencyIndex >= 0 ? row[currencyIndex]?.trim() : undefined) || defaultCurrency;
     const meta = symbolMeta[rawSymbol] || symbolMeta[resolvedSymbol] || {};
+    const rawIsin = isinIndex >= 0 ? row[isinIndex]?.trim().toUpperCase() : undefined;
+    const isin = rawIsin && /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(rawIsin) ? rawIsin : undefined;
 
     const key = buildImportAssetCandidateKey({
       accountId,
@@ -279,6 +285,7 @@ export function buildSyntheticDraftsFromHoldings(
       instrumentType: meta.instrumentType,
       quoteCcy: meta.quoteCcy || currency,
       exchangeMic: meta.exchangeMic,
+      isin,
       providerId: meta.providerId,
       providerSymbol: meta.providerSymbol,
     });
@@ -297,6 +304,7 @@ export function buildSyntheticDraftsFromHoldings(
       quoteCcy: meta.quoteCcy,
       instrumentType: meta.instrumentType,
       symbolName: meta.symbolName,
+      isin,
       providerId: meta.providerId,
       providerSymbol: meta.providerSymbol,
       assetCandidateKey: key,

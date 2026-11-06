@@ -1,9 +1,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
-import { calculateRebalancePlan as calculateTauriRebalancePlan } from "./tauri";
+import {
+  calculateAllocationWorksheet,
+  generateCalculatedAdjustments as generateTauriCalculatedAdjustments,
+} from "./tauri";
 import { COMMANDS, invoke } from "./web/core";
 
 const { platformInvokeMock } = vi.hoisted(() => ({
@@ -21,6 +24,12 @@ const TAURI_REGISTERED_COMMAND_RE = /commands::[a-z_]+::([a-zA-Z0-9_]+)/g;
 const RUNTIME_EXPORT_RE =
   /^export\s+(?:const|async\s+function|function|class|enum)\s+([a-zA-Z_$][\w$]*)/gm;
 const NAMED_REEXPORT_RE = /export\s*\{([^{}]*)\}\s*from\s*["']([^"']+)["']/g;
+
+// Adapter tests exercise transport behavior inside an admitted profile.
+beforeEach(async () => {
+  const { installProfileSession } = await import("@/features/profiles/session");
+  installProfileSession({ profileId: "test-profile", scopeId: "test-scope" });
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -114,39 +123,114 @@ function collectNamedReexports(
   return { hasStar, names };
 }
 
-describe("rebalance eligibility transport", () => {
-  it("canonicalizes the Tauri shared request before web transport", async () => {
+describe("calculated worksheet transport", () => {
+  it("previews a position total without assigning an account in either runtime", async () => {
     const mock = stubFetch({});
     platformInvokeMock
       .mockReset()
-      .mockImplementation((command, payload) => invoke(command, payload));
-
-    await calculateTauriRebalancePlan("target-1", 100, { type: "all" }, "cash_flow_only", [
-      "asset-z",
-      "asset-a",
-      "asset-z",
+      .mockImplementation((command: string, payload?: Record<string, unknown>) =>
+        invoke(command, payload),
+      );
+    await calculateAllocationWorksheet(
+      "target-1",
+      { trackedCashToUse: 1000, externalContribution: {} },
+      [
+        {
+          lineId: "position:vti:preview",
+          assetId: "vti",
+          direction: "increase",
+          inputMode: "amount",
+          value: 1000,
+        },
+      ],
+      ["acc-1", "acc-2"],
+      { type: "all" },
+    );
+    const { body } = lastCall(mock);
+    const request = JSON.parse(body as string) as { lines: unknown[] };
+    expect(request.lines).toEqual([
+      {
+        lineId: "position:vti:preview",
+        assetId: "vti",
+        direction: "increase",
+        inputMode: "amount",
+        value: 1000,
+      },
     ]);
+  });
+  it("keeps an empty eligible selection instead of dropping it", async () => {
+    // §4.1: selecting no eligible security is a valid state. Dropping the empty
+    // list would silently turn it into "every recorded security".
+    const mock = stubFetch({});
+    platformInvokeMock
+      .mockReset()
+      .mockImplementation((command: string, payload?: Record<string, unknown>) =>
+        invoke(command, payload),
+      );
+
+    await generateTauriCalculatedAdjustments(
+      "target-1",
+      "rebalance",
+      "current_holding_proportions",
+      { trackedCashToUse: 0, externalContribution: {} },
+      ["acc-1"],
+      { type: "all" },
+      [],
+    );
 
     const { body } = lastCall(mock);
     const parsed = JSON.parse(body as string) as { eligibleAssetIds?: unknown };
-    expect(parsed.eligibleAssetIds).toEqual(["asset-a", "asset-z"]);
+    expect(parsed.eligibleAssetIds).toEqual([]);
   });
 
-  it("omits the allowlist when no restriction is supplied", async () => {
+  it("sends external cash keyed by the account it would arrive in", async () => {
     const mock = stubFetch({});
-    await invoke("calculate_rebalance_plan", {
-      targetId: "target-1",
-      availableCash: 100,
-      filter: { type: "all" },
-      scenarioMode: "cash_flow_only",
-    });
+    platformInvokeMock
+      .mockReset()
+      .mockImplementation((command: string, payload?: Record<string, unknown>) =>
+        invoke(command, payload),
+      );
 
-    const { body } = lastCall(mock);
-    expect(JSON.parse(body as string)).not.toHaveProperty("eligibleAssetIds");
+    await generateTauriCalculatedAdjustments(
+      "target-1",
+      "invest_cash",
+      "current_holding_proportions",
+      { trackedCashToUse: 250, externalContribution: { "acc-1": 1000, "acc-2": 500 } },
+      ["acc-1", "acc-2"],
+      { type: "all" },
+    );
+
+    const parsed = JSON.parse(lastCall(mock).body as string) as {
+      cash: unknown;
+      selectedAccountIds?: unknown;
+      eligibleAssetIds?: unknown;
+    };
+    expect(parsed.cash).toEqual({
+      trackedCashToUse: 250,
+      externalContribution: { "acc-1": 1000, "acc-2": 500 },
+    });
+    expect(parsed.selectedAccountIds).toEqual(["acc-1", "acc-2"]);
+    expect(parsed).not.toHaveProperty("eligibleAssetIds");
   });
 });
 
 describe("adapter command parity", () => {
+  it("routes detailed rule reruns without changing the numeric legacy response", async () => {
+    const summary = { matched: 1, changed: 0, incompatible: 1 };
+    const mock = stubFetch(summary);
+    expect(
+      await invoke("rerun_categorization_rules_detailed", { onlyUncategorized: false }),
+    ).toEqual(summary);
+    expect(lastCall(mock)).toEqual({
+      url: "/api/v1/spending/rules/rerun/detailed",
+      method: "POST",
+      body: JSON.stringify({ onlyUncategorized: false }),
+    });
+
+    stubFetch(1);
+    expect(await invoke("rerun_categorization_rules", { onlyUncategorized: true })).toBe(1);
+  });
+
   it("registers every command reachable from the web adapter", () => {
     const files = [
       ...collectSourceFiles(path.join(frontendSrcDir, "adapters/shared")),
@@ -201,6 +285,23 @@ describe("adapter command parity", () => {
       .sort();
 
     expect(missing).toEqual([]);
+  });
+
+  it("preserves explicit Connect rebind confirmation in the web request", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("null", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await invoke("store_sync_session", { refreshToken: "candidate", confirmRebind: true });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/v1/connect/session");
+    expect(JSON.parse(init.body as string)).toEqual({
+      refreshToken: "candidate",
+      confirmRebind: true,
+    });
   });
 
   it("routes allocation drilldown requests with all required filters", async () => {
@@ -263,6 +364,40 @@ function lastCall(mock: ReturnType<typeof stubFetch>) {
   const [url, init] = mock.mock.calls[0] as [string, RequestInit];
   return { url, method: (init as RequestInit & { method: string }).method, body: init.body };
 }
+
+describe("cloud backup action transport", () => {
+  it.each([
+    { action: "status" },
+    { action: "runtimeStatus" },
+    { action: "enable", confirmed: true },
+    { action: "recover", code: "test-recovery-code" },
+  ])("sends the $action operation with profile admission", async (operation) => {
+    const mock = stubFetch();
+    await invoke("cloud_backup_action", { operation });
+    const { url, method, body } = lastCall(mock);
+    expect(url).toBe("/api/v1/cloud-backups/action");
+    expect(method).toBe("POST");
+    expect(JSON.parse(body as string)).toEqual({ operation });
+    const init = mock.mock.calls[0][1]!;
+    const headers = new Headers(init.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("x-wf-profile-scope")).toBe("test-scope");
+  });
+});
+
+describe("cloud backup capture transport", () => {
+  it("sends the manual flag as a JSON body", async () => {
+    const mock = stubFetch();
+    await invoke("cloud_backup_capture", { manual: true });
+    const { url, method, body } = lastCall(mock);
+    expect(url).toBe("/api/v1/cloud-backups/capture");
+    expect(method).toBe("POST");
+    expect(JSON.parse(body as string)).toEqual({ manual: true });
+    expect(new Headers(mock.mock.calls[0][1]!.headers).get("Content-Type")).toBe(
+      "application/json",
+    );
+  });
+});
 
 describe("scope-based routing — get_holdings", () => {
   it("all → POST /holdings/query", async () => {
@@ -522,6 +657,31 @@ describe("scope-based routing — get_income_summary", () => {
   });
 });
 
+describe("scope-based routing — get_indian_tax_summary", () => {
+  it("all → POST /tax/indian/summary/query", async () => {
+    const mock = stubFetch();
+    await invoke("get_indian_tax_summary", { filter: { type: "all" }, financialYear: 2024 });
+    const { url, method, body } = lastCall(mock);
+    expect(url).toBe("/api/v1/tax/indian/summary/query");
+    expect(method).toBe("POST");
+    expect(JSON.parse(body as string)).toEqual({
+      filter: { type: "all" },
+      financialYear: 2024,
+    });
+  });
+
+  it("account → GET /tax/indian/summary?accountId=...&financialYear=...", async () => {
+    const mock = stubFetch();
+    await invoke("get_indian_tax_summary", {
+      filter: { type: "account", accountId: "acc_1" },
+      financialYear: 2024,
+    });
+    const { url, method } = lastCall(mock);
+    expect(url).toBe("/api/v1/tax/indian/summary?accountId=acc_1&financialYear=2024");
+    expect(method).toBe("GET");
+  });
+});
+
 describe("scope-based routing — performance filters", () => {
   const commands = [
     { command: "calculate_performance_history", path: "/api/v1/performance/history" },
@@ -579,5 +739,16 @@ describe("scope-based routing — performance filters", () => {
       endDate: "2026-01-31",
       profile: "summary",
     });
+  });
+});
+
+describe("agent token permission editing", () => {
+  it("uses PATCH with encoded ID and a scope-only request body", async () => {
+    const mock = stubFetch({ id: "key/1", scopes: ["holdings:read"] });
+    await invoke("update_agent_access_token_scopes", { id: "key/1", scopes: ["holdings:read"] });
+    const { url, method, body } = lastCall(mock);
+    expect(url).toBe("/api/v1/agent-access/tokens/key%2F1");
+    expect(method).toBe("PATCH");
+    expect(JSON.parse(body as string)).toEqual({ scopes: ["holdings:read"] });
   });
 });

@@ -1,3 +1,4 @@
+import { useNumberFormatting } from "@wealthfolio/ui";
 import {
   Tooltip,
   TooltipContent,
@@ -9,6 +10,7 @@ import { CATEGORY_CSS_COLORS, type ParsedNetWorth } from "./utils";
 
 /** Slim stacked bar of asset composition (% of assets). The breakdown rows below act as its legend. */
 export function CompositionBar({ data, className }: { data: ParsedNetWorth; className?: string }) {
+  const formatting = useNumberFormatting();
   const items = useMemo(() => {
     if (data.assets.total === 0) return [];
     return data.assets.breakdown
@@ -26,22 +28,27 @@ export function CompositionBar({ data, className }: { data: ParsedNetWorth; clas
   return (
     <div className={`flex h-2 w-full overflow-hidden rounded-full ${className ?? ""}`}>
       {items.map((item, index) => (
-        <TooltipProvider key={item.category} delayDuration={0}>
+        <TooltipProvider key={item.category} delay={0}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                className="h-full transition-opacity hover:opacity-80"
-                style={{
-                  width: `${item.percentage}%`,
-                  minWidth: "2px",
-                  backgroundColor: CATEGORY_CSS_COLORS[item.category] ?? "var(--muted-foreground)",
-                  marginLeft: index > 0 ? "1px" : 0,
-                }}
-              />
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <div
+                  className="h-full transition-opacity hover:opacity-80"
+                  style={{
+                    width: `${item.percentage}%`,
+                    minWidth: "2px",
+                    backgroundColor:
+                      CATEGORY_CSS_COLORS[item.category] ?? "var(--muted-foreground)",
+                    marginInlineStart: index > 0 ? "1px" : 0,
+                  }}
+                />
+              }
+            />
             <TooltipContent side="bottom" className="text-xs">
               <span className="font-medium">{item.name}</span>
-              <span className="text-muted-foreground ml-2">{item.percentage.toFixed(1)}%</span>
+              <span className="text-background/70 ms-2">
+                {formatting.formatPercent(item.percentage / 100, { digits: 1 })}
+              </span>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

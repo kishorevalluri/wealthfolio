@@ -110,7 +110,8 @@ pub fn derive_session_key(shared_secret_b64: &str, context: &str) -> Result<Stri
         .map_err(|e| format!("Invalid shared secret: {}", e))?;
 
     // Use context as additional info
-    let info = format!("{}-{}", std::str::from_utf8(SESSION_INFO).unwrap(), context);
+    // Lossless: SESSION_INFO is ASCII.
+    let info = format!("{}-{}", String::from_utf8_lossy(SESSION_INFO), context);
 
     let hk = Hkdf::<Sha256>::new(None, &shared_secret);
     let mut session_key = [0u8; ROOT_KEY_SIZE];
@@ -122,6 +123,11 @@ pub fn derive_session_key(shared_secret_b64: &str, context: &str) -> Result<Stri
 
 /// Encrypt data using XChaCha20-Poly1305
 pub fn encrypt(key_b64: &str, plaintext: &str) -> Result<String, String> {
+    encrypt_bytes(key_b64, plaintext.as_bytes()).map(|bytes| BASE64.encode(bytes))
+}
+
+/// Encrypt binary data, returning the nonce followed by authenticated ciphertext.
+pub fn encrypt_bytes(key_b64: &str, plaintext: &[u8]) -> Result<Vec<u8>, String> {
     let key_bytes: [u8; 32] = BASE64
         .decode(key_b64)
         .map_err(|e| format!("Invalid key: {}", e))?
@@ -138,7 +144,7 @@ pub fn encrypt(key_b64: &str, plaintext: &str) -> Result<String, String> {
 
     // Encrypt
     let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_bytes())
+        .encrypt(nonce, plaintext)
         .map_err(|e| format!("Encryption failed: {}", e))?;
 
     // Prepend nonce to ciphertext
@@ -146,20 +152,25 @@ pub fn encrypt(key_b64: &str, plaintext: &str) -> Result<String, String> {
     result.extend_from_slice(&nonce_bytes);
     result.extend_from_slice(&ciphertext);
 
-    Ok(BASE64.encode(result))
+    Ok(result)
 }
 
 /// Decrypt data using XChaCha20-Poly1305
 pub fn decrypt(key_b64: &str, ciphertext_b64: &str) -> Result<String, String> {
+    let data = BASE64
+        .decode(ciphertext_b64)
+        .map_err(|e| format!("Invalid ciphertext: {}", e))?;
+    let plaintext = decrypt_bytes(key_b64, &data)?;
+    String::from_utf8(plaintext).map_err(|e| format!("Invalid UTF-8 in plaintext: {}", e))
+}
+
+/// Decrypt a binary nonce and authenticated ciphertext.
+pub fn decrypt_bytes(key_b64: &str, data: &[u8]) -> Result<Vec<u8>, String> {
     let key_bytes: [u8; 32] = BASE64
         .decode(key_b64)
         .map_err(|e| format!("Invalid key: {}", e))?
         .try_into()
         .map_err(|_| "Key must be 32 bytes")?;
-
-    let data = BASE64
-        .decode(ciphertext_b64)
-        .map_err(|e| format!("Invalid ciphertext: {}", e))?;
 
     if data.len() < NONCE_SIZE {
         return Err("Ciphertext too short".to_string());
@@ -176,7 +187,7 @@ pub fn decrypt(key_b64: &str, ciphertext_b64: &str) -> Result<String, String> {
         .decrypt(nonce, ciphertext)
         .map_err(|_| "Decryption failed - invalid key or corrupted data")?;
 
-    String::from_utf8(plaintext).map_err(|e| format!("Invalid UTF-8 in plaintext: {}", e))
+    Ok(plaintext)
 }
 
 /// Generate a 6-character alphanumeric pairing code
@@ -366,5 +377,98 @@ mod tests {
         let hash_mixed = hash_pairing_code("AbC 1-2-3");
         assert_eq!(hash, hash_lower);
         assert_eq!(hash, hash_mixed);
+    }
+
+    // Golden vectors: today's outputs for fixed synthetic inputs. Paired devices and the
+    // cloud keep values derived and sealed here, so a dependency upgrade must reproduce them
+    // exactly. If one fails, the upgrade broke compatibility: do not regenerate the values.
+    const GOLDEN_ROOT_KEY: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+    const GOLDEN_ALICE_SECRET: &str = "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=";
+    const GOLDEN_ALICE_PUBLIC: &str = "NYBy1jZYgNGu6jKa35EhODhR7SGijjt16WXQ0s0WYlQ=";
+    const GOLDEN_BOB_SECRET: &str = "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=";
+    const GOLDEN_BOB_PUBLIC: &str = "eaYx7t4b+cmPEgMs3q3Q56B5OY/HhriMyEbsia+FpRo=";
+    const GOLDEN_SHARED_SECRET: &str = "BMME+xyoPO514gY0QjHzN5fgfZkp22cJlLfG++sdwlU=";
+
+    #[test]
+    fn golden_dek_derivation() {
+        assert_eq!(
+            derive_dek(GOLDEN_ROOT_KEY, 1).unwrap(),
+            "5H9rpCWYKEZRfvuSViePYCMz4a/TuiS8JPAtK38oFxE="
+        );
+        assert_eq!(
+            derive_dek(GOLDEN_ROOT_KEY, 2).unwrap(),
+            "dB6po+MrKAMZYw89KjqluOXSFPSGtg/+kKeGBTfPSSc="
+        );
+    }
+
+    #[test]
+    fn golden_pairing_key_agreement() {
+        // The public key a device publishes for its secret, as generate_ephemeral_keypair does.
+        for (secret, public) in [
+            (GOLDEN_ALICE_SECRET, GOLDEN_ALICE_PUBLIC),
+            (GOLDEN_BOB_SECRET, GOLDEN_BOB_PUBLIC),
+        ] {
+            let secret: [u8; 32] = BASE64.decode(secret).unwrap().try_into().unwrap();
+            let derived = PublicKey::from(&StaticSecret::from(secret));
+            assert_eq!(BASE64.encode(derived.as_bytes()), public);
+        }
+        assert_eq!(
+            compute_shared_secret(GOLDEN_ALICE_SECRET, GOLDEN_BOB_PUBLIC).unwrap(),
+            GOLDEN_SHARED_SECRET
+        );
+        assert_eq!(
+            compute_shared_secret(GOLDEN_BOB_SECRET, GOLDEN_ALICE_PUBLIC).unwrap(),
+            GOLDEN_SHARED_SECRET
+        );
+
+        let session_key = derive_session_key(GOLDEN_SHARED_SECRET, "pairing").unwrap();
+        assert_eq!(session_key, "W8AFDuNzN8QcVtZJL+CJtbht158/64xTJXoTLIyJ3l8=");
+        assert_eq!(compute_sas(GOLDEN_SHARED_SECRET).unwrap(), "848939");
+        assert_eq!(
+            hmac_sha256(&session_key, "golden-session:device-a:1").unwrap(),
+            "82736e0ea63a94913b0638774d3de12e429b0f202f1a42b86d0d49906fa67ec1"
+        );
+    }
+
+    #[test]
+    fn golden_hashes() {
+        assert_eq!(
+            hash_pairing_code("ab-c234"),
+            "8c640c4e71f90160b2b3615af86739e6b15ddc877ae79e18aada753565f756c4"
+        );
+        assert_eq!(
+            hash_sha256("golden-challenge:golden-nonce"),
+            "78b2f1ca25dd17b2e577f446d3aefb85a6414c495ae3c4b23926c3bade3d549c"
+        );
+        assert_eq!(
+            sha256_checksum(b"wealthfolio golden snapshot"),
+            "sha256:b182e6b6a85156113a135bc602aa17fdd4c005070eaa8f766660f678581e5d2a"
+        );
+    }
+
+    #[test]
+    fn golden_ciphertexts_decrypt() {
+        // A sync event payload sealed under the version 1 DEK.
+        let dek = derive_dek(GOLDEN_ROOT_KEY, 1).unwrap();
+        assert_eq!(
+            decrypt(
+                &dek,
+                "KS4NeQy5BqoSCA7scHkeDKBMtzLZ2qpzrvG1DK9ZucYgrQ5c/tkLDLtXydGMCSGKN50diZepNDj0WUMY4PONTDatbK+/KfXCL/DzAxUOxt1vnHbuecfmfZfUPQ=="
+            )
+            .unwrap(),
+            r#"{"entity":"account","op":"update","synthetic":true}"#
+        );
+
+        // A device key envelope: the root key sealed under its "envelope" session key.
+        let envelope_key = derive_session_key(GOLDEN_ROOT_KEY, "envelope").unwrap();
+        assert_eq!(envelope_key, "49Mo+qfp4vtIGnQ47vcRy/kRb1uSqc5Vq9snuQZmjGQ=");
+        assert_eq!(
+            decrypt(
+                &envelope_key,
+                "HBPbVW/BfnQgXWmXP8FO3BFJOtw0buanTMuCi8bmscNFddvUu72HmVn0HasXkGhab72Z/wJQmXCHmrsLM2ekm+cnczEWKGy4WR/WLLaP6Ou9hWJ2"
+            )
+            .unwrap(),
+            GOLDEN_ROOT_KEY
+        );
     }
 }

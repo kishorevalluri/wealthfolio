@@ -4,7 +4,13 @@ import { Link } from "react-router-dom";
 
 import type { Activity } from "@/lib/types";
 import { cn, formatDateISO } from "@/lib/utils";
-import { Icons, PrivacyAmount, Skeleton, useDateFormatting } from "@wealthfolio/ui";
+import {
+  Icons,
+  PrivacyAmount,
+  Skeleton,
+  useDateFormatting,
+  useNumberFormatting,
+} from "@wealthfolio/ui";
 
 import { useEventSpendingSummaries } from "../hooks/use-spending-events";
 import { getVisibleSpendingAmount } from "../lib/constants";
@@ -33,6 +39,7 @@ export function EventsCard({
 }) {
   const formatting = useDateFormatting();
   const { t } = useTranslation();
+  const numbers = useNumberFormatting();
   const eventSummaryRequest = useMemo(
     () => ({ startDate: eventSummaryStartDate, endDate: eventSummaryEndDate }),
     [eventSummaryEndDate, eventSummaryStartDate],
@@ -173,7 +180,7 @@ export function EventsCard({
             <div className="text-foreground text-sm font-semibold">
               {t("spending:eventsCard.title")}
             </div>
-            <div className="text-muted-foreground/70 text-[11px]">
+            <div className="text-muted-foreground/70 text-2xs">
               {t("spending:eventsCard.noEventsInPeriod")}
             </div>
           </div>
@@ -189,7 +196,7 @@ export function EventsCard({
           className="text-muted-foreground hover:text-foreground mt-3 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
         >
           {t("spending:events.createEvent")}
-          <Icons.ChevronRight className="h-3 w-3" />
+          <Icons.ChevronRight className="h-3 w-3 rtl:rotate-180" />
         </button>
       </div>
     );
@@ -251,10 +258,10 @@ export function EventsCard({
         <HeaderIcon className="h-4 w-4 shrink-0" style={{ color: theme.deep }} />
         <div className="min-w-0 flex-1">
           <div className="text-foreground truncate text-sm font-semibold">{ev!.eventName}</div>
-          <div className="text-muted-foreground/70 text-[11px]">{dateRangeLabel}</div>
+          <div className="text-muted-foreground/70 text-2xs">{dateRangeLabel}</div>
         </div>
         <span
-          className="rounded-full px-1.5 py-0.5 text-[9px] font-bold tracking-wide"
+          className="text-2xs rounded-full px-1.5 py-0.5 font-bold tracking-wide"
           style={{ backgroundColor: themeBg(theme, 0.2), color: theme.deep }}
         >
           {tag}
@@ -263,7 +270,7 @@ export function EventsCard({
 
       {pick.mode === "upcoming" && eventSpent <= 0 ? (
         <div className="mt-3">
-          <div className="text-foreground text-2xl font-bold tabular-nums tracking-tight">
+          <div className="text-foreground text-2xl font-bold tracking-tight tabular-nums">
             {t("spending:eventsCard.daysValue", { count: pick.days })}
           </div>
           <div className="text-muted-foreground/80 text-xs">
@@ -276,7 +283,7 @@ export function EventsCard({
       ) : eventSpent > 0 ? (
         <>
           <div className="mt-3">
-            <div className="text-foreground text-2xl font-bold tabular-nums tracking-tight">
+            <div className="text-foreground text-2xl font-bold tracking-tight tabular-nums">
               <PrivacyAmount value={eventSpent} currency={currency} />
             </div>
             <div className="text-muted-foreground/80 text-xs">
@@ -293,7 +300,7 @@ export function EventsCard({
             </div>
           </div>
 
-          <div className="border-border/40 text-muted-foreground/80 mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2 text-[11px]">
+          <div className="border-border/40 text-muted-foreground/80 text-2xs mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t pt-2">
             <span className="tabular-nums">
               <span className="text-foreground/90 font-semibold">
                 <PrivacyAmount value={dailyAvg} currency={currency} />
@@ -315,7 +322,10 @@ export function EventsCard({
                 >
                   {compareMultiple >= 1 ? "↑" : "↓"}{" "}
                   {t("spending:eventsCard.vsTypical", {
-                    multiple: compareMultiple.toFixed(1),
+                    multiple: numbers.formatDecimal(compareMultiple, {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    }),
                     days: totalDays,
                   })}
                 </span>
@@ -331,7 +341,7 @@ export function EventsCard({
 
       {eventSpent > 0 && topCategories.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-muted-foreground/60 text-[10px] font-semibold uppercase tracking-wide">
+          <span className="text-muted-foreground/60 text-2xs font-semibold tracking-wide uppercase">
             {t("spending:eventsCard.top")}
           </span>
           {topCategories.map((c) => {
@@ -339,7 +349,7 @@ export function EventsCard({
             return (
               <span
                 key={c.name}
-                className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
+                className="text-2xs inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium tabular-nums"
                 style={{
                   backgroundColor: c.color ? `${c.color}1F` : themeBg(theme, 0.12),
                   color: accent,
@@ -367,17 +377,17 @@ export function EventsCard({
           className="text-muted-foreground hover:text-foreground mt-3 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
         >
           {t("spending:eventsCard.planEvent")}
-          <Icons.ChevronRight className="h-3 w-3" />
+          <Icons.ChevronRight className="h-3 w-3 rtl:rotate-180" />
         </button>
       ) : (
         <Link
-          to="/spending/insights?stage=when"
+          to="/insights?tab=spending&stage=when"
           className="text-muted-foreground hover:text-foreground mt-3 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
         >
           {pick.mode === "recent"
             ? t("spending:eventsCard.seeBreakdown")
             : t("spending:eventsCard.openEvent")}
-          <Icons.ChevronRight className="h-3 w-3" />
+          <Icons.ChevronRight className="h-3 w-3 rtl:rotate-180" />
         </Link>
       )}
     </div>

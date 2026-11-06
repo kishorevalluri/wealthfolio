@@ -78,7 +78,17 @@ describe("useQuoteMutations", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.QUOTE_HISTORY, assetId],
     });
-    expect(invalidateQueries).toHaveBeenCalledTimes(3);
+    // Loan balances feed alternative holdings and net worth.
+    // A new value can also end a stale valuation in Health Center.
+    for (const key of [
+      QueryKeys.ALTERNATIVE_HOLDINGS,
+      QueryKeys.NET_WORTH,
+      QueryKeys.NET_WORTH_HISTORY,
+      QueryKeys.HEALTH_STATUS,
+    ]) {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: [key] });
+    }
+    expect(invalidateQueries).toHaveBeenCalledTimes(7);
     expect(performanceMocks.invalidatePerformanceCaches).toHaveBeenCalledWith(queryClient);
   });
 });

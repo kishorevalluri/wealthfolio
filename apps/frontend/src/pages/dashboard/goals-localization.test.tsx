@@ -5,6 +5,10 @@ import { MemoryRouter } from "react-router-dom";
 
 import { SavingGoals } from "./goals";
 
+vi.mock("@/lib/settings-provider", () => ({
+  useSettingsContext: () => ({ settings: { timezone: "Asia/Shanghai", baseCurrency: "CAD" } }),
+}));
+
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({
     data: [
@@ -15,7 +19,8 @@ vi.mock("@tanstack/react-query", () => ({
         statusLifecycle: "active",
         statusHealth: "at_risk",
         priority: 1,
-        currency: "CAD",
+        // Saved while the base currency was USD; amounts are in the current base currency.
+        currency: "USD",
         targetDate: "2034-08-09",
         summaryCurrentValue: 980_000,
         summaryTargetAmount: 3_433_731,
@@ -55,6 +60,19 @@ describe("SavingGoals localization", () => {
     vi.useRealTimers();
   });
 
+  it("marks a deadline due on the configured calendar day", () => {
+    vi.setSystemTime(new Date("2034-08-08T16:30:00Z"));
+    render(
+      <MemoryRouter>
+        <FormattingProvider locale="en-US">
+          <SavingGoals />
+        </FormattingProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("dashboard:goals.time_due")).toBeInTheDocument();
+    vi.setSystemTime(new Date("2026-08-18T12:00:00Z"));
+  });
+
   it("formats progress and remaining time with the active locales", () => {
     render(
       <MemoryRouter>
@@ -66,5 +84,18 @@ describe("SavingGoals localization", () => {
 
     expect(screen.getByText(/^29[\u00a0\u202f ]%$/)).toBeInTheDocument();
     expect(screen.getByText("7 A 11 M RESTANTS")).toBeInTheDocument();
+  });
+
+  it("formats amounts in the base currency, not the goal's saved currency", () => {
+    render(
+      <MemoryRouter>
+        <FormattingProvider locale="en-CA">
+          <SavingGoals />
+        </FormattingProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/\$980K/)).toBeInTheDocument();
+    expect(screen.queryByText(/US\$/)).not.toBeInTheDocument();
   });
 });

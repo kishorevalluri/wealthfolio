@@ -1,8 +1,13 @@
 import { resolveSymbolQuote } from "@/adapters";
 import TickerSearchInput from "@/components/ticker-search";
-import { buildOccSymbol, formatOptionExpiration, parseOccSymbol } from "@/lib/occ-symbol";
+import {
+  buildOccSymbol,
+  formatOptionSubtitle,
+  isValidOptionExpiration,
+  parseOccSymbol,
+} from "@/lib/occ-symbol";
 import type { SymbolSearchResult } from "@/lib/types";
-import { cn, normalizeCurrency } from "@/lib/utils";
+import { cn, formatDateISO, normalizeCurrency } from "@/lib/utils";
 import {
   DatePickerInput,
   FormControl,
@@ -10,11 +15,12 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  MoneyInput,
+  useAmountFormatting,
   useDateFormatting,
 } from "@wealthfolio/ui";
-import { Input } from "@wealthfolio/ui/components/ui/input";
 import { motion } from "motion/react";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useFormContext, type FieldPath, type FieldValues } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 
@@ -43,11 +49,13 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
   quoteCcyName,
   unitPriceName,
 }: OptionContractFieldsProps<TFieldValues>) {
+  const amountFormatting = useAmountFormatting();
   const dateFormatting = useDateFormatting();
 
   const { t } = useTranslation(["activity"]);
   const { control, setValue, getValues, watch } = useFormContext<TFieldValues>();
   const optionTypeId = useId();
+  const [isExpirationFocused, setIsExpirationFocused] = useState(false);
   const latestResolveRequestId = useRef(0);
   const needsCurrencyConfirmation = useRef(false);
   const provisionalCurrency = useRef<string | undefined>(undefined);
@@ -57,12 +65,21 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
   const strikePrice = watch(strikePriceName) as number | undefined;
   const expirationDate = watch(expirationDateName) as string | undefined;
   const optionType = watch(optionTypeName) as string | undefined;
+  const quoteCcy = quoteCcyName ? (watch(quoteCcyName) as string | undefined) : undefined;
+  const currency = currencyName ? (watch(currencyName) as string | undefined) : undefined;
 
-  // Format expiration for summary (YYYY-MM-DD → "Mar 29")
-  const expirationDisplay = expirationDate
-    ? formatOptionExpiration(expirationDate, dateFormatting)
-    : undefined;
-  const hasContractSummary = strikePrice && expirationDate && optionType;
+  // Summary in the saved subtitle's format ("Mar 29 $150.00 CALL"). The strike is in
+  // the quote-currency hint the forms submit, which falls back to the activity currency.
+  const contractSummary =
+    strikePrice &&
+    isValidOptionExpiration(expirationDate) &&
+    (optionType === "CALL" || optionType === "PUT")
+      ? formatOptionSubtitle(
+          { underlying: underlying ?? "", expiration: expirationDate, optionType, strikePrice },
+          quoteCcy || currency || "",
+          { ...amountFormatting, ...dateFormatting },
+        )
+      : undefined;
 
   const handleUnderlyingSelect = (symbol: string, searchResult?: SymbolSearchResult) => {
     const upper = symbol.toUpperCase();
@@ -70,34 +87,34 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
     // Try to parse as OCC symbol — either from user paste or option search result
     const parsed = parseOccSymbol(upper);
     if (parsed) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // oxlint-disable-next-line typescript/no-explicit-any
       setValue(underlyingName, parsed.underlying as any, {
         shouldValidate: true,
         shouldDirty: true,
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // oxlint-disable-next-line typescript/no-explicit-any
       setValue(strikePriceName, parsed.strikePrice as any, { shouldDirty: true });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // oxlint-disable-next-line typescript/no-explicit-any
       setValue(expirationDateName, parsed.expiration as any, { shouldDirty: true });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // oxlint-disable-next-line typescript/no-explicit-any
       setValue(optionTypeName, parsed.optionType as any, { shouldDirty: true });
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // oxlint-disable-next-line typescript/no-explicit-any
       setValue(underlyingName, upper as any, { shouldValidate: true, shouldDirty: true });
     }
 
     if (searchResult?.currency && currencyName) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // oxlint-disable-next-line typescript/no-explicit-any
       setValue(currencyName, normalizeCurrency(searchResult.currency) as any);
     }
     if (searchResult?.exchangeMic && exchangeMicName) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // oxlint-disable-next-line typescript/no-explicit-any
       setValue(exchangeMicName, searchResult.exchangeMic as any);
     }
 
     // Set initial quoteCcy from search result
     if (quoteCcyName && searchResult?.currency) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // oxlint-disable-next-line typescript/no-explicit-any
       setValue(quoteCcyName, searchResult.currency as any);
     }
 
@@ -113,10 +130,12 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
   // Resolve option contract quote when all contract fields are filled.
   // Builds OCC symbol → resolves via provider → sets currency + pre-fills premium.
   useEffect(() => {
-    if (!underlying || !strikePrice || !expirationDate || !optionType) return;
+    latestResolveRequestId.current += 1;
+    if (isExpirationFocused) return;
+    if (!underlying || !strikePrice || !isValidOptionExpiration(expirationDate) || !optionType)
+      return;
     if (optionType !== "CALL" && optionType !== "PUT") return;
 
-    latestResolveRequestId.current += 1;
     const requestId = latestResolveRequestId.current;
 
     const occSymbol = buildOccSymbol(underlying, expirationDate, optionType, strikePrice);
@@ -130,7 +149,7 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
 
         const confirmedCurrency = resolved?.currency?.trim();
         if (confirmedCurrency && quoteCcyName) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          // oxlint-disable-next-line typescript/no-explicit-any
           setValue(quoteCcyName, confirmedCurrency as any);
         }
 
@@ -138,7 +157,7 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
         if (needsCurrencyConfirmation.current && confirmedCurrency && currencyName) {
           const current = getValues(currencyName);
           if (current === provisionalCurrency.current) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // oxlint-disable-next-line typescript/no-explicit-any
             setValue(currencyName, confirmedCurrency as any, {
               shouldDirty: true,
               shouldValidate: true,
@@ -150,7 +169,7 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
         if (resolved?.price != null && unitPriceName) {
           const currentPrice = getValues(unitPriceName);
           if (!currentPrice) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // oxlint-disable-next-line typescript/no-explicit-any
             setValue(unitPriceName, resolved.price as any, { shouldDirty: true });
           }
         }
@@ -158,8 +177,8 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
       .catch(() => {
         // Ignore — provisional currency from search result is already set
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [underlying, strikePrice, expirationDate, optionType]);
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [underlying, strikePrice, expirationDate, optionType, isExpirationFocused]);
 
   return (
     <div className="space-y-4">
@@ -230,7 +249,8 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
                         {isSelected && (
                           <motion.div
                             layoutId={`option-type-indicator-${optionTypeId}`}
-                            className="bg-background absolute inset-0 -z-10 rounded-md shadow-sm"
+                            data-slot="segmented-thumb"
+                            className="absolute inset-0 -z-10 rounded-md bg-(--segmented-thumb) bg-(image:--segmented-thumb-image) shadow-(--segmented-thumb-shadow)"
                             initial={false}
                             transition={{ type: "spring", stiffness: 400, damping: 30 }}
                           />
@@ -271,14 +291,10 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
             <FormItem>
               <FormLabel>{t("activity:form.strike_price")}</FormLabel>
               <FormControl>
-                <Input
-                  type="number"
-                  step="0.01"
+                <MoneyInput
                   {...field}
-                  value={(field.value as number) ?? ""}
-                  onChange={(e) =>
-                    field.onChange(e.target.value ? Number(e.target.value) : undefined)
-                  }
+                  value={field.value as number | undefined}
+                  maxDecimalPlaces={3}
                   className="h-10"
                   aria-label={t("activity:form.strike_price")}
                 />
@@ -295,15 +311,9 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
               <FormLabel>{t("activity:form.expiration")}</FormLabel>
               <FormControl>
                 <DatePickerInput
-                  onChange={(date: Date | undefined) => {
-                    if (date) {
-                      const yyyy = date.getFullYear();
-                      if (yyyy < 1000) return;
-                      const mm = String(date.getMonth() + 1).padStart(2, "0");
-                      const dd = String(date.getDate()).padStart(2, "0");
-                      field.onChange(`${yyyy}-${mm}-${dd}`);
-                    }
-                  }}
+                  onChange={(date) => field.onChange(date ? formatDateISO(date) : "")}
+                  onBlur={field.onBlur}
+                  onFocusChange={setIsExpirationFocused}
                   value={field.value as string | undefined}
                   disabled={field.disabled}
                 />
@@ -315,14 +325,12 @@ export function OptionContractFields<TFieldValues extends FieldValues = FieldVal
       </div>
 
       {/* Contract Summary — confirms what the user is building */}
-      {hasContractSummary && (
+      {contractSummary && (
         <div className="bg-muted/50 border-border rounded-md border px-3 py-2">
-          <span className="text-muted-foreground text-[10px] font-medium uppercase tracking-wider">
+          <span className="text-muted-foreground text-2xs font-medium tracking-wider uppercase">
             {t("activity:form.contract")}
           </span>
-          <p className="text-sm font-medium tabular-nums">
-            {expirationDisplay} ${strikePrice} {optionType}
-          </p>
+          <p className="text-sm font-medium tabular-nums">{contractSummary}</p>
         </div>
       )}
     </div>

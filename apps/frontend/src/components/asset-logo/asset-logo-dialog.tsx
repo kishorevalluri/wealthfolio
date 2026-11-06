@@ -1,3 +1,4 @@
+import type { NumberFormatting } from "@wealthfolio/ui";
 import {
   Alert,
   AlertDescription,
@@ -10,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
   useDateFormatting,
+  Spinner,
+  useNumberFormatting,
 } from "@wealthfolio/ui";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { useState } from "react";
@@ -45,22 +48,39 @@ type DialogState =
   | { status: "ready"; candidate: NormalizedLogoImage; originalBytes: number }
   | { status: "error"; code: LogoImageErrorCode };
 
-const formatBytes = (bytes: number) =>
+const formatBytes = (bytes: number, numbers: NumberFormatting) =>
   bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    ? `${numbers.formatDecimal(Math.max(1, Math.round(bytes / 1024)))} KB`
+    : `${numbers.formatDecimal(bytes / (1024 * 1024), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
 
 export function AssetLogoDialog({ open, onOpenChange, ...bodyProps }: AssetLogoDialogProps) {
   const isMobile = useIsMobileViewport();
+  // Held here so the dialog stays open while a save or reset runs: its end
+  // closes the dialog, which could by then be one opened again.
+  const { setLogo, resetLogo } = useAssetLogoMutations();
+  const isBusy = setLogo.isPending || resetLogo.isPending;
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} useIsMobile={useIsMobileViewport}>
+    <Dialog
+      open={open}
+      onOpenChange={(next, details) => {
+        if (!next && isBusy) {
+          details.cancel();
+          return;
+        }
+        onOpenChange(next);
+      }}
+      useIsMobile={useIsMobileViewport}
+    >
       <DialogContent
         className="sm:max-w-lg"
-        mobileClassName="flex h-[90vh] flex-col gap-0 overflow-hidden p-0"
+        mobileClassName="flex flex-col gap-0 overflow-hidden p-0 [--overlay-max-height:90dvh]"
         data-testid="asset-logo-dialog"
+        showCloseButton={!isBusy}
       >
         <AssetLogoDialogBody
           {...bodyProps}
+          setLogo={setLogo}
+          resetLogo={resetLogo}
           isMobile={isMobile}
           onClose={() => onOpenChange(false)}
         />
@@ -75,6 +95,8 @@ interface AssetLogoDialogBodyProps {
   exchangeMic?: string | null;
   instrumentType?: string | null;
   name?: string | null;
+  setLogo: ReturnType<typeof useAssetLogoMutations>["setLogo"];
+  resetLogo: ReturnType<typeof useAssetLogoMutations>["resetLogo"];
   isMobile: boolean;
   onClose: () => void;
 }
@@ -86,12 +108,14 @@ function AssetLogoDialogBody({
   exchangeMic,
   instrumentType,
   name,
+  setLogo,
+  resetLogo,
   isMobile,
   onClose,
 }: AssetLogoDialogBodyProps) {
   const { t } = useTranslation("asset");
+  const numbers = useNumberFormatting();
   const dateFormatting = useDateFormatting();
-  const { setLogo, resetLogo } = useAssetLogoMutations();
   const override = useAssetLogoOverride({ assetId });
   const hasCustom = !!override.ref;
 
@@ -112,16 +136,27 @@ function AssetLogoDialogBody({
     );
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (state.status !== "ready") return;
-    setLogo.mutate(
-      { assetId, dataBase64: state.candidate.dataBase64, displayCode: symbol },
-      { onSuccess: onClose },
-    );
+    try {
+      await setLogo.mutateAsync({
+        assetId,
+        dataBase64: state.candidate.dataBase64,
+        displayCode: symbol,
+      });
+      onClose();
+    } catch {
+      // The hook reports the error; the dialog stays open to try again.
+    }
   };
 
-  const handleReset = () => {
-    resetLogo.mutate(assetId, { onSuccess: onClose });
+  const handleReset = async () => {
+    try {
+      await resetLogo.mutateAsync(assetId);
+      onClose();
+    } catch {
+      // The hook reports the error; the dialog stays open to try again.
+    }
   };
 
   return (
@@ -132,7 +167,10 @@ function AssetLogoDialogBody({
       </DialogHeader>
 
       <div
-        className={cn("min-w-0 space-y-4", isMobile && "min-h-0 flex-1 overflow-y-auto px-4 py-4")}
+        className={cn(
+          "min-w-0 space-y-4",
+          isMobile && "min-h-0 flex-auto overflow-y-auto px-4 py-4",
+        )}
       >
         {/* Current → target: the circle on the right is the drop zone and becomes the new logo. */}
         <div className="flex items-start justify-center gap-5">
@@ -146,7 +184,7 @@ function AssetLogoDialogBody({
             />
             <Badge
               variant={hasCustom ? "default" : "secondary"}
-              className="h-5 px-1.5 text-[10px]"
+              className="text-2xs h-5 px-1.5"
               title={
                 override.ref
                   ? t("logo.updated_at", {
@@ -159,7 +197,7 @@ function AssetLogoDialogBody({
             </Badge>
           </div>
 
-          <Icons.ArrowRight className="text-muted-foreground mt-8 size-4 shrink-0" />
+          <Icons.ArrowRight className="text-muted-foreground mt-8 size-4 shrink-0 rtl:rotate-180" />
 
           <div className="flex w-24 flex-col items-center gap-2">
             <AssetLogoDropzone
@@ -178,7 +216,7 @@ function AssetLogoDialogBody({
             </AssetLogoDropzone>
             <span
               className={cn(
-                "flex h-5 items-center text-[10px] font-medium uppercase tracking-wide",
+                "text-2xs flex h-5 items-center font-medium uppercase tracking-wide",
                 isReady ? "text-primary" : "text-muted-foreground",
               )}
             >
@@ -194,7 +232,7 @@ function AssetLogoDialogBody({
         >
           {state.status === "processing" ? (
             <>
-              <Icons.Spinner className="size-3.5 animate-spin" />
+              <Spinner className="size-3.5" />
               {t("logo.processing")}
             </>
           ) : isReady ? (
@@ -203,8 +241,8 @@ function AssetLogoDialogBody({
                 {t("logo.preview_meta", {
                   width: state.candidate.width,
                   height: state.candidate.height,
-                  size: formatBytes(state.candidate.blob.size),
-                  original: formatBytes(state.originalBytes),
+                  size: formatBytes(state.candidate.blob.size, numbers),
+                  original: formatBytes(state.originalBytes, numbers),
                 })}
               </span>
               <Button
@@ -245,24 +283,20 @@ function AssetLogoDialogBody({
         />
       </div>
 
-      <DialogFooter
-        className={cn(
-          isMobile ? "border-t px-4 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]" : "gap-2",
-        )}
-      >
+      <DialogFooter className={cn(isMobile ? "border-t px-4 py-4 pb-4" : "gap-2")}>
         {/* Mobile: full-width stack, primary on top (DialogFooter reverses column order). */}
         {hasCustom && (
           <Button
             type="button"
             variant="ghost"
-            className={cn(isMobile ? "w-full" : "sm:mr-auto")}
+            className={cn(isMobile ? "w-full" : "sm:me-auto")}
             disabled={isBusy}
             aria-busy={resetLogo.isPending}
             onClick={handleReset}
             data-testid="asset-logo-reset"
           >
             {resetLogo.isPending ? (
-              <Icons.Spinner className="size-4 animate-spin" />
+              <Spinner className="size-4" />
             ) : (
               <Icons.RotateCcw className="size-4" />
             )}
@@ -287,7 +321,7 @@ function AssetLogoDialogBody({
             onClick={handleSave}
             data-testid="asset-logo-save"
           >
-            {setLogo.isPending && <Icons.Spinner className="size-4 animate-spin" />}
+            {setLogo.isPending && <Spinner className="size-4" />}
             {t("logo.save")}
           </Button>
         </div>

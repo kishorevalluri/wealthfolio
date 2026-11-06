@@ -5,7 +5,7 @@ import type { RunEnv } from "../types";
 import { RunEnvs } from "../types";
 
 // Platform constants
-export { isDesktop, isWeb, logger } from "./core";
+export { isTauri, isWeb, logger } from "./core";
 
 // Re-export types and constants from shared types
 export { RunEnvs } from "../types";
@@ -26,12 +26,13 @@ export type {
   AgentAuditQuery,
   AppInfo,
   BackendEnableSyncResult,
+  BackendRestoreErrorCode,
+  BackendRestoreOperation,
+  BackendRestorePhase,
+  BackendRestoreRetry,
   BackendSyncBackgroundEngineResult,
-  BackendSyncBootstrapOverwriteCheckResult,
-  BackendSyncBootstrapResult,
   BackendSyncCycleResult,
   BackendSyncEngineStatusResult,
-  BackendSyncReconcileReadyResult,
   BackendSyncSnapshotUploadResult,
   BackendSyncStateResult,
   CreateAgentAccessTokenInput,
@@ -102,6 +103,8 @@ export {
   getImportTemplate,
   getBrokerSyncProfile,
   findTransferMatchCandidates,
+  convertToInternalTransfer,
+  reviewConvertToTransferSplitEffects,
   getTransferPairForActivity,
   getAccountImportMapping,
   linkAccountTemplate,
@@ -118,8 +121,10 @@ export {
   saveActivities,
   searchActivities,
   updateActivity,
+  reviewActivitiesSplitEffects,
+  reviewInternalTransferPairSplitEffects,
 } from "../shared/activities";
-export { parseCsv } from "./activities";
+export { parseCsv, parsePdf } from "./activities";
 
 // Goal Commands
 export {
@@ -190,6 +195,7 @@ export {
   getHoldingsList,
   getHoldingsByAllocation,
   getIncomeSummary,
+  getIndianTaxSummary,
   getCurrentValuation,
   getLatestValuations,
   getPortfolioAllocations,
@@ -221,6 +227,8 @@ export {
   searchTicker,
   syncHistoryQuotes,
   syncMarketData,
+  resetProviderHistory,
+  resetAllProviderHistory,
   updateAssetProfile,
   updateMarketDataProviderSettings,
   updateQuote,
@@ -262,6 +270,7 @@ export {
   isSpendingEnabled,
   listCategorizationRules,
   rerunCategorizationRules,
+  rerunCategorizationRulesDetailed,
   SPEND_CATEGORY_KIND_TO_TAXONOMY_ID,
   TAXONOMY_ID_TO_SPEND_CATEGORY_KIND,
   updateCategorizationRule,
@@ -273,6 +282,12 @@ export {
   createAlternativeAsset,
   deleteAlternativeAsset,
   getAlternativeHoldings,
+  applyLoanAction,
+  calculateLoan,
+  getLoanPayments,
+  linkLoanPayment,
+  previewLoanTerms,
+  recalculateLoan,
   getNetWorth,
   getNetWorthHistory,
   linkLiability,
@@ -291,11 +306,11 @@ export {
 
 // Connect Commands (Broker + Device Sync + Auth)
 export {
+  approveDeviceSyncRestore,
   approvePairing,
-  approvePairingOverwrite,
-  beginPairingConfirm,
+  beginPairingRestore,
+  cancelDeviceSyncRestore,
   cancelPairing,
-  cancelPairingFlow,
   claimPairing,
   clearDeviceSyncData,
   clearSyncSession,
@@ -303,19 +318,16 @@ export {
   completePairing,
   completePairingWithTransfer,
   confirmPairing,
-  confirmPairingWithBootstrap,
   createPairing,
-  getPairingFlowState,
   deleteDevice,
-  deviceSyncBootstrapOverwriteCheck,
   deviceSyncCancelSnapshotUpload,
   deviceSyncGenerateSnapshotNow,
-  deviceSyncReconcileReadyState,
   deviceSyncStartBackgroundEngine,
   deviceSyncStopBackgroundEngine,
   enableDeviceSync,
   getBrokerSyncStates,
   getDevice,
+  getDeviceSyncRestore,
   getDeviceSyncState,
   getImportRuns,
   getPairingSourceStatus,
@@ -334,9 +346,10 @@ export {
   reinitializeDeviceSync,
   resetTeamSync,
   restoreSyncSession,
+  retryDeviceSyncRestore,
   revokeDevice,
+  startDeviceSyncRestore,
   storeSyncSession,
-  syncBootstrapSnapshotIfNeeded,
   syncBrokerData,
   syncTriggerCycle,
   updateDevice,
@@ -378,10 +391,11 @@ export {
 // Allocation Target Commands
 export {
   archiveAllocationTarget,
-  calculateRebalancePlan,
+  calculateAllocationWorksheet,
   canonicalizeEligibleAssetIds,
   createAllocationTarget,
   deleteAllocationTarget,
+  generateCalculatedAdjustments,
   getAllocationTargetDrift,
   getAllocationTarget,
   listAllocationTargetWeights,
@@ -394,7 +408,7 @@ export {
 } from "../shared/allocation-targets";
 
 // Data Export Commands
-export { exportDataFile } from "./exports";
+export { exportDataFile, exportIndianScheduleCg } from "./exports";
 
 // ============================================================================
 // Platform-specific modules (different implementations for web vs desktop)
@@ -409,6 +423,7 @@ export {
   listAgentAuditLog,
   purgeAgentAuditLog,
   deleteAgentAccessToken,
+  updateAgentAccessTokenScopes,
   setMcpAuditEnabled,
   setMcpEnabled,
   setMcpAutoStart,
@@ -422,11 +437,13 @@ export { streamAiChat } from "./ai-streaming";
 // Event Listeners (web-specific SSE implementation)
 export {
   listenAssetClassificationsChanged,
+  listenBackButton,
   listenBrokerSyncComplete,
   listenBrokerSyncError,
   listenBrokerSyncStart,
   listenDatabaseRestored,
   listenDeepLink,
+  listenDeviceSyncRestore,
   getCurrentDeepLinks,
   listenFileDrop,
   listenFileDropCancelled,
@@ -436,6 +453,7 @@ export {
   listenMarketSyncStart,
   listenNavigateToRoute,
   listenPortfolioUpdateComplete,
+  listenGoalSummariesUpdated,
   listenPortfolioUpdateError,
   listenPortfolioUpdateStart,
 } from "./events";
@@ -504,6 +522,8 @@ export {
   uninstallAddon,
   updateAddon,
   updateAddonNetworkApprovals,
+  registerDevAddonManifest,
+  unregisterDevAddonManifest,
 } from "./addons";
 
 // FIRE Planner (desktop-only — stubs throw at runtime)
@@ -531,3 +551,13 @@ export {
   syncHashPairingCode,
   syncHmacSha256,
 } from "./crypto";
+
+export {
+  cloudBackupAction,
+  captureCloudBackup,
+  type CloudBackupStatus,
+  type CloudBackupCaptureStatus,
+  type CloudBackupPoint,
+  type CloudBackupOperation,
+} from "../shared/cloud-backups";
+export { downloadCloudBackup, previewCloudBackupRestore } from "./cloud-backups";

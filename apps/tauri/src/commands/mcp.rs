@@ -1,13 +1,12 @@
 //! Agent Access (embedded MCP server) commands.
 
-use crate::database::DatabaseRuntime;
-
+use crate::profiles::ProfileAccess;
 #[cfg(desktop)]
 use log::debug;
 use serde::Serialize;
 use tauri::{AppHandle, State};
 #[cfg(desktop)]
-use wealthfolio_agent_tools::{AgentScope, AgentScopeSet};
+use wealthfolio_agent_tools::scope::validate_requested_scopes;
 use wealthfolio_storage_sqlite::agent::McpAuditLogDB;
 #[cfg(desktop)]
 use wealthfolio_storage_sqlite::agent::{
@@ -89,24 +88,6 @@ pub struct CreatedToken {
     pub expires_at: Option<String>,
 }
 
-/// Validate requested scope strings and return the canonical, deduped set.
-/// Mirrors the server's `validate_requested_scopes`.
-#[cfg(desktop)]
-fn validate_requested_scopes(requested: &[String]) -> Result<Vec<String>, String> {
-    if requested.is_empty() {
-        return Err("At least one scope is required".to_string());
-    }
-    let mut set = AgentScopeSet::new();
-    for scope in requested {
-        let parsed = AgentScope::parse(scope).ok_or_else(|| format!("Unknown scope: {scope}"))?;
-        set.insert(parsed);
-    }
-    if let Some(err) = set.dependency_error() {
-        return Err(err);
-    }
-    Ok(set.iter().map(|s| s.as_str().to_string()).collect())
-}
-
 #[cfg(desktop)]
 async fn build_status(state: &McpServerState, ctx: &ServiceContext) -> McpStatus {
     let (enabled, auto_start) = mcp::flags(ctx);
@@ -123,7 +104,7 @@ async fn build_status(state: &McpServerState, ctx: &ServiceContext) -> McpStatus
 
 #[tauri::command]
 pub async fn mcp_get_status(
-    state: State<'_, DatabaseRuntime>,
+    state: ProfileAccess,
     mcp_state: State<'_, McpServerState>,
 ) -> Result<McpStatus, String> {
     let context = state.context()?;
@@ -141,7 +122,7 @@ pub async fn mcp_get_status(
 #[tauri::command]
 pub async fn mcp_set_enabled(
     enabled: bool,
-    state: State<'_, DatabaseRuntime>,
+    state: ProfileAccess,
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
@@ -162,7 +143,7 @@ pub async fn mcp_set_enabled(
 #[tauri::command]
 pub async fn mcp_set_auto_start(
     auto_start: bool,
-    state: State<'_, DatabaseRuntime>,
+    state: ProfileAccess,
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
@@ -182,7 +163,7 @@ pub async fn mcp_set_auto_start(
 
 #[tauri::command]
 pub async fn mcp_start(
-    state: State<'_, DatabaseRuntime>,
+    state: ProfileAccess,
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
@@ -202,7 +183,7 @@ pub async fn mcp_start(
 
 #[tauri::command]
 pub async fn mcp_stop(
-    state: State<'_, DatabaseRuntime>,
+    state: ProfileAccess,
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
@@ -223,7 +204,7 @@ pub async fn mcp_stop(
 #[tauri::command]
 pub async fn mcp_set_audit_enabled(
     enabled: bool,
-    state: State<'_, DatabaseRuntime>,
+    state: ProfileAccess,
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
@@ -249,7 +230,7 @@ pub async fn mcp_list_audit_log(
     tools: Option<Vec<String>>,
     outcomes: Option<Vec<String>>,
     actor_kinds: Option<Vec<String>>,
-    state: State<'_, DatabaseRuntime>,
+    state: ProfileAccess,
 ) -> Result<McpAuditPage, String> {
     let context = state.context()?;
     #[cfg(desktop)]
@@ -292,7 +273,7 @@ pub async fn mcp_list_audit_log(
 }
 
 #[tauri::command]
-pub async fn mcp_list_tokens(state: State<'_, DatabaseRuntime>) -> Result<Vec<TokenInfo>, String> {
+pub async fn mcp_list_tokens(state: ProfileAccess) -> Result<Vec<TokenInfo>, String> {
     let context = state.context()?;
     #[cfg(desktop)]
     {
@@ -314,7 +295,7 @@ pub async fn mcp_create_token(
     name: String,
     expires_at: Option<String>,
     scopes: Vec<String>,
-    state: State<'_, DatabaseRuntime>,
+    state: ProfileAccess,
 ) -> Result<CreatedToken, String> {
     let context = state.context()?;
     #[cfg(desktop)]
@@ -364,7 +345,32 @@ pub async fn mcp_create_token(
 }
 
 #[tauri::command]
-pub async fn mcp_delete_token(id: String, state: State<'_, DatabaseRuntime>) -> Result<(), String> {
+pub async fn mcp_update_token_scopes(
+    id: String,
+    scopes: Vec<String>,
+    state: ProfileAccess,
+) -> Result<TokenInfo, String> {
+    let context = state.context()?;
+    #[cfg(desktop)]
+    {
+        let scopes = validate_requested_scopes(&scopes)?;
+        context
+            .pat_repository()
+            .update_scopes(&id, scopes)
+            .await
+            .map_err(|e| format!("Failed to update access token permissions: {e}"))?
+            .map(TokenInfo::from)
+            .ok_or_else(|| "Access token not found".to_string())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (id, scopes, &context);
+        Err("MCP server is not available on mobile".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn mcp_delete_token(id: String, state: ProfileAccess) -> Result<(), String> {
     let context = state.context()?;
     #[cfg(desktop)]
     {
@@ -387,7 +393,7 @@ pub async fn mcp_delete_token(id: String, state: State<'_, DatabaseRuntime>) -> 
 }
 
 #[tauri::command]
-pub async fn mcp_purge_audit_log(state: State<'_, DatabaseRuntime>) -> Result<u64, String> {
+pub async fn mcp_purge_audit_log(state: ProfileAccess) -> Result<u64, String> {
     let context = state.context()?;
     #[cfg(desktop)]
     {

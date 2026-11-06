@@ -18,6 +18,8 @@ export interface AccountSelectOption {
   label: string;
   currency: string;
   accountType?: string;
+  /** The account's group, which a phone's account list is sorted under. */
+  group?: string;
   /** Activity restriction level based on account tracking mode. */
   restrictionLevel?: "none" | "limited" | "blocked";
 }
@@ -48,11 +50,23 @@ export function AccountSelect<TFieldValues extends FieldValues = FieldValues>({
         <FormItem>
           <FormLabel>{resolvedLabel}</FormLabel>
           <FormControl>
-            <Select onValueChange={field.onChange} value={field.value ?? ""}>
+            <Select
+              items={accounts.map((account) => ({
+                value: account.value,
+                label: (
+                  <>
+                    {account.label}
+                    <span className="text-muted-foreground font-light">({account.currency})</span>
+                  </>
+                ),
+              }))}
+              onValueChange={field.onChange}
+              value={field.value ?? ""}
+            >
               <SelectTrigger aria-label={resolvedLabel} data-testid="account-select">
                 <SelectValue placeholder={resolvedPlaceholder} />
               </SelectTrigger>
-              <SelectContent className="max-h-125 overflow-y-auto">
+              <SelectContent className="max-h-[min(31.25rem,var(--available-height))] overflow-y-auto">
                 {accounts.map((account) => (
                   <SelectItem
                     value={account.value}

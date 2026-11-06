@@ -1,7 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectedView } from "./connected-view";
+
+const sync = vi.hoisted(() => ({ trigger: vi.fn(), error: vi.fn(), loading: vi.fn() }));
+vi.mock("@wealthfolio/ui/components/ui/use-toast", () => ({
+  toast: { error: sync.error, loading: sync.loading },
+}));
+vi.mock("i18next", () => ({ default: { t: (key: string) => key } }));
 
 const context = vi.hoisted(() => ({
   user: { email: "user@example.com" },
@@ -12,13 +18,21 @@ const context = vi.hoisted(() => ({
   refetchUserInfo: vi.fn(),
   isLoading: false,
   isLoadingUserInfo: false,
+  isUserInfoRateLimited: false,
   error: null as string | null,
 }));
 vi.mock("../providers/wealthfolio-connect-provider", () => ({
   useWealthfolioConnect: () => context,
 }));
+vi.mock("@/pages/settings/exports/cloud-backup-card", () => ({
+  CloudBackupSummary: () => <div data-testid="cloud-backups" />,
+}));
 vi.mock("./subscription-plans", () => ({
-  SubscriptionPlans: () => <div data-testid="pricing" />,
+  SubscriptionPlans: ({ isRefreshing }: { isRefreshing?: boolean }) => (
+    <button data-testid="pricing" disabled={isRefreshing}>
+      Refresh
+    </button>
+  ),
 }));
 vi.mock("@/features/devices-sync", () => ({
   DeviceSyncSection: () => <div data-testid="device-sync" />,
@@ -27,34 +41,61 @@ vi.mock("@/adapters", () => ({ openUrlInBrowser: vi.fn() }));
 vi.mock("../services/broker-service", () => ({
   listBrokerAccounts: vi.fn().mockResolvedValue([]),
   listBrokerConnections: vi.fn().mockResolvedValue([]),
-  syncBrokerData: vi.fn(),
+  syncBrokerData: sync.trigger,
 }));
 vi.mock("@wealthfolio/ui", () => ({
+  buttonVariants: () => "",
   useDateFormatting: () => ({ dateFormat: "yyyy-MM-dd" }),
+  Spinner: () => <span data-testid="spinner" />,
   ActionConfirm: ({ button }: { button: React.ReactNode }) => button,
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { error?: string }) =>
+      key === "connect:sync.startFailed" ? `Start failed: ${options?.error}` : key,
+  }),
   Trans: () => null,
 }));
 
 afterEach(() => {
   cleanup();
   context.error = null;
+  context.isLoadingUserInfo = false;
+  context.isUserInfoRateLimited = false;
   vi.clearAllMocks();
 });
 
-function renderView() {
+function renderView(direction: "ltr" | "rtl" = "ltr") {
   render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <ConnectedView />
+      <div dir={direction}>
+        <ConnectedView />
+      </div>
     </QueryClientProvider>,
   );
 }
 
 describe("authenticated subscription view", () => {
+  it.each(["ltr", "rtl"] as const)(
+    "uses translated plan-denial errors for the Connect page Sync button (%s)",
+    async (direction) => {
+      context.userInfo = { team: { plan: "essentials", subscription_status: "active" } };
+      sync.trigger.mockRejectedValueOnce(
+        "API error 403: PLAN_UPGRADE_REQUIRED: Denied (requestId=synthetic)",
+      );
+      renderView(direction);
+      const button = screen.getByRole("button", { name: "connect:sync.syncNow" });
+      await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(sync.error).toHaveBeenCalledWith("Start failed: connect:upgrade.title"),
+      );
+      expect(sync.loading).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([null, "canceled", "unpaid", "incomplete", "paused", "unknown"])(
     "shows pricing and preserves the session for status %s",
     (status) => {
@@ -83,6 +124,50 @@ describe("authenticated subscription view", () => {
     expect(screen.queryByText("connect:subscription.syncPausedTitle")).toBeNull();
     expect(context.signOut).not.toHaveBeenCalled();
   });
+  it.each(["ltr", "rtl"] as const)(
+    "keeps first-load cooldown visible and disables Retry until expiry (%s)",
+    (direction) => {
+      context.userInfo = null;
+      context.error = "API error 429: Too many requests";
+      context.isUserInfoRateLimited = true;
+      renderView(direction);
+      const retry = screen.getByRole("button", { name: "connect:serviceUnavailable.retrying" });
+      expect((retry as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(retry);
+      expect(context.refetchUserInfo).not.toHaveBeenCalled();
+      expect(context.clearError).not.toHaveBeenCalled();
+      expect(screen.getByText("connect:serviceUnavailable.description")).toBeTruthy();
+    },
+  );
+
+  it("keeps the error card visible while local reconciliation is pending", () => {
+    context.userInfo = null;
+    context.error = "API error 429: Too many requests";
+    context.isLoadingUserInfo = true;
+    renderView();
+    expect(screen.getByText("connect:serviceUnavailable.retrying")).toBeTruthy();
+    expect(screen.getByText("connect:serviceUnavailable.description")).toBeTruthy();
+  });
+
+  it("Retry leaves the error in place until the provider refreshes it", async () => {
+    context.userInfo = null;
+    context.error = "Service unavailable";
+    renderView();
+    fireEvent.click(screen.getByText("connect:serviceUnavailable.tryAgain"));
+    await waitFor(() => expect(context.refetchUserInfo).toHaveBeenCalledTimes(1));
+    expect(context.clearError).not.toHaveBeenCalled();
+  });
+
+  it.each(["ltr", "rtl"] as const)(
+    "disables the subscription refresh during cooldown (%s)",
+    (direction) => {
+      context.userInfo = { team: { subscription_status: "canceled" } };
+      context.isUserInfoRateLimited = true;
+      renderView(direction);
+      expect((screen.getByTestId("pricing") as HTMLButtonElement).disabled).toBe(true);
+    },
+  );
+
   it.each(["active", "trialing", "past_due"])(
     "does not show subscription pause for %s",
     (status) => {

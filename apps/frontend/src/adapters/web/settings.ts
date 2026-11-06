@@ -1,3 +1,5 @@
+import { profileScope } from "@/features/profiles/session";
+import { profileFetch } from "@/features/profiles/session";
 // Web adapter - Settings, App Info, Updater Commands
 
 import { API_PREFIX, invoke, logger } from "./core";
@@ -33,7 +35,7 @@ export const isAutoUpdateCheckEnabled = async (): Promise<boolean> => {
     return await invoke<boolean>("is_auto_update_check_enabled");
   } catch (_error) {
     logger.error("Error checking auto-update setting.");
-    return true; // Default to enabled
+    return false; // Skip automatic checks rather than run one the user may have turned off
   }
 };
 
@@ -73,7 +75,7 @@ export const deleteDatabaseBackup = async (filename: string): Promise<void> => {
 };
 
 export const getDatabaseBackupDownloadUrl = (filename: string): string =>
-  `${API_PREFIX}/utilities/database/backups/${encodeURIComponent(filename)}/download`;
+  `${API_PREFIX}/utilities/database/backups/${encodeURIComponent(filename)}/download?profileScope=${encodeURIComponent(profileScope())}`;
 
 export const exportDatabaseBackup = async (
   filename: string,
@@ -88,7 +90,7 @@ export const exportDatabaseBackup = async (
   ) {
     throw new Error("Use HTTPS to export a password-protected backup.");
   }
-  const response = await fetch(
+  const response = await profileFetch(
     `${API_PREFIX}/utilities/database/backups/${encodeURIComponent(filename)}/export`,
     {
       method: "POST",
@@ -106,7 +108,7 @@ export const exportDatabaseBackup = async (
     .catch(() => ({ message: "Backup export timed out or failed" }));
   if (!response.ok) throw new Error(result.message || "Backup export failed");
   const link = document.createElement("a");
-  link.href = `${API_PREFIX}/utilities/database/exports/${encodeURIComponent(result.id)}`;
+  link.href = `${API_PREFIX}/utilities/database/exports/${encodeURIComponent(result.id)}?profileScope=${encodeURIComponent(profileScope())}`;
   link.download = result.filename;
   document.body.append(link);
   link.click();

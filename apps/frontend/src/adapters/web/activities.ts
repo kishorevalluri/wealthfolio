@@ -1,5 +1,6 @@
+import { profileFetch } from "@/features/profiles/session";
 // Web-specific activity commands
-import type { ParseConfig, ParsedCsvResult } from "@/lib/types";
+import type { ParseConfig, ParsedCsvResult, ParsedPdfResult } from "@/lib/types";
 import { API_PREFIX, logger } from "./core";
 
 async function extractErrorMessage(response: Response): Promise<string | null> {
@@ -40,7 +41,7 @@ export const parseCsv = async (file: File, config: ParseConfig): Promise<ParsedC
     formData.append("file", file);
     formData.append("config", JSON.stringify(config));
 
-    const response = await fetch(`${API_PREFIX}/activities/import/parse`, {
+    const response = await profileFetch(`${API_PREFIX}/activities/import/parse`, {
       method: "POST",
       body: formData,
       credentials: "same-origin",
@@ -58,6 +59,40 @@ export const parseCsv = async (file: File, config: ParseConfig): Promise<ParsedC
     return parsed;
   } catch (err) {
     logger.error("Error parsing CSV file:", err);
+    throw err;
+  }
+};
+
+/**
+ * Parse a PDF file with optional password.
+ * Web implementation: POSTs multipart form data to /api/v1/activities/import/parse-pdf.
+ */
+export const parsePdf = async (file: File, password?: string): Promise<ParsedPdfResult> => {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (password && password.trim()) {
+      formData.append("password", password.trim());
+    }
+
+    const response = await profileFetch(`${API_PREFIX}/activities/import/parse-pdf`, {
+      method: "POST",
+      body: formData,
+      credentials: "same-origin",
+    });
+
+    if (!response.ok) {
+      const details = await extractErrorMessage(response);
+      const fallback = `Request failed (${response.status}${response.statusText ? ` ${response.statusText}` : ""})`;
+      throw new Error(
+        details ? `Failed to parse PDF: ${details}` : `Failed to parse PDF: ${fallback}`,
+      );
+    }
+
+    const parsed = (await response.json()) as ParsedPdfResult;
+    return parsed;
+  } catch (err) {
+    logger.error("Error parsing PDF file:", err);
     throw err;
   }
 };

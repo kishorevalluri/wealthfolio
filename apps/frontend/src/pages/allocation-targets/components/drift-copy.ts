@@ -1,36 +1,46 @@
+import type { TFunction } from "i18next";
 import type { FormattingApi } from "@wealthfolio/ui";
+import { getTaxonomyLabel } from "@/lib/taxonomy-labels";
 
-export function categoryNoun(taxonomyId: string, taxonomyName: string | undefined, count: number) {
-  const normalized = `${taxonomyId} ${taxonomyName ?? ""}`.toLowerCase().replace(/[_-]+/g, " ");
-  if (normalized.includes("asset classes")) return count === 1 ? "asset class" : "asset classes";
-  if (normalized.includes("regions")) return count === 1 ? "region" : "regions";
-  if (normalized.includes("industries")) return count === 1 ? "industry" : "industries";
-  return count === 1 ? "category" : "categories";
+export function categoryNoun(
+  t: TFunction,
+  taxonomyId: string,
+  _taxonomyName: string | undefined,
+  count?: number,
+) {
+  const kind =
+    (
+      { asset_classes: "assetClass", regions: "region", industries_gics: "industry" } as Record<
+        string,
+        string
+      >
+    )[taxonomyId] ?? "category";
+  return t(`allocation:categoryNouns.${kind}`, { count });
 }
 
-export function taxonomyLabel(taxonomyId: string, taxonomyName: string | undefined) {
-  const normalized = `${taxonomyId} ${taxonomyName ?? ""}`.toLowerCase().replace(/[_-]+/g, " ");
-  if (normalized.includes("asset classes")) return "Asset classes";
-  if (normalized.includes("regions")) return "Regions";
-  if (normalized.includes("industries")) return "Industries";
-  return "Categories";
+export function taxonomyLabel(t: TFunction, taxonomyId: string, taxonomyName: string | undefined) {
+  return taxonomyName
+    ? getTaxonomyLabel(t, taxonomyId, taxonomyName)
+    : t("allocation:editor.category");
 }
 
-export function targetLabel(targetName: string | undefined) {
-  const trimmed = targetName?.trim();
-  if (!trimmed) return "saved target";
-  return /\btarget$/i.test(trimmed) ? trimmed : `${trimmed} target`;
+export function targetLabel(t: TFunction, targetName: string | undefined) {
+  return targetName?.trim() || t("allocation:editor.savedTarget");
 }
 
-export function formatPp(bps: number, decimals = 1) {
-  const pp = bps / 100;
-  return `${pp > 0 ? "+" : ""}${pp.toFixed(decimals)}%`;
+export function formatPp(
+  bps: number,
+  formatting: Pick<FormattingApi, "formatPercent">,
+  decimals = 1,
+) {
+  return formatting.formatPercent(bps / 10000, {
+    digits: decimals,
+    signDisplay: bps > 0 ? "always" : "auto",
+  });
 }
 
-export function formatTolerance(bps: number) {
-  const pp = bps / 100;
-  const value = Number.isInteger(pp) ? pp.toFixed(0) : pp.toFixed(1);
-  return `±${value}%`;
+export function formatTolerance(bps: number, formatting: Pick<FormattingApi, "formatPercent">) {
+  return `±${formatting.formatPercent(bps / 10000, { digits: Number.isInteger(bps / 100) ? 0 : 1 })}`;
 }
 
 export function formatRoundedCurrency(

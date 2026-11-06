@@ -1,6 +1,5 @@
 import { useHealthStatus } from "@/hooks/use-health";
 import { cn } from "@/lib/utils";
-import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@wealthfolio/ui";
 import { Link } from "react-router-dom";
@@ -8,37 +7,35 @@ import { useTranslation } from "react-i18next";
 import type { HealthSeverity } from "@/lib/types";
 
 const SEVERITY_COLORS: Record<HealthSeverity, string> = {
-  CRITICAL: "text-destructive",
-  ERROR: "text-destructive",
-  WARNING: "text-yellow-500",
+  CRITICAL: "text-destructive-subtle-foreground",
+  ERROR: "text-destructive-subtle-foreground",
+  WARNING: "text-warning-subtle-foreground",
   INFO: "text-muted-foreground",
 };
 
+// A 32px tinted circle; on touch and narrow screens an invisible layer gives it a 48px tap area.
+const BADGE_CLASS =
+  "relative flex size-8 shrink-0 items-center justify-center rounded-full bg-current/15 pointer-coarse:after:absolute pointer-coarse:after:-inset-2 max-lg:after:absolute max-lg:after:-inset-2";
+
 /**
- * Health status indicator for dashboard header.
- * Shows a warning icon when there are health issues, hidden when healthy.
+ * Status badge beside a headline amount that links to Health Center. Hidden when
+ * there are no health issues.
  */
 export function HealthStatusIndicator() {
   const { t } = useTranslation();
   const { data: status, isLoading } = useHealthStatus();
 
-  // Don't render if loading or no issues
-  if (isLoading || !status) return null;
-
-  // Get counts with defaults for missing keys
   const counts = {
-    critical: status.issueCounts.CRITICAL ?? 0,
-    error: status.issueCounts.ERROR ?? 0,
-    warning: status.issueCounts.WARNING ?? 0,
-    info: status.issueCounts.INFO ?? 0,
+    critical: status?.issueCounts.CRITICAL ?? 0,
+    error: status?.issueCounts.ERROR ?? 0,
+    warning: status?.issueCounts.WARNING ?? 0,
+    info: status?.issueCounts.INFO ?? 0,
   };
+  const totalIssues =
+    isLoading || !status ? 0 : counts.critical + counts.error + counts.warning + counts.info;
 
-  const totalIssues = counts.critical + counts.error + counts.warning + counts.info;
-
-  // Don't render if no issues
   if (totalIssues === 0) return null;
 
-  // Determine highest severity
   const highestSeverity: HealthSeverity =
     counts.critical > 0
       ? "CRITICAL"
@@ -48,9 +45,6 @@ export function HealthStatusIndicator() {
           ? "WARNING"
           : "INFO";
 
-  const severityColor = SEVERITY_COLORS[highestSeverity];
-
-  // Build summary text
   const summaryParts: string[] = [];
   if (counts.critical > 0)
     summaryParts.push(t("common:component.issue_critical", { count: counts.critical }));
@@ -61,25 +55,28 @@ export function HealthStatusIndicator() {
   if (counts.info > 0) summaryParts.push(t("common:component.issue_info", { count: counts.info }));
   const summaryText = summaryParts.join(", ");
 
+  const badgeClassName = cn(BADGE_CLASS, SEVERITY_COLORS[highestSeverity]);
+
   return (
     <TooltipProvider>
-      <Tooltip delayDuration={300}>
-        <TooltipTrigger asChild>
-          <Button
-            variant="secondary"
-            size="icon-xs"
-            className="bg-secondary/50 rounded-full"
-            asChild
-          >
-            <Link to="/health" title={t("common:component.data_status")}>
-              <Icons.AlertTriangle className={cn("size-5", severityColor)} />
-            </Link>
-          </Button>
+      <Tooltip>
+        <TooltipTrigger
+          delay={300}
+          render={
+            <Link
+              to="/health"
+              title={t("common:component.data_status")}
+              aria-label={`${t("common:component.health_issues")}: ${summaryText}`}
+              className={badgeClassName}
+            />
+          }
+        >
+          <Icons.AlertTriangle className="size-4" />
         </TooltipTrigger>
-        <TooltipContent side="bottom">
+        <TooltipContent side="bottom" className="max-w-70">
           <div className="space-y-1">
             <p className="font-medium">{t("common:component.health_issues")}</p>
-            <p className="text-muted-foreground text-xs">{summaryText}</p>
+            <p className="text-background/70 text-xs">{summaryText}</p>
           </div>
         </TooltipContent>
       </Tooltip>

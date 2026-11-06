@@ -1,6 +1,6 @@
 use super::delete_account_references;
 use crate::accounts::AccountRepository;
-use crate::db::{write_actor::spawn_writer, DbAccess};
+use crate::db::{write_actor::spawn_writer, DbAccess, TestDir};
 use crate::sync::app_sync::AppSyncRepository;
 use diesel::Connection as _;
 use wealthfolio_core::accounts::AccountRepositoryTrait;
@@ -16,8 +16,8 @@ fn apply_repair(conn: &rusqlite::Connection) {
         .unwrap();
 }
 
-fn fixture() -> (tempfile::TempDir, DbAccess, rusqlite::Connection) {
-    let dir = tempfile::tempdir().unwrap();
+fn fixture() -> (TestDir, DbAccess, rusqlite::Connection) {
+    let dir = TestDir::new();
     let access = DbAccess::plaintext(dir.path().join("test.db").to_str().unwrap());
     access.run_migrations().unwrap();
     let conn = access.connect_rusqlite().unwrap();
@@ -262,7 +262,8 @@ async fn snapshot_account_replacement_preserves_omitted_configuration_tables() {
     assert_eq!(lists(&conn), before);
     assert_eq!(
         count(&conn, "holdings_snapshots WHERE source='BROKER_IMPORTED'"),
-        2
+        0,
+        "broker holdings are now replaced by the snapshot, which is empty here"
     );
     assert_eq!(
         count(

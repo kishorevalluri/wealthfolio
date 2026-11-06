@@ -40,10 +40,12 @@ export function insightToReportProjection(
   const dayCategoryBuckets = insight.byDayByCategory ?? [];
 
   const currentReport: MonthlyReport = {
+    baseCurrency: insight.currency,
     current: {
       income: insight.headline.income,
       outflow: insight.headline.spent,
       saved: insight.headline.saved,
+      fromSavings: insight.headline.fromSavings ?? 0,
       net: insight.headline.netCashflow,
       count: 0,
     },
@@ -237,11 +239,13 @@ function projectMonths(
     iso: `${m.month}-01`,
     label: monthShortLabel(m.month, formatting),
     report: {
+      baseCurrency: insight.currency,
       current: {
         income: m.income,
         outflow: m.spent,
         saved: m.saved,
-        net: m.income - m.spent - m.saved,
+        fromSavings: m.fromSavings ?? 0,
+        net: m.income - m.spent - m.saved + (m.fromSavings ?? 0),
         count: 0,
       },
       prior: { income: 0, outflow: 0, saved: 0, net: 0, count: 0 },

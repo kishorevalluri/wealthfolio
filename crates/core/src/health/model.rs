@@ -364,6 +364,18 @@ impl NavigateAction {
         }
     }
 
+    /// Creates a navigate action to an asset's recorded values, where a manual
+    /// value is updated: the Values tab of a standalone asset (property, vehicle,
+    /// loan), or the quotes tab of a held one.
+    pub fn to_asset_valuations(asset_id: impl Into<String>) -> Self {
+        let id = asset_id.into();
+        Self {
+            route: format!("/holdings/{}", urlencoding::encode(&id)),
+            query: Some(serde_json::json!({ "tab": "history" })),
+            label: "Update Value".to_string(),
+        }
+    }
+
     /// Creates a navigate action to an asset's holdings-snapshot editor
     /// (snapshots tab), where cost basis is set for HOLDINGS-tracked accounts.
     pub fn to_asset_snapshots(asset_id: impl Into<String>) -> Self {
@@ -640,8 +652,9 @@ pub struct HealthDiagnostic {
     /// Optional user-visible impact for this specific cause.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub impact: Option<HealthImpact>,
-    /// Typed entities used by the UI and fingerprinting.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Typed entities used by the UI and fingerprinting. Lists are always sent,
+    /// empty or not, because the UI reads them on every diagnostic.
+    #[serde(default)]
     pub entities: Vec<HealthEntityRef>,
     /// Optional primary date for this diagnostic (YYYY-MM-DD).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -650,10 +663,10 @@ pub struct HealthDiagnostic {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_range: Option<HealthDateRange>,
     /// Supporting evidence rows.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub evidence: Vec<Evidence>,
     /// Ordered remediation actions (primary first by convention).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub actions: Vec<DiagnosticAction>,
 }
 
@@ -1295,10 +1308,12 @@ pub struct HealthConfig {
     /// Hours after which a stale price triggers an Error (default: 72)
     pub price_stale_critical_hours: u32,
 
-    /// Hours after which a stale FX rate triggers a Warning (default: 24)
+    /// Hours of open FX market (weekend close excluded) after which a stale
+    /// FX rate triggers a Warning (default: 24)
     pub fx_stale_warning_hours: u32,
 
-    /// Hours after which a stale FX rate triggers an Error (default: 72)
+    /// Hours of open FX market (weekend close excluded) after which a stale
+    /// FX rate triggers an Error (default: 72)
     pub fx_stale_critical_hours: u32,
 
     /// MV percentage threshold for escalating to Critical (default: 0.30 = 30%)
@@ -1508,6 +1523,15 @@ mod tests {
         // Round-trips back to the same enum variant.
         let parsed: DiagnosticAction = serde_json::from_value(json).unwrap();
         assert_eq!(parsed, nav);
+    }
+
+    #[test]
+    fn a_diagnostic_sends_its_lists_even_when_empty() {
+        // The Health Center reads these lists on every diagnostic.
+        let json = serde_json::to_value(HealthDiagnostic::new("CODE", "Title", "Why")).unwrap();
+        for list in ["entities", "evidence", "actions"] {
+            assert_eq!(json[list], serde_json::json!([]), "{list}");
+        }
     }
 
     #[test]

@@ -55,6 +55,7 @@ export function activityMarkerVariant(activityType: ActivityType): AssetActivity
 export function activityMarkerLabel(activityType: ActivityType) {
   if (activityType === ActivityType.SPLIT) return "SP";
   if (activityType === ActivityType.ADJUSTMENT) return "AD";
+  if (activityType === ActivityType.TAX) return "TX";
   return (ActivityTypeNames[activityType] ?? activityType).charAt(0).toUpperCase();
 }
 
@@ -62,6 +63,7 @@ export function activityMarkerTone(activityType: ActivityType): HistoryChartMark
   switch (activityType) {
     case ActivityType.DIVIDEND:
     case ActivityType.INTEREST:
+      return "info";
     case ActivityType.BUY:
     case ActivityType.DEPOSIT:
     case ActivityType.TRANSFER_IN:

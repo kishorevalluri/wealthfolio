@@ -224,6 +224,8 @@ export interface PairingSession {
 
 // Claimer session state (for new device being paired)
 export interface ClaimerSession {
+  /** Enrollment that claimed the pairing; prevents writes after an account change. */
+  deviceId: string;
   pairingId: string;
   code: string;
   ephemeralSecretKey: string; // base64
@@ -292,6 +294,14 @@ export class SyncError extends Error {
     if (error instanceof SyncError) return error;
 
     const message = error instanceof Error ? error.message : String(error);
+
+    // Profile/subscription denials are domain decisions, including when the
+    // HTTP status also resembles a generic pairing conflict or auth failure.
+    const domainCode =
+      /\b(SUBSCRIPTION_[A-Z_]+|PLAN_UPGRADE_REQUIRED|BACKUP_SUBSCRIPTION_REQUIRED|BACKUP_READ_GRACE_EXPIRED)\b/.exec(
+        message,
+      )?.[1];
+    if (domainCode) return new SyncError(domainCode, message, false);
 
     // Try to detect specific error types
     if (SyncError.isDeviceNotFound(error)) {

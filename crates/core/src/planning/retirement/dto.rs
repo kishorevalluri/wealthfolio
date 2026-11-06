@@ -300,6 +300,10 @@ pub struct RetirementOverview {
     pub lean_required_capital_at_goal_age: Option<f64>,
     #[serde(default)]
     pub fat_required_capital_at_goal_age: Option<f64>,
+    /// What active savings goals plan to add each month, from their own plans.
+    /// Shown beside the retirement contribution so the same money isn't entered twice.
+    #[serde(default)]
+    pub savings_goals_monthly_contribution: f64,
     pub shortfall_at_goal_age: f64,
     pub surplus_at_goal_age: f64,
     pub funded_through_age: Option<u32>,
@@ -625,11 +629,12 @@ fn solve_required_additional_monthly(
     plan: &RetirementPlan,
     current_portfolio: f64,
     required_capital: f64,
+    as_of: chrono::NaiveDate,
 ) -> f64 {
     let projected_at_goal = |extra_monthly: f64| {
         let mut adjusted = plan.clone();
         adjusted.investment.monthly_contribution += extra_monthly;
-        let proj = project_retirement(&adjusted, current_portfolio);
+        let proj = project_retirement(&adjusted, current_portfolio, as_of);
         proj.year_by_year
             .iter()
             .find(|s| s.age == plan.personal.target_retirement_age)
@@ -712,11 +717,13 @@ pub fn compute_retirement_overview(
     plan: &RetirementPlan,
     current_portfolio: f64,
     analysis_mode: &str,
+    as_of: chrono::NaiveDate,
 ) -> RetirementOverview {
     compute_retirement_overview_with_mode(
         plan,
         current_portfolio,
         RetirementTimingMode::from_str(analysis_mode),
+        as_of,
     )
 }
 
@@ -724,6 +731,7 @@ pub fn compute_retirement_overview_with_mode(
     plan: &RetirementPlan,
     current_portfolio: f64,
     mode: RetirementTimingMode,
+    as_of: chrono::NaiveDate,
 ) -> RetirementOverview {
     let mut required_capital_cache = RequiredCapitalCache::new();
 
@@ -752,6 +760,7 @@ pub fn compute_retirement_overview_with_mode(
         current_portfolio,
         mode,
         &mut required_capital_cache,
+        as_of,
     );
 
     let fi_age = projection.fire_age;
@@ -804,7 +813,7 @@ pub fn compute_retirement_overview_with_mode(
         .or(Some(plan.personal.planning_horizon_age));
 
     let required_additional = if shortfall > 0.0 {
-        solve_required_additional_monthly(plan, current_portfolio, required_capital_value)
+        solve_required_additional_monthly(plan, current_portfolio, required_capital_value, as_of)
     } else {
         0.0
     };
@@ -818,21 +827,6 @@ pub fn compute_retirement_overview_with_mode(
     };
     let effective_fi_age = fi_age.or(suggested_age);
     let eventually_reaches_fi = effective_fi_age.is_some();
-    let has_retirement_gap = failure_age.is_some() || spending_shortfall_age.is_some();
-
-    let status = if !required_capital_reachable || net_target_today.is_none() {
-        "off_track"
-    } else if has_retirement_gap {
-        "at_risk"
-    } else if current_portfolio >= net_target_today_value {
-        "achieved"
-    } else if funded_at_goal_age {
-        "on_track"
-    } else if effective_fi_age.is_some_and(|a| a <= plan.personal.target_retirement_age + 3) {
-        "at_risk"
-    } else {
-        "off_track"
-    };
     let success_status = if !required_capital_reachable {
         "shortfall"
     } else if failure_age.is_some() {
@@ -843,6 +837,31 @@ pub fn compute_retirement_overview_with_mode(
         "overfunded"
     } else {
         "on_track"
+    };
+
+    // Match readiness across detail views and persisted goal summaries.
+    // Warnings take precedence over FI reached; traditional retirement isn't a FIRE milestone.
+    let status = if !required_capital_reachable
+        || net_target_today.is_none()
+        || failure_age.is_some()
+    {
+        "off_track"
+    } else if spending_shortfall_age.is_some() || !projection.income_stream_exhaustion.is_empty() {
+        "at_risk"
+    } else if matches!(mode, RetirementTimingMode::Traditional) {
+        if success_status == "shortfall" {
+            "at_risk"
+        } else {
+            "on_track"
+        }
+    } else if net_target_today_value > 0.0 && current_portfolio >= net_target_today_value {
+        "achieved"
+    } else if effective_fi_age.is_some_and(|age| age <= plan.personal.target_retirement_age) {
+        "on_track"
+    } else if effective_fi_age.is_some_and(|age| age <= plan.personal.target_retirement_age + 3) {
+        "at_risk"
+    } else {
+        "off_track"
     };
 
     let progress = if net_target_today_value > 0.0 {
@@ -892,6 +911,7 @@ pub fn compute_retirement_overview_with_mode(
         required_capital_at_goal_age: required_capital_value,
         lean_required_capital_at_goal_age: None,
         fat_required_capital_at_goal_age: None,
+        savings_goals_monthly_contribution: 0.0,
         shortfall_at_goal_age: shortfall,
         surplus_at_goal_age: surplus,
         funded_through_age,
@@ -912,6 +932,7 @@ pub fn compute_retirement_overview_with_mode(
 
 #[cfg(test)]
 mod tests {
+    const AS_OF: chrono::NaiveDate = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
     use super::*;
     use crate::planning::retirement::*;
 
@@ -956,7 +977,7 @@ mod tests {
     #[test]
     fn target_reconciliation_exposes_nominal_and_today_values() {
         let p = base_plan();
-        let overview = compute_retirement_overview(&p, 100_000.0, "fire");
+        let overview = compute_retirement_overview(&p, 100_000.0, "fire", AS_OF);
         let recon = overview.target_reconciliation;
 
         assert_eq!(recon.target_age, p.personal.target_retirement_age);
@@ -979,7 +1000,7 @@ mod tests {
         let mut p = base_plan();
         p.investment.monthly_contribution = 500.0;
         p.personal.target_retirement_age = 45;
-        let overview = compute_retirement_overview(&p, 50_000.0, "fire");
+        let overview = compute_retirement_overview(&p, 50_000.0, "fire", AS_OF);
 
         assert!(
             !overview.funded_at_goal_age,
@@ -1004,7 +1025,7 @@ mod tests {
         let mut p = base_plan();
         p.expenses.items[0].monthly_amount = 50_000.0;
         p.investment.monthly_contribution = 100.0;
-        let overview = compute_retirement_overview(&p, 1_000.0, "fire");
+        let overview = compute_retirement_overview(&p, 1_000.0, "fire", AS_OF);
 
         assert!(!overview.eventually_reaches_fi);
         assert!(overview.fi_age.is_none());
@@ -1014,10 +1035,10 @@ mod tests {
     #[test]
     fn portfolio_at_retirement_start_matches_retirement_start_age() {
         let p = base_plan();
-        let overview = compute_retirement_overview(&p, 100_000.0, "fire");
+        let overview = compute_retirement_overview(&p, 100_000.0, "fire", AS_OF);
 
         if let Some(retirement_start_age) = overview.retirement_start_age {
-            let projection = project_retirement(&p, 100_000.0);
+            let projection = project_retirement(&p, 100_000.0, AS_OF);
             let snap_at_start = projection
                 .year_by_year
                 .iter()
@@ -1037,7 +1058,7 @@ mod tests {
     #[test]
     fn funded_at_goal_age_true_when_fi_on_time() {
         let p = base_plan();
-        let overview = compute_retirement_overview(&p, 100_000.0, "fire");
+        let overview = compute_retirement_overview(&p, 100_000.0, "fire", AS_OF);
 
         if let Some(fi_age) = overview.fi_age {
             if fi_age <= p.personal.target_retirement_age {
@@ -1116,7 +1137,7 @@ mod tests {
         plan.investment.monthly_contribution = 1_000.0;
         plan.expenses.items[0].monthly_amount = 1_000_000.0;
 
-        let overview = compute_retirement_overview(&plan, 0.0, "fire");
+        let overview = compute_retirement_overview(&plan, 0.0, "fire", AS_OF);
         let last = overview.trajectory.last().unwrap();
 
         assert!(
@@ -1130,7 +1151,7 @@ mod tests {
         let mut plan = base_plan();
         plan.expenses.items[0].monthly_amount = f64::MAX / 4.0;
 
-        let overview = compute_retirement_overview(&plan, 0.0, "fire");
+        let overview = compute_retirement_overview(&plan, 0.0, "fire", AS_OF);
 
         assert!(!overview.required_capital_reachable);
         assert!(
@@ -1152,10 +1173,10 @@ mod tests {
         plan.investment.pre_retirement_annual_return = -0.50;
 
         let required_capital = 1_000_000.0;
-        let additional = solve_required_additional_monthly(&plan, 0.0, required_capital);
+        let additional = solve_required_additional_monthly(&plan, 0.0, required_capital, AS_OF);
         let mut adjusted = plan.clone();
         adjusted.investment.monthly_contribution += additional;
-        let portfolio_at_goal = project_retirement(&adjusted, 0.0)
+        let portfolio_at_goal = project_retirement(&adjusted, 0.0, AS_OF)
             .year_by_year
             .iter()
             .find(|snapshot| snapshot.age == plan.personal.target_retirement_age)
@@ -1174,7 +1195,7 @@ mod tests {
     #[test]
     fn required_capital_declines_over_retirement() {
         let p = base_plan();
-        let overview = compute_retirement_overview(&p, 100_000.0, "fire");
+        let overview = compute_retirement_overview(&p, 100_000.0, "fire", AS_OF);
         let fire_start = overview.trajectory.iter().position(|pt| pt.phase == "fire");
         if let Some(idx) = fire_start {
             let retirement_required = overview.trajectory[idx]
@@ -1207,9 +1228,10 @@ mod tests {
         let mut without_contributions = with_contributions.clone();
         without_contributions.investment.monthly_contribution = 0.0;
 
-        let with_overview = compute_retirement_overview(&with_contributions, 100_000.0, "fire");
+        let with_overview =
+            compute_retirement_overview(&with_contributions, 100_000.0, "fire", AS_OF);
         let without_overview =
-            compute_retirement_overview(&without_contributions, 100_000.0, "fire");
+            compute_retirement_overview(&without_contributions, 100_000.0, "fire", AS_OF);
 
         let with_required_today = with_overview
             .trajectory
@@ -1247,14 +1269,14 @@ mod tests {
     fn required_glidepath_balance_reaches_goal_with_planned_contributions() {
         let mut p = base_plan();
         p.investment.monthly_contribution = 500.0;
-        let required_today = compute_retirement_overview(&p, 0.0, "traditional")
+        let required_today = compute_retirement_overview(&p, 0.0, "traditional", AS_OF)
             .trajectory
             .first()
             .unwrap()
             .required_capital
             .expect("required glidepath should be available");
 
-        let overview = compute_retirement_overview(&p, required_today, "traditional");
+        let overview = compute_retirement_overview(&p, required_today, "traditional", AS_OF);
         let at_goal = overview.target_reconciliation.portfolio_at_target_nominal;
 
         assert!(
@@ -1272,7 +1294,7 @@ mod tests {
         p.investment.monthly_contribution = 0.0;
         p.expenses.items[0].monthly_amount = 20_000.0;
 
-        let overview = compute_retirement_overview(&p, 0.0, "traditional");
+        let overview = compute_retirement_overview(&p, 0.0, "traditional", AS_OF);
 
         assert_eq!(overview.analysis_mode, "traditional");
         assert_eq!(overview.success_status, "depleted");
@@ -1290,7 +1312,7 @@ mod tests {
     #[test]
     fn traditional_overview_reports_funded_through_horizon_when_sustainable() {
         let p = base_plan();
-        let overview = compute_retirement_overview(&p, 5_000_000.0, "traditional");
+        let overview = compute_retirement_overview(&p, 5_000_000.0, "traditional", AS_OF);
 
         assert_eq!(overview.analysis_mode, "traditional");
         assert!(matches!(
@@ -1308,7 +1330,7 @@ mod tests {
     fn trajectory_uses_planned_expenses_when_available() {
         let mut plan = base_plan();
         plan.personal.target_retirement_age = 36;
-        let overview = compute_retirement_overview(&plan, 1_000_000.0, "traditional");
+        let overview = compute_retirement_overview(&plan, 1_000_000.0, "traditional", AS_OF);
         let fire_point = overview
             .trajectory
             .iter()
@@ -1319,5 +1341,40 @@ mod tests {
             fire_point.planned_expenses,
             Some(fire_point.annual_expenses)
         );
+    }
+    #[test]
+    fn readiness_status_preserves_warnings_before_achieved() {
+        let plan = base_plan();
+        let fire = compute_retirement_overview(&plan, 5_000_000.0, "fire", AS_OF);
+        assert_eq!(fire.status, "achieved");
+        let traditional = compute_retirement_overview(&plan, 5_000_000.0, "traditional", AS_OF);
+        assert_eq!(traditional.status, "on_track");
+        let mut depleted_plan = plan.clone();
+        depleted_plan.investment.monthly_contribution = 0.0;
+        depleted_plan.expenses.items[0].monthly_amount = 20_000.0;
+        let depleted = compute_retirement_overview(&depleted_plan, 0.0, "traditional", AS_OF);
+        assert!(depleted.failure_age.is_some());
+        assert_eq!(depleted.status, "off_track");
+        let mut funded = plan;
+        funded.income_streams.push(RetirementIncomeStream {
+            id: "fund".into(),
+            label: "Drawdown".into(),
+            stream_type: StreamKind::DefinedContribution,
+            start_age: 55,
+            adjust_for_inflation: false,
+            annual_growth_rate: None,
+            monthly_amount: None,
+            linked_account_id: None,
+            current_value: Some(10_000.0),
+            monthly_contribution: Some(0.0),
+            accumulation_return: Some(0.0),
+            payout_rate: Some(0.25),
+            payout_mode: Some(PayoutMode::Drawdown),
+            post_payout_return: Some(0.0),
+        });
+        let warning = compute_retirement_overview(&funded, 5_000_000.0, "fire", AS_OF);
+        assert!(warning.failure_age.is_none());
+        assert!(!warning.income_stream_exhaustion.is_empty());
+        assert_eq!(warning.status, "at_risk");
     }
 }

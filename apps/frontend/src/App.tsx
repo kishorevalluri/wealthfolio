@@ -1,5 +1,6 @@
+import { ActivitySplitReviewProvider } from "@/features/spending/components/activity-split-review-provider";
+import { ProfileShell } from "@/features/profiles/profile-shell";
 import { NativeDatabaseGate } from "@/features/database-recovery/native-database-gate";
-import { RestoredPortfolioNotice } from "@/features/database-recovery/restored-portfolio-notice";
 import { isWeb } from "@/adapters";
 import { AddonRuntimeLoader } from "@/addons/addon-runtime-loader";
 import { setAddonQueryClient } from "@/addons/addons-runtime-context";
@@ -8,15 +9,19 @@ import { Toaster } from "@/components/sonner";
 import { AuthGate, AuthProvider } from "@/context/auth-context";
 import { EventDialogProvider } from "@/features/spending/components/event-dialog-provider";
 import { WealthfolioConnectProvider } from "@/features/wealthfolio-connect";
+import { useAndroidSystemBars } from "@/hooks/use-android-system-bars";
+import { AppDirectionProvider } from "@/i18n/direction";
 import { SettingsProvider } from "@/lib/settings-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@wealthfolio/ui";
+import { MotionConfig } from "motion/react";
 import { useState } from "react";
 import { PrivacyProvider } from "./context/privacy-context";
 import { LoginPage } from "./pages/auth/login-page";
 import { AppRoutes } from "./routes";
 
 function App() {
+  useAndroidSystemBars();
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -24,6 +29,9 @@ function App() {
           queries: {
             refetchOnWindowFocus: false,
             staleTime: 5 * 60 * 1000,
+            // Phone screens kept under the one on top pause their queries while
+            // hidden; keep that data long enough for the user to come back to it.
+            gcTime: 30 * 60 * 1000,
             retry: false,
           },
         },
@@ -35,31 +43,44 @@ function App() {
   setAddonQueryClient(queryClient as unknown as Parameters<typeof setAddonQueryClient>[0]);
 
   const content = (
-    <WealthfolioConnectProvider>
-      <PrivacyProvider>
-        <SettingsProvider>
+    <SettingsProvider>
+      <WealthfolioConnectProvider>
+        <PrivacyProvider>
           <TooltipProvider>
             <Toaster mobileOffset={{ top: "68px" }} closeButton expand={false} />
-            <RestoredPortfolioNotice />
             <AddonRuntimeLoader />
-            <EventDialogProvider>
-              <AssetLogoRegistrySync />
-              <AppRoutes />
-            </EventDialogProvider>
+            <ActivitySplitReviewProvider>
+              <EventDialogProvider>
+                <AssetLogoRegistrySync />
+                <AppRoutes />
+              </EventDialogProvider>
+            </ActivitySplitReviewProvider>
           </TooltipProvider>
-        </SettingsProvider>
-      </PrivacyProvider>
-    </WealthfolioConnectProvider>
+        </PrivacyProvider>
+      </WealthfolioConnectProvider>
+    </SettingsProvider>
   );
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <NativeDatabaseGate>
-        <AuthProvider>
-          {isWebEnv ? <AuthGate fallback={<LoginPage />}>{content}</AuthGate> : content}
-        </AuthProvider>
-      </NativeDatabaseGate>
-    </QueryClientProvider>
+    <AppDirectionProvider>
+      <MotionConfig reducedMotion="user">
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            {isWebEnv ? (
+              <AuthGate fallback={<LoginPage />}>
+                <ProfileShell>
+                  <NativeDatabaseGate>{content}</NativeDatabaseGate>
+                </ProfileShell>
+              </AuthGate>
+            ) : (
+              <ProfileShell>
+                <NativeDatabaseGate>{content}</NativeDatabaseGate>
+              </ProfileShell>
+            )}
+          </AuthProvider>
+        </QueryClientProvider>
+      </MotionConfig>
+    </AppDirectionProvider>
   );
 }
 

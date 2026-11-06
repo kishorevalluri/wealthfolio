@@ -14,11 +14,9 @@ http = "1"
 log = { workspace = true }
 rand = { workspace = true }
 rmcp = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 subtle = "2"
-thiserror = { workspace = true }
 tokio = { workspace = true }
 
 wealthfolio-agent-tools = { workspace = true }
@@ -28,5 +26,9 @@ wealthfolio-storage-sqlite = { workspace = true }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio-util = "0.7"
 wealthfolio-core = { workspace = true }
 wealthfolio-spending = { workspace = true }
+
+[lints]
+workspace = true

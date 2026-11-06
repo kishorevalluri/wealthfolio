@@ -21,22 +21,17 @@ import {
 } from "@/lib/constants";
 import { Account } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Icons, type Icon } from "@wealthfolio/ui";
+import { Icons } from "@wealthfolio/ui";
+import { AccountTypeIconTile, IconTile } from "@/components/account-type-icon";
 import { forwardRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
+// Rows match the phone picker screens: 48px, 16px text, 32px icon tiles.
+const tileClassName = "size-8 rounded-lg [&_svg]:size-4";
+
 // Custom type for UI purposes that extends the standard AccountType
 type UIAccountType = AccountType | typeof PORTFOLIO_ACCOUNT_TYPE;
-
-// Map account types to icons for visual distinction
-const accountTypeIcons: Record<string, Icon> = {
-  SECURITIES: Icons.Briefcase,
-  CASH: Icons.DollarSign,
-  CREDIT_CARD: Icons.CreditCard,
-  CRYPTOCURRENCY: Icons.Bitcoin,
-  [PORTFOLIO_ACCOUNT_TYPE]: Icons.Wallet,
-};
 
 interface AccountSelectorMobileProps {
   setSelectedAccount: (account: Account) => void;
@@ -167,23 +162,25 @@ export const AccountSelectorMobile = forwardRef<HTMLButtonElement, AccountSelect
 
     return (
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetTrigger asChild>
-          <Button
-            ref={ref}
-            variant="outline"
-            aria-label={iconOnly ? t("common:component.add_account") : undefined}
-            className={cn(
-              "bg-secondary/30 hover:bg-muted/80 flex items-center gap-1.5 rounded-md border-[1.5px] border-none text-sm font-medium",
-              iconOnly ? "h-9 w-9 p-0" : "h-8 px-3 py-1",
-              className,
-            )}
-            size={iconOnly ? "icon" : "sm"}
-          >
-            <Icons.Briefcase className="h-4 w-4" />
-            {!iconOnly && t("common:component.add_account")}
-          </Button>
+        <SheetTrigger
+          render={
+            <Button
+              ref={ref}
+              variant="outline"
+              aria-label={iconOnly ? t("common:component.add_account") : undefined}
+              className={cn(
+                "bg-secondary/30 hover:bg-muted/80 flex items-center gap-1.5 rounded-md border-[1.5px] border-none text-sm font-medium",
+                iconOnly ? "h-9 w-9 p-0" : "h-8 px-3 py-1",
+                className,
+              )}
+              size={iconOnly ? "icon" : "sm"}
+            />
+          }
+        >
+          <Icons.Briefcase className="h-4 w-4" />
+          {!iconOnly && t("common:component.add_account")}
         </SheetTrigger>
-        <SheetContent side="bottom" className="rounded-t-4xl mx-1 h-[80vh] p-0">
+        <SheetContent side="bottom" className="mx-1 h-[80vh] rounded-t-4xl p-0">
           <SheetHeader className="border-border border-b px-6 py-4">
             <SheetTitle>{t("common:component.select_account")}</SheetTitle>
             <SheetDescription>{t("common:component.choose_account_comparison")}</SheetDescription>
@@ -192,10 +189,10 @@ export const AccountSelectorMobile = forwardRef<HTMLButtonElement, AccountSelect
             <div className="space-y-6">
               {showPortfolios && (
                 <div>
-                  <h3 className="text-muted-foreground mb-3 text-sm font-medium">
+                  <h3 className="text-muted-foreground mb-1 px-3 text-xs font-medium">
                     {t("common:component.portfolios")}
                   </h3>
-                  <div className="space-y-2">
+                  <div>
                     {portfolios.map((p) => (
                       <button
                         key={p.id}
@@ -203,15 +200,12 @@ export const AccountSelectorMobile = forwardRef<HTMLButtonElement, AccountSelect
                           onPortfolioSelect?.({ id: p.id, name: p.name });
                           setOpen(false);
                         }}
-                        className="hover:bg-accent active:bg-accent/80 focus:border-primary flex w-full items-center gap-3 rounded-lg border border-transparent p-3 text-left transition-colors focus:outline-none"
+                        className="hover:bg-accent active:bg-accent/80 focus-visible:border-primary flex min-h-12 w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-start text-base transition-colors focus:outline-none"
                       >
-                        <div className="bg-primary/10 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full">
-                          <Icons.Folder className="text-primary h-5 w-5" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-foreground truncate font-medium">{p.name}</div>
-                        </div>
-                        <Icons.ChevronRight className="text-muted-foreground h-5 w-5 flex-shrink-0" />
+                        <IconTile icon={Icons.Folder} className={tileClassName} />
+                        <span className="text-foreground min-w-0 flex-1 truncate font-medium">
+                          {p.name}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -219,28 +213,27 @@ export const AccountSelectorMobile = forwardRef<HTMLButtonElement, AccountSelect
               )}
               {Object.entries(groupedAccounts).map(([type, accountsInGroup]) => (
                 <div key={type}>
-                  <h3 className="text-muted-foreground mb-3 text-sm font-medium">
+                  <h3 className="text-muted-foreground mb-1 px-3 text-xs font-medium">
                     {getAccountTypeLabel(type)}
                   </h3>
-                  <div className="space-y-2">
+                  <div>
                     {accountsInGroup.map((account) => {
-                      const IconComponent = accountTypeIcons[account.accountType] ?? Icons.Wallet;
                       return (
                         <button
                           key={account.id}
                           onClick={() => handleAccountSelect(account)}
-                          className="hover:bg-accent active:bg-accent/80 focus:border-primary flex w-full items-center gap-3 rounded-lg border border-transparent p-3 text-left transition-colors focus:outline-none"
+                          className="hover:bg-accent active:bg-accent/80 focus-visible:border-primary flex min-h-12 w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-start text-base transition-colors focus:outline-none"
                         >
-                          <div className="bg-primary/10 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full">
-                            <IconComponent className="text-primary h-5 w-5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-foreground truncate font-medium">
-                              {account.name}
-                            </div>
-                            <div className="text-muted-foreground text-sm">{account.currency}</div>
-                          </div>
-                          <Icons.ChevronRight className="text-muted-foreground h-5 w-5 flex-shrink-0" />
+                          <AccountTypeIconTile
+                            accountType={account.accountType}
+                            className={tileClassName}
+                          />
+                          <span className="text-foreground min-w-0 flex-1 truncate">
+                            {account.name}
+                          </span>
+                          <span className="text-muted-foreground shrink-0 text-sm">
+                            {account.currency}
+                          </span>
                         </button>
                       );
                     })}

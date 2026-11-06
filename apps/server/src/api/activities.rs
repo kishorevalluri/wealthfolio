@@ -3,16 +3,17 @@ use std::sync::Arc;
 
 use crate::{error::ApiResult, main_lib::AppState};
 use axum::{
-    extract::{Multipart, Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query},
     routing::{delete, get, post},
     Json, Router,
 };
 use wealthfolio_core::activities::{
     import_type, Activity, ActivityBulkMutationRequest, ActivityBulkMutationResult, ActivityImport,
-    ActivitySearchResponse, ActivityUpdate, ImportActivitiesResult, ImportAssetCandidate,
-    ImportAssetPreviewItem, ImportMappingData, ImportTemplateData, InternalTransferPairRequest,
-    InternalTransferPairResponse, NewActivity, ParseConfig, ParsedCsvResult,
-    TransferMatchCandidate, TransferMatchCandidateRequest,
+    ActivitySearchResponse, ActivitySplitEffect, ActivityUpdate, ConvertToTransferRequest,
+    ImportActivitiesResult, ImportAssetCandidate, ImportAssetPreviewItem, ImportMappingData,
+    ImportTemplateData, InternalTransferPairRequest, InternalTransferPairResponse, NewActivity,
+    ParseConfig, ParsedCsvResult, ParsedPdfResult, TransferMatchCandidate,
+    TransferMatchCandidateRequest,
 };
 use wealthfolio_core::utils::time_utils::{
     local_date_range_utc_bounds, parse_user_timezone_or_default,
@@ -57,10 +58,13 @@ struct ActivitySearchBody {
     instrument_type_filter: Option<StringOrVec>,
     #[serde(rename = "activityIdFilter")]
     activity_id_filter: Option<StringOrVec>,
+    /// Cash balance after each row, for one cash or credit-card account.
+    #[serde(rename = "includeCashBalances")]
+    include_cash_balances: Option<bool>,
 }
 
 async fn search_activities(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<ActivitySearchBody>,
 ) -> ApiResult<Json<ActivitySearchResponse>> {
     // Normalize sort to a single value if provided
@@ -92,12 +96,16 @@ async fn search_activities(
     // Parse date filters
     let date_from_parsed = parse_date_optional(body.date_from, "dateFrom")?;
     let date_to_parsed = parse_date_optional(body.date_to, "dateTo")?;
-    let timezone = state.timezone.read().unwrap().clone();
+    let timezone = state
+        .timezone
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
     let tz = parse_user_timezone_or_default(&timezone);
     let (date_from_utc, date_to_utc_exclusive) =
         local_date_range_utc_bounds(date_from_parsed, date_to_parsed, tz)?;
 
-    let resp = state.activity_service.search_activities_in_utc_range(
+    let mut resp = state.activity_service.search_activities_in_utc_range(
         body.page,
         body.page_size,
         account_ids,
@@ -110,11 +118,17 @@ async fn search_activities(
         instrument_types,
         activity_ids,
     )?;
+    if body.include_cash_balances.unwrap_or(false) {
+        state
+            .activity_service
+            .attach_cash_balances(&mut resp)
+            .await?;
+    }
     Ok(Json(resp))
 }
 
 async fn create_activity(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(activity): Json<NewActivity>,
 ) -> ApiResult<Json<Activity>> {
     let created = state.activity_service.create_activity(activity).await?;
@@ -124,8 +138,31 @@ async fn create_activity(
     Ok(Json(created))
 }
 
+async fn review_activity_split_effects(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+    Json(activities): Json<Vec<ActivityUpdate>>,
+) -> ApiResult<Json<Vec<Vec<ActivitySplitEffect>>>> {
+    Ok(Json(
+        state
+            .activity_service
+            .review_activity_split_effects_batch(activities)?,
+    ))
+}
+
+async fn review_internal_transfer_pair_split_effects(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+    Json(request): Json<InternalTransferPairRequest>,
+) -> ApiResult<Json<Vec<ActivitySplitEffect>>> {
+    Ok(Json(
+        state
+            .activity_service
+            .review_internal_transfer_pair_split_effects(request)
+            .await?,
+    ))
+}
+
 async fn update_activity(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(activity): Json<ActivityUpdate>,
 ) -> ApiResult<Json<Activity>> {
     let updated = state.activity_service.update_activity(activity).await?;
@@ -135,7 +172,7 @@ async fn update_activity(
 }
 
 async fn save_activities(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(request): Json<ActivityBulkMutationRequest>,
 ) -> ApiResult<Json<ActivityBulkMutationResult>> {
     let result = state
@@ -149,7 +186,7 @@ async fn save_activities(
 
 async fn delete_activity(
     Path(id): Path<String>,
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<Activity>> {
     let deleted = state.activity_service.delete_activity(id).await?;
     state.health_service.clear_cache().await;
@@ -159,14 +196,14 @@ async fn delete_activity(
 
 async fn get_transfer_pair_for_activity(
     Path(id): Path<String>,
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<Option<InternalTransferPairResponse>>> {
     let pair = state.activity_service.get_transfer_pair_for_activity(id)?;
     Ok(Json(pair))
 }
 
 async fn find_transfer_match_candidates(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(request): Json<TransferMatchCandidateRequest>,
 ) -> ApiResult<Json<Vec<TransferMatchCandidate>>> {
     let candidates = state
@@ -176,12 +213,36 @@ async fn find_transfer_match_candidates(
 }
 
 async fn save_internal_transfer_pair(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(request): Json<InternalTransferPairRequest>,
 ) -> ApiResult<Json<InternalTransferPairResponse>> {
     let pair = state
         .activity_service
         .save_internal_transfer_pair(request)
+        .await?;
+    state.health_service.clear_cache().await;
+    Ok(Json(pair))
+}
+
+async fn review_convert_to_transfer_split_effects(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+    Json(request): Json<ConvertToTransferRequest>,
+) -> ApiResult<Json<Vec<ActivitySplitEffect>>> {
+    Ok(Json(
+        state
+            .activity_service
+            .review_convert_to_transfer_split_effects(request)
+            .await?,
+    ))
+}
+
+async fn convert_to_internal_transfer(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+    Json(request): Json<ConvertToTransferRequest>,
+) -> ApiResult<Json<InternalTransferPairResponse>> {
+    let pair = state
+        .activity_service
+        .convert_to_internal_transfer(request)
         .await?;
     state.health_service.clear_cache().await;
     Ok(Json(pair))
@@ -195,7 +256,7 @@ struct LinkTransferActivitiesBody {
 }
 
 async fn link_transfer_activities(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<LinkTransferActivitiesBody>,
 ) -> ApiResult<Json<(Activity, Activity)>> {
     let pair = state
@@ -208,7 +269,7 @@ async fn link_transfer_activities(
 }
 
 async fn unlink_transfer_activities(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<LinkTransferActivitiesBody>,
 ) -> ApiResult<Json<(Activity, Activity)>> {
     let pair = state
@@ -226,7 +287,7 @@ struct ImportCheckBody {
 }
 
 async fn check_activities_import(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<ImportCheckBody>,
 ) -> ApiResult<Json<Vec<ActivityImport>>> {
     let res = state
@@ -242,7 +303,7 @@ struct ImportBody {
 }
 
 async fn import_activities(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<ImportBody>,
 ) -> ApiResult<Json<ImportActivitiesResult>> {
     let result = state
@@ -260,7 +321,7 @@ struct AssetPreviewBody {
 }
 
 async fn preview_import_assets(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<AssetPreviewBody>,
 ) -> ApiResult<Json<Vec<ImportAssetPreviewItem>>> {
     let result = state
@@ -283,7 +344,7 @@ fn default_activity_context_kind() -> String {
 }
 
 async fn get_account_import_mapping(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Query(q): Query<MappingQuery>,
 ) -> ApiResult<Json<ImportMappingData>> {
     let res = state
@@ -298,7 +359,7 @@ struct SaveMappingBody {
 }
 
 async fn save_account_import_mapping(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<SaveMappingBody>,
 ) -> ApiResult<Json<ImportMappingData>> {
     let res = state
@@ -309,7 +370,7 @@ async fn save_account_import_mapping(
 }
 
 async fn list_import_templates(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<Vec<ImportTemplateData>>> {
     Ok(Json(state.activity_service.list_import_templates()?))
 }
@@ -320,7 +381,7 @@ struct ImportTemplateQuery {
 }
 
 async fn get_import_template(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Query(q): Query<ImportTemplateQuery>,
 ) -> ApiResult<Json<ImportTemplateData>> {
     Ok(Json(state.activity_service.get_import_template(q.id)?))
@@ -332,7 +393,7 @@ struct SaveImportTemplateBody {
 }
 
 async fn save_import_template(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<SaveImportTemplateBody>,
 ) -> ApiResult<Json<ImportTemplateData>> {
     let result = state
@@ -343,7 +404,7 @@ async fn save_import_template(
 }
 
 async fn delete_import_template(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Query(q): Query<ImportTemplateQuery>,
 ) -> ApiResult<Json<serde_json::Value>> {
     state.activity_service.delete_import_template(q.id).await?;
@@ -361,7 +422,7 @@ struct LinkAccountTemplateBody {
 }
 
 async fn link_account_template(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<LinkAccountTemplateBody>,
 ) -> ApiResult<Json<serde_json::Value>> {
     state
@@ -383,7 +444,7 @@ struct CheckDuplicatesResponse {
 }
 
 async fn check_existing_duplicates(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<CheckDuplicatesBody>,
 ) -> ApiResult<Json<CheckDuplicatesResponse>> {
     let duplicates = state
@@ -393,7 +454,7 @@ async fn check_existing_duplicates(
 }
 
 async fn parse_csv_endpoint(
-    State(_state): State<Arc<AppState>>,
+    axum::Extension(_state): axum::Extension<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> ApiResult<Json<ParsedCsvResult>> {
     let mut file_content: Option<Vec<u8>> = None;
@@ -438,11 +499,66 @@ async fn parse_csv_endpoint(
     Ok(Json(result))
 }
 
-pub fn router() -> Router<Arc<AppState>> {
+async fn parse_pdf_endpoint(mut multipart: Multipart) -> ApiResult<Json<ParsedPdfResult>> {
+    let mut file_content: Option<Vec<u8>> = None;
+    let mut password: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        crate::error::ApiError::BadRequest(format!("Failed to read multipart field: {}", e))
+    })? {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "file" => {
+                file_content = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| {
+                            crate::error::ApiError::BadRequest(format!(
+                                "Failed to read file content: {}",
+                                e
+                            ))
+                        })?
+                        .to_vec(),
+                );
+            }
+            "password" => {
+                let pwd_str = field.text().await.map_err(|e| {
+                    crate::error::ApiError::BadRequest(format!("Failed to read password: {}", e))
+                })?;
+                if !pwd_str.trim().is_empty() {
+                    password = Some(pwd_str.trim().to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let content = file_content.ok_or_else(|| {
+        crate::error::ApiError::BadRequest("Missing file in multipart request".to_string())
+    })?;
+
+    let result = wealthfolio_core::activities::parse_pdf(&content, password.as_deref())?;
+    Ok(Json(result))
+}
+
+/// Imports send every row of a CSV in one request; axum's 2 MB default rejects
+/// a few thousand rows with 413 Payload Too Large.
+const IMPORT_BODY_LIMIT: usize = 64 * 1024 * 1024;
+
+pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new()
         .route("/activities/search", post(search_activities))
         .route("/activities", post(create_activity).put(update_activity))
         .route("/activities/bulk", post(save_activities))
+        .route(
+            "/activities/split-effects",
+            post(review_activity_split_effects),
+        )
+        .route(
+            "/activities/transfer-pair/split-effects",
+            post(review_internal_transfer_pair_split_effects),
+        )
         .route("/activities/{id}", delete(delete_activity))
         .route(
             "/activities/{id}/transfer-pair",
@@ -453,18 +569,39 @@ pub fn router() -> Router<Arc<AppState>> {
             post(save_internal_transfer_pair),
         )
         .route(
+            "/activities/convert-to-transfer",
+            post(convert_to_internal_transfer),
+        )
+        .route(
+            "/activities/convert-to-transfer/split-effects",
+            post(review_convert_to_transfer_split_effects),
+        )
+        .route(
             "/activities/transfer-match-candidates",
             post(find_transfer_match_candidates),
         )
         .route("/activities/link", post(link_transfer_activities))
         .route("/activities/unlink", post(unlink_transfer_activities))
-        .route("/activities/import/check", post(check_activities_import))
+        .route(
+            "/activities/import/check",
+            post(check_activities_import).layer(DefaultBodyLimit::max(IMPORT_BODY_LIMIT)),
+        )
         .route(
             "/activities/import/assets/preview",
             post(preview_import_assets),
         )
-        .route("/activities/import", post(import_activities))
-        .route("/activities/import/parse", post(parse_csv_endpoint))
+        .route(
+            "/activities/import",
+            post(import_activities).layer(DefaultBodyLimit::max(IMPORT_BODY_LIMIT)),
+        )
+        .route(
+            "/activities/import/parse",
+            post(parse_csv_endpoint).layer(DefaultBodyLimit::max(IMPORT_BODY_LIMIT)),
+        )
+        .route(
+            "/activities/import/parse-pdf",
+            post(parse_pdf_endpoint).layer(DefaultBodyLimit::max(IMPORT_BODY_LIMIT)),
+        )
         .route(
             "/activities/import/mapping",
             get(get_account_import_mapping).post(save_account_import_mapping),

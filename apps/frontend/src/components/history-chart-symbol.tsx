@@ -123,26 +123,26 @@ export default function HistoryChart({
           >
             <defs>
               <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--success)" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="var(--success)" stopOpacity={0.1} />
+                <stop offset="5%" stopColor="var(--gain)" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="var(--gain)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
             <Tooltip
               content={(props) => <SymbolToolTip {...(props as unknown as SymbolTooltipProps)} />}
-              wrapperStyle={{ pointerEvents: "none" }}
+              // Callers overlay IntervalSelector (z-30) on the chart's bottom edge.
+              wrapperStyle={{ pointerEvents: "none", zIndex: 40 }}
             />
             {interval !== "ALL" && interval !== "1Y" ? (
               <YAxis hide={true} type="number" domain={["auto", "auto"]} />
             ) : null}
             <XAxis hide dataKey="timestamp" type="category" />
             <Area
-              isAnimationActive={true}
               animationDuration={300}
               animationEasing="ease-out"
               connectNulls={true}
               type="monotone"
               dataKey="totalValue"
-              stroke="var(--success)"
+              stroke="var(--gain)"
               fillOpacity={1}
               fill="url(#colorUv)"
             />
@@ -157,7 +157,7 @@ export default function HistoryChart({
                   value: amountFormatting.formatPrice(averageCost, data[0]?.currency ?? "", false),
                   position: "insideBottomLeft",
                   fill: "var(--foreground)",
-                  fontSize: 11,
+                  fontSize: "0.6875rem",
                 }}
               />
             )}
@@ -262,6 +262,8 @@ function markerTextClass(tone: HistoryChartMarkerTone) {
       return "text-secondary-foreground";
     case "warning":
       return "text-warning";
+    case "info":
+      return "text-info";
     default:
       return "text-primary";
   }
@@ -277,6 +279,8 @@ function markerDotClass(tone: HistoryChartMarkerTone) {
       return "bg-secondary";
     case "warning":
       return "bg-warning";
+    case "info":
+      return "bg-info";
     default:
       return "bg-primary";
   }

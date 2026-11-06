@@ -5,7 +5,7 @@ import type { RunEnv } from "../types";
 import { RunEnvs } from "../types";
 
 // Platform constants from core
-export { isDesktop, isWeb, logger } from "./core";
+export { isTauri, isWeb, logger } from "./core";
 
 /**
  * Runtime environment identifier - always "desktop" for Tauri builds
@@ -42,9 +42,10 @@ export type {
   BackendSyncStateResult,
   BackendEnableSyncResult,
   BackendSyncEngineStatusResult,
-  BackendSyncBootstrapOverwriteCheckResult,
-  BackendSyncReconcileReadyResult,
-  BackendSyncBootstrapResult,
+  BackendRestoreErrorCode,
+  BackendRestoreOperation,
+  BackendRestorePhase,
+  BackendRestoreRetry,
   BackendSyncCycleResult,
   BackendSyncBackgroundEngineResult,
   BackendSyncSnapshotUploadResult,
@@ -91,7 +92,7 @@ export * from "../shared/accounts";
 
 // Activity Commands
 export * from "../shared/activities";
-export { parseCsv } from "./activities";
+export { parseCsv, parsePdf } from "./activities";
 
 // Portfolio Commands
 export * from "../shared/portfolio";
@@ -145,7 +146,7 @@ export * from "../shared/health";
 export * from "../shared/allocation-targets";
 
 // Data Export Commands
-export { exportDataFile } from "./exports";
+export { exportDataFile, exportIndianScheduleCg } from "./exports";
 
 // ============================================================================
 // Platform-specific modules (different implementations)
@@ -197,6 +198,8 @@ export {
   downloadAddonForReview,
   installFromStaging,
   updateAddonNetworkApprovals,
+  registerDevAddonManifest,
+  unregisterDevAddonManifest,
   clearAddonStaging,
   getAddonRatings,
   submitAddonRating,
@@ -220,6 +223,7 @@ export {
   listAgentAccessTokens,
   createAgentAccessToken,
   deleteAgentAccessToken,
+  updateAgentAccessTokenScopes,
 } from "./agent-access";
 
 // AI Streaming (Tauri Channel-based implementation)
@@ -227,12 +231,15 @@ export { streamAiChat } from "./ai-streaming";
 
 // Event Listeners (Tauri listen() implementation)
 export {
+  listenBackButton,
   listenFileDropHover,
   listenFileDrop,
   listenFileDropCancelled,
   listenPortfolioUpdateStart,
   listenPortfolioUpdateComplete,
+  listenGoalSummariesUpdated,
   listenDatabaseRestored,
+  listenDeviceSyncRestore,
   listenPortfolioUpdateError,
   listenAssetClassificationsChanged,
   listenMarketSyncComplete,
@@ -282,3 +289,13 @@ export {
   runRetirementSorr,
   runRetirementStressTests,
 } from "./fire-planner";
+
+export {
+  cloudBackupAction,
+  captureCloudBackup,
+  type CloudBackupStatus,
+  type CloudBackupCaptureStatus,
+  type CloudBackupPoint,
+  type CloudBackupOperation,
+} from "../shared/cloud-backups";
+export { downloadCloudBackup, previewCloudBackupRestore } from "./cloud-backups";

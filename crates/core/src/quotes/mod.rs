@@ -43,7 +43,6 @@ pub mod errors;
 pub mod import;
 pub mod model;
 pub mod provider_settings;
-pub mod scheduler;
 pub mod service;
 pub mod store;
 pub mod sync;
@@ -54,7 +53,11 @@ pub mod types;
 mod service_tests;
 
 // Re-export commonly used types for convenience
-pub use model::{LatestQuotePair, Quote, ResolvedQuote, SymbolSearchResult};
+pub use model::{
+    LatestQuotePair, ProviderHistoryResetContext, ProviderHistoryResetFailure,
+    ProviderHistoryResetSkipped, Quote, ResetAllProviderHistoryResult, ResetProviderHistoryResult,
+    ResolvedQuote, SymbolSearchResult,
+};
 pub use store::{ProviderSettingsStore, QuoteStore};
 
 // Re-export strong types
@@ -81,7 +84,8 @@ pub use service::{
 // Re-export import types
 pub use import::{
     ImportResult, ImportValidation, ImportValidationStatus, QuoteConverter, QuoteExport,
-    QuoteImport, QuoteImportService, QuoteValidator, ValidationStatus,
+    QuoteImport, QuoteImportOutcome, QuoteImportPreview, QuoteImportRow, QuoteImportService,
+    QuoteValidator, ValidationStatus,
 };
 
 // Re-export constants

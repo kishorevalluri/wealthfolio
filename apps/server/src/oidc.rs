@@ -9,7 +9,8 @@
 //! a short-lived **encrypted** cookie rather than server memory, so the flow is
 //! stateless and survives restarts.
 
-use reqwest_oidc as reqwest;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::RwLock;
 use std::time::Duration;
 
@@ -28,8 +29,9 @@ use chacha20poly1305::{
 };
 use openidconnect::{
     core::{CoreAuthenticationFlow, CoreClient, CoreIdTokenClaims, CoreProviderMetadata},
-    AuthorizationCode, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken, IssuerUrl,
-    Nonce as OidcNonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
+    AsyncHttpClient, AuthorizationCode, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken,
+    HttpClientError, HttpRequest, HttpResponse, IssuerUrl, Nonce as OidcNonce, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
 };
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -74,6 +76,10 @@ pub struct OidcConfig {
     /// Whether to perform RP-Initiated Logout when the IdP supports it.
     /// Default `true`; set `WF_OIDC_RP_LOGOUT=false` to force local-only logout.
     pub rp_logout: bool,
+    /// Optional PEM bundle (`WF_OIDC_CA_FILE`) of extra root certificates trusted
+    /// for OIDC traffic only, for IdPs behind a private CA (step-ca, internal PKI).
+    /// The bundled Mozilla roots stay trusted; this only adds to them.
+    pub ca_file: Option<String>,
 }
 
 impl OidcConfig {
@@ -134,6 +140,7 @@ impl OidcConfig {
                     allowed_subs,
                     post_logout_redirect_url: env_nonempty("WF_OIDC_POST_LOGOUT_REDIRECT_URL"),
                     rp_logout,
+                    ca_file: env_nonempty("WF_OIDC_CA_FILE"),
                 }))
             }
             _ => anyhow::bail!(
@@ -167,8 +174,40 @@ pub struct OidcManager {
     end_session_endpoint: Option<String>,
     post_logout_redirect_url: Option<String>,
     rp_logout: bool,
-    http_client: reqwest::Client,
+    http_client: OidcHttpClient,
     encryption_key: [u8; 32],
+}
+
+/// openidconnect's HTTP transport on the workspace reqwest. openidconnect 4 only
+/// ships a client for reqwest 0.12; this is the same code (oauth2's
+/// `reqwest_client.rs`, also published as `oauth2-reqwest`) for our version.
+struct OidcHttpClient(reqwest::Client);
+
+impl<'c> AsyncHttpClient<'c> for OidcHttpClient {
+    type Error = HttpClientError<reqwest::Error>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<HttpResponse, Self::Error>> + Send + Sync + 'c>>;
+
+    fn call(&'c self, request: HttpRequest) -> Self::Future {
+        Box::pin(async move {
+            let response = self
+                .0
+                .execute(request.try_into().map_err(Box::new)?)
+                .await
+                .map_err(Box::new)?;
+
+            let mut builder = openidconnect::http::Response::builder()
+                .status(response.status())
+                .version(response.version());
+            for (name, value) in response.headers() {
+                builder = builder.header(name, value);
+            }
+
+            builder
+                .body(response.bytes().await.map_err(Box::new)?.to_vec())
+                .map_err(HttpClientError::Http)
+        })
+    }
 }
 
 impl OidcManager {
@@ -177,17 +216,32 @@ impl OidcManager {
         // Disallow redirects: discovery and token endpoints must be hit directly.
         // Bounded timeouts so a slow/unreachable IdP can't hang startup discovery
         // or tie up a worker during the token exchange in `oidc_callback`.
-        let http_client = reqwest::ClientBuilder::new()
+        // The bundled roots every client uses; `WF_OIDC_CA_FILE` adds to them.
+        let mut builder = wealthfolio_http::client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(10))
-            .build()?;
+            .timeout(Duration::from_secs(10));
+        if let Some(path) = config.ca_file.as_deref() {
+            builder = builder.tls_certs_merge(load_extra_roots(path)?);
+        }
+        // `load_extra_roots` only splits the PEM blocks; the certificates inside
+        // are parsed here, so a corrupt one surfaces as a build error.
+        let http_client = builder
+            .build()
+            .map_err(|e| match config.ca_file.as_deref() {
+                Some(path) => anyhow::anyhow!(
+                    "Invalid certificate in WF_OIDC_CA_FILE {path}: {}",
+                    error_chain(&e)
+                ),
+                None => e.into(),
+            })?;
+        let http_client = OidcHttpClient(http_client);
 
         let issuer = IssuerUrl::new(config.issuer_url.clone())
             .map_err(|e| anyhow::anyhow!("Invalid WF_OIDC_ISSUER_URL: {e}"))?;
         let provider_metadata = CoreProviderMetadata::discover_async(issuer.clone(), &http_client)
             .await
-            .map_err(|e| anyhow::anyhow!("OIDC discovery failed: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("OIDC discovery failed: {}", error_chain(&e)))?;
         let redirect_url = RedirectUrl::new(config.redirect_url.clone())
             .map_err(|e| anyhow::anyhow!("Invalid WF_OIDC_REDIRECT_URL: {e}"))?;
 
@@ -206,7 +260,7 @@ impl OidcManager {
         // not part of CoreProviderMetadata, so read it from the discovery doc
         // directly. Best-effort: absence just means logout stays local-only.
         let end_session_endpoint = if config.rp_logout {
-            fetch_end_session_endpoint(&http_client, &config.issuer_url).await
+            fetch_end_session_endpoint(&http_client.0, &config.issuer_url).await
         } else {
             None
         };
@@ -264,7 +318,7 @@ impl OidcManager {
         let fresh =
             CoreProviderMetadata::discover_async(self.issuer_url.clone(), &self.http_client)
                 .await
-                .map_err(|e| anyhow::anyhow!("OIDC re-discovery failed: {e}"))?;
+                .map_err(|e| anyhow::anyhow!("OIDC re-discovery failed: {}", error_chain(&e)))?;
         *self
             .provider_metadata
             .write()
@@ -702,6 +756,51 @@ fn error_redirect(code: &str) -> Response {
     Redirect::to(&format!("/?oidc_error={code}")).into_response()
 }
 
+/// Reads the `WF_OIDC_CA_FILE` PEM bundle. Fails closed: an unreadable file or a
+/// file without any certificate is a startup error, not a silent fallback.
+fn load_extra_roots(path: &str) -> anyhow::Result<Vec<reqwest::Certificate>> {
+    let pem = std::fs::read(path)
+        .map_err(|e| anyhow::anyhow!("Cannot read WF_OIDC_CA_FILE {path}: {e}"))?;
+    let certs = reqwest::Certificate::from_pem_bundle(&pem).map_err(|e| {
+        anyhow::anyhow!("Invalid PEM in WF_OIDC_CA_FILE {path}: {}", error_chain(&e))
+    })?;
+    if certs.is_empty() {
+        anyhow::bail!("WF_OIDC_CA_FILE {path} contains no certificates");
+    }
+    Ok(certs)
+}
+
+/// Renders `err` and its `source()` chain as "outer: inner: …". `{err}` alone
+/// drops the cause: discovery says only "Request failed" while the TLS error
+/// sits further down. User info in a reqwest error's URL is removed, since that
+/// URL comes from `WF_OIDC_ISSUER_URL` or the discovery document.
+fn error_chain(err: &(dyn std::error::Error + 'static)) -> String {
+    let mut parts = Vec::new();
+    let mut next = Some(err);
+    while let Some(e) = next {
+        let mut message = e.to_string();
+        let url = e
+            .downcast_ref::<reqwest::Error>()
+            .or_else(|| e.downcast_ref::<Box<reqwest::Error>>().map(|b| b.as_ref()))
+            .and_then(reqwest::Error::url);
+        // A provider's URLs (such as its jwks_uri) can carry a token in the user
+        // info or the query, so neither reaches the log.
+        if let Some(url) = url
+            .filter(|u| !u.username().is_empty() || u.password().is_some() || u.query().is_some())
+        {
+            let mut redacted = url.clone();
+            // Only fails for URLs that cannot carry user info in the first place.
+            let _ = redacted.set_username("");
+            let _ = redacted.set_password(None);
+            redacted.set_query(None);
+            message = message.replace(url.as_str(), redacted.as_str());
+        }
+        parts.push(message);
+        next = e.source();
+    }
+    parts.join(": ")
+}
+
 fn env_nonempty(key: &str) -> Option<String> {
     std::env::var(key)
         .ok()
@@ -723,6 +822,121 @@ fn csv_list(key: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Two throwaway self-signed P-256 CA certificates, used only to exercise
+    // `WF_OIDC_CA_FILE` parsing.
+    const TEST_CA_A: &str = "-----BEGIN CERTIFICATE-----\nMIIBhDCCASugAwIBAgIUemYmWyF+rKBBcl7hYyL0a6lMEU8wCgYIKoZIzj0EAwIw\nFzEVMBMGA1UEAwwMd2YtdGVzdC1jYS1hMCAXDTI2MTAyMzE1NDg0OVoYDzIxMjYw\nOTI5MTU0ODQ5WjAXMRUwEwYDVQQDDAx3Zi10ZXN0LWNhLWEwWTATBgcqhkjOPQIB\nBggqhkjOPQMBBwNCAATMxeVH0eP+0RGFQnjoMY3lk7u5ChGBloyHYaUoom8lF+T0\n6o7N25kCMDTZ9+3yPFAdfLymfA24huZdxiJAJdRDo1MwUTAdBgNVHQ4EFgQU5ERJ\nDwqnqGutt6uRcrVJcdu6LlowHwYDVR0jBBgwFoAU5ERJDwqnqGutt6uRcrVJcdu6\nLlowDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNHADBEAiAiIWf/Jr/KVnQe\nX6r5eXANdjwI11Q1o0z+6qMZsiyEGQIgGe/nVpJKgtNdN6aZ7neVkAvN5dCTH0sk\nFJPC0Ua/a6c=\n-----END CERTIFICATE-----";
+    const TEST_CA_B: &str = "-----BEGIN CERTIFICATE-----\nMIIBhTCCASugAwIBAgIUOZL8Tau5seRhzqm/EjxL1CxkDx8wCgYIKoZIzj0EAwIw\nFzEVMBMGA1UEAwwMd2YtdGVzdC1jYS1iMCAXDTI2MTAyMzE1NDg0OVoYDzIxMjYw\nOTI5MTU0ODQ5WjAXMRUwEwYDVQQDDAx3Zi10ZXN0LWNhLWIwWTATBgcqhkjOPQIB\nBggqhkjOPQMBBwNCAARpruWklxw5+Grx5PajKRYm4Zfyoym1Ev7evb7o2R97N7mE\nXwcmX7q6hXq7tyVORj0YRg+nNqt1k4Bb+q55tXfeo1MwUTAdBgNVHQ4EFgQUjdpr\nVpn/w/geXfH6Vt0RcQr97o0wHwYDVR0jBBgwFoAUjdprVpn/w/geXfH6Vt0RcQr9\n7o0wDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiEAmJKr9xOIGU1P\nGEAkBwhFgQheKByrlTYOCM1YzChnR/oCICojQMFZs8yRA9i5sP4L3+fFBScUlhxB\nyHO5idlqsvOL\n-----END CERTIFICATE-----";
+
+    fn write_temp(name: &str, contents: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("wf-oidc-{}-{name}", std::process::id()));
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn extra_roots_load_every_cert_in_bundle() {
+        let path = write_temp("bundle.pem", &format!("{TEST_CA_A}\n{TEST_CA_B}\n"));
+        let certs = load_extra_roots(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert_eq!(certs.len(), 2);
+    }
+
+    #[test]
+    fn extra_roots_reject_file_without_certificates() {
+        let path = write_temp("empty.pem", "not a certificate\n");
+        let err = load_extra_roots(path.to_str().unwrap()).unwrap_err();
+        std::fs::remove_file(&path).ok();
+        assert!(err.to_string().contains("WF_OIDC_CA_FILE"), "{err}");
+    }
+
+    #[test]
+    fn extra_roots_reject_missing_file() {
+        let err = load_extra_roots("/nonexistent/wf-oidc-ca.pem").unwrap_err();
+        assert!(
+            err.to_string().contains("Cannot read WF_OIDC_CA_FILE"),
+            "{err}"
+        );
+    }
+
+    // A well-formed PEM block whose body is not a certificate.
+    const CORRUPT_CERT: &str = "-----BEGIN CERTIFICATE-----\nZm9vYmFy\n-----END CERTIFICATE-----\n";
+
+    #[tokio::test]
+    async fn corrupt_certificate_in_ca_file_names_setting_and_path() {
+        let path = write_temp("corrupt.pem", CORRUPT_CERT);
+        let path_str = path.to_str().unwrap().to_string();
+        let config = OidcConfig {
+            // Invalid on purpose: startup must stop before any request is sent.
+            issuer_url: "not a url".into(),
+            client_id: "wf".into(),
+            client_secret: None,
+            redirect_url: "http://127.0.0.1/api/v1/auth/oidc/callback".into(),
+            scopes: vec!["openid".into()],
+            allowed_emails: vec![],
+            allowed_subs: vec![],
+            post_logout_redirect_url: None,
+            rp_logout: false,
+            ca_file: Some(path_str.clone()),
+        };
+        let result = OidcManager::discover(&config, [0u8; 32]).await;
+        std::fs::remove_file(&path).ok();
+        let Err(err) = result else {
+            panic!("a corrupt certificate must stop startup");
+        };
+        let message = err.to_string();
+        assert!(
+            message.starts_with(&format!(
+                "Invalid certificate in WF_OIDC_CA_FILE {path_str}: "
+            )),
+            "{message}"
+        );
+        assert!(message.contains("BadEncoding"), "{message}");
+    }
+
+    #[test]
+    fn discovery_error_message_includes_cause_without_url_credentials() {
+        // A reqwest error whose rustls cause sits in `source()`, wrapped the way
+        // `discover_async` returns transport failures.
+        let cert = reqwest::Certificate::from_pem(CORRUPT_CERT.as_bytes()).unwrap();
+        let transport = wealthfolio_http::client_builder()
+            .tls_certs_merge([cert])
+            .build()
+            .unwrap_err()
+            .with_url(
+                "https://user:hunter2@idp.example/.well-known/openid-configuration"
+                    .parse()
+                    .unwrap(),
+            );
+        let err: openidconnect::DiscoveryError<openidconnect::HttpClientError<reqwest::Error>> =
+            openidconnect::DiscoveryError::Request(openidconnect::HttpClientError::Reqwest(
+                Box::new(transport),
+            ));
+
+        let message = error_chain(&err);
+        assert!(message.starts_with("Request failed: "), "{message}");
+        assert!(
+            message.contains("(https://idp.example/.well-known/openid-configuration)"),
+            "{message}"
+        );
+        assert!(message.ends_with("BadEncoding"), "{message}");
+        assert!(!message.contains("hunter2"), "{message}");
+        assert!(!message.contains("user"), "{message}");
+    }
+
+    #[test]
+    fn error_message_drops_a_url_query() {
+        let cert = reqwest::Certificate::from_pem(CORRUPT_CERT.as_bytes()).unwrap();
+        let transport = wealthfolio_http::client_builder()
+            .tls_certs_merge([cert])
+            .build()
+            .unwrap_err()
+            .with_url("https://idp.example/jwks?token=s3cret".parse().unwrap());
+
+        let message = error_chain(&transport);
+        assert!(message.contains("(https://idp.example/jwks)"), "{message}");
+        assert!(!message.contains("s3cret"), "{message}");
+    }
 
     #[test]
     fn tx_cookie_roundtrips() {
@@ -762,6 +976,23 @@ mod tests {
         };
         let encrypted = encrypt_tx(&[1u8; 32], &tx).unwrap();
         assert!(decrypt_tx(&[2u8; 32], &encrypted).is_err());
+    }
+
+    #[test]
+    fn golden_tx_cookie_still_decrypts() {
+        // Made today with the key derived from a fixed synthetic WF_SECRET_KEY. Never
+        // regenerate this cookie to make a dependency upgrade pass.
+        let master =
+            crate::auth::decode_secret_key("CzBVep/E6Q4zWH2ix+wRNluApcrvFDleg6jN8hc8YYY=").unwrap();
+        let (_, key) = crate::auth::derive_keys(&master);
+        let tx = decrypt_tx(
+            &key,
+            "d_k9lyUm_64lGYmHKIy_kp8hUHQheUQNjTdROutpCJtawx8p-IxgDrLnFmdPeiEswS2KxWrNHKjkpcxjdO50eS2d30RlAMjhZS6InRg9C7FE6NAJqdiBvKPa3cFcsCKVb3tRLYptudRu4dkY-ctczA",
+        )
+        .unwrap();
+        assert_eq!(tx.pkce_verifier, "golden-pkce-verifier");
+        assert_eq!(tx.nonce, "golden-nonce");
+        assert_eq!(tx.csrf, "golden-csrf");
     }
 
     #[test]

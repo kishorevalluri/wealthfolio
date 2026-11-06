@@ -6,13 +6,13 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     http::StatusCode,
     routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use wealthfolio_agent_tools::{AgentScope, AgentScopeSet};
+use wealthfolio_agent_tools::scope::validate_requested_scopes;
 use wealthfolio_storage_sqlite::agent::{
     AuditFilter, McpAuditLogDB, NewPersonalAccessToken, PersonalAccessTokenDB,
 };
@@ -31,7 +31,7 @@ struct AgentAccessStatus {
     endpoint: &'static str,
 }
 
-async fn status(State(state): State<Arc<AppState>>) -> Json<AgentAccessStatus> {
+async fn status(axum::Extension(state): axum::Extension<Arc<AppState>>) -> Json<AgentAccessStatus> {
     Json(AgentAccessStatus {
         mcp_enabled: state.mcp_enabled,
         audit_enabled: state.mcp_audit_enabled,
@@ -73,7 +73,9 @@ impl From<PersonalAccessTokenDB> for TokenInfo {
     }
 }
 
-async fn list_tokens(State(state): State<Arc<AppState>>) -> ApiResult<Json<Vec<TokenInfo>>> {
+async fn list_tokens(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+) -> ApiResult<Json<Vec<TokenInfo>>> {
     let tokens = state.pat_repository.list()?;
     Ok(Json(tokens.into_iter().map(TokenInfo::from).collect()))
 }
@@ -87,25 +89,6 @@ struct CreateTokenRequest {
     /// unknown scopes and unmet dependencies are rejected.
     #[serde(default)]
     scopes: Vec<String>,
-}
-
-/// Validate the requested scope strings and return the canonical, deduped set.
-fn validate_requested_scopes(requested: &[String]) -> Result<Vec<String>, ApiError> {
-    if requested.is_empty() {
-        return Err(ApiError::BadRequest(
-            "At least one scope is required".into(),
-        ));
-    }
-    let mut set = AgentScopeSet::new();
-    for scope in requested {
-        let parsed = AgentScope::parse(scope)
-            .ok_or_else(|| ApiError::BadRequest(format!("Unknown scope: {scope}")))?;
-        set.insert(parsed);
-    }
-    if let Some(err) = set.dependency_error() {
-        return Err(ApiError::BadRequest(err));
-    }
-    Ok(set.iter().map(|s| s.as_str().to_string()).collect())
 }
 
 #[derive(Serialize)]
@@ -122,7 +105,7 @@ struct CreatedTokenResponse {
 }
 
 async fn create_token(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(payload): Json<CreateTokenRequest>,
 ) -> ApiResult<(StatusCode, Json<CreatedTokenResponse>)> {
     let name = payload.name.trim().to_string();
@@ -134,7 +117,7 @@ async fn create_token(
             .map_err(|_| ApiError::BadRequest("expiresAt must be an RFC 3339 timestamp".into()))?;
     }
 
-    let scopes = validate_requested_scopes(&payload.scopes)?;
+    let scopes = validate_requested_scopes(&payload.scopes).map_err(ApiError::BadRequest)?;
 
     let token = generate_token();
     let prefix = token_prefix(&token)
@@ -166,8 +149,28 @@ async fn create_token(
     ))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UpdateTokenScopesRequest {
+    scopes: Vec<String>,
+}
+
+async fn update_token_scopes(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateTokenScopesRequest>,
+) -> ApiResult<Json<TokenInfo>> {
+    let scopes = validate_requested_scopes(&payload.scopes).map_err(ApiError::BadRequest)?;
+    let row = state
+        .pat_repository
+        .update_scopes(&id, scopes)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(row.into()))
+}
+
 async fn delete_token(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
     if state.pat_repository.delete(&id).await? {
@@ -249,7 +252,7 @@ struct AuditPage {
 }
 
 async fn list_audit(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Query(query): Query<AuditQuery>,
 ) -> ApiResult<Json<AuditPage>> {
     let tools = csv(&query.tools);
@@ -279,16 +282,21 @@ struct PurgeResponse {
     purged: u64,
 }
 
-async fn purge_audit(State(state): State<Arc<AppState>>) -> ApiResult<Json<PurgeResponse>> {
+async fn purge_audit(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+) -> ApiResult<Json<PurgeResponse>> {
     let purged = state.mcp_audit_repository.purge_all().await?;
     Ok(Json(PurgeResponse { purged }))
 }
 
-pub fn router() -> Router<Arc<AppState>> {
+pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new()
         .route("/agent-access/status", get(status))
         .route("/agent-access/tokens", get(list_tokens).post(create_token))
-        .route("/agent-access/tokens/{id}", delete(delete_token))
+        .route(
+            "/agent-access/tokens/{id}",
+            delete(delete_token).patch(update_token_scopes),
+        )
         .route("/agent-access/audit", get(list_audit))
         .route("/agent-access/audit/purge", post(purge_audit))
 }

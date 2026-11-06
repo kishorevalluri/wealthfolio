@@ -1,3 +1,4 @@
+import { profileFetch } from "@/features/profiles/session";
 import type { ExportDataType, ExportedFileFormat } from "@/lib/types";
 import { notifyUnauthorized } from "@/lib/auth-token";
 import type { DataExportResult } from "../types";
@@ -44,7 +45,7 @@ export const exportDataFile = async (
     format.toLowerCase(),
   )}`;
 
-  const response = await fetch(url, {
+  const response = await profileFetch(url, {
     method: "GET",
     credentials: "same-origin",
   });
@@ -71,6 +72,52 @@ export const exportDataFile = async (
   const filename =
     filenameFromContentDisposition(response.headers.get("Content-Disposition")) ??
     fallbackFileName(data, format);
+  const blob = await response.blob();
+  downloadBlob(blob, filename);
+
+  return { status: "saved", filename };
+};
+
+export const exportIndianScheduleCg = async (
+  filter?: unknown,
+  financialYear?: number,
+): Promise<DataExportResult> => {
+  const url = `${API_PREFIX}/tax/indian/schedule-cg/export/query`;
+
+  const response = await profileFetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      filter: filter ?? null,
+      financialYear: financialYear ?? null,
+    }),
+  });
+
+  if (response.status === 401) {
+    notifyUnauthorized();
+  }
+
+  if (response.status === 204) {
+    return { status: "empty" };
+  }
+
+  if (!response.ok) {
+    let message = response.statusText;
+    try {
+      const error = await response.json();
+      message = (error?.message ?? message) as string;
+    } catch {
+      // Keep HTTP status text
+    }
+    throw new Error(message);
+  }
+
+  const defaultFilename = `schedule_cg_${financialYear ?? "current"}.csv`;
+  const filename =
+    filenameFromContentDisposition(response.headers.get("Content-Disposition")) ?? defaultFilename;
   const blob = await response.blob();
   downloadBlob(blob, filename);
 
