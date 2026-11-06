@@ -106,7 +106,7 @@ export function ContributionLimitForm({
     name: "startDate",
   });
   const isCurrentlyFinancialYear =
-    currentStartDate instanceof Date && currentStartDate.getUTCMonth() === 3;
+    currentStartDate instanceof Date && currentStartDate.getMonth() === 3;
 
   // Function to update dates based on year
   const updateDatesBasedOnYear = (year: number) => {
