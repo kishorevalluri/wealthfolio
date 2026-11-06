@@ -3,7 +3,7 @@
 use rust_decimal::Decimal;
 use serde::Serialize;
 
-use super::{HoldingPeriodCategory, IndianAssetTaxClassification, IndianTaxYearSummary};
+use super::{HoldingPeriodCategory, IndianTaxSection, IndianTaxYearSummary};
 
 /// A single row in the Schedule CG CSV export.
 /// Column order matches the ITR-2/ITR-3 Schedule CG format.
@@ -30,34 +30,15 @@ pub struct ScheduleCgRow {
     pub estimated_tax: Decimal,
 }
 
-/// Determines the applicable ITR section string for a given classification and holding period.
-fn section_label(
-    classification: IndianAssetTaxClassification,
-    holding_period: HoldingPeriodCategory,
-) -> &'static str {
-    match (classification, holding_period) {
-        (
-            IndianAssetTaxClassification::EquityListed
-            | IndianAssetTaxClassification::EquityMf
-            | IndianAssetTaxClassification::ReitInvIt,
-            HoldingPeriodCategory::ShortTerm,
-        ) => "Section 111A",
-        (
-            IndianAssetTaxClassification::EquityListed
-            | IndianAssetTaxClassification::EquityMf
-            | IndianAssetTaxClassification::ReitInvIt,
-            HoldingPeriodCategory::LongTerm,
-        ) => "Section 112A",
-        (
-            IndianAssetTaxClassification::OtherCapitalAsset | IndianAssetTaxClassification::GoldSgb,
-            HoldingPeriodCategory::LongTerm,
-        ) => "Section 112",
-        (
-            IndianAssetTaxClassification::DebtMfPost2023
-            | IndianAssetTaxClassification::UnlistedDebenturePost2024,
-            _,
-        ) => "Section 50AA (Slab Rate)",
-        (_, HoldingPeriodCategory::ShortTerm) => "Slab Rate",
+/// ITR label for a row's tax section.
+fn section_label(section: IndianTaxSection) -> &'static str {
+    match section {
+        IndianTaxSection::Sec111a => "Section 111A",
+        IndianTaxSection::Sec112a => "Section 112A",
+        IndianTaxSection::Sec112 => "Section 112",
+        IndianTaxSection::Sec50aa => "Section 50AA (Slab Rate)",
+        IndianTaxSection::SlabStcg => "Slab Rate",
+        IndianTaxSection::Sec10_38 => "Section 10(38) (Exempt)",
     }
 }
 
@@ -79,7 +60,7 @@ pub fn to_schedule_cg_rows(summary: &IndianTaxYearSummary) -> Vec<ScheduleCgRow>
                 isin: calc.isin.clone().unwrap_or_default(),
                 asset_name: calc.asset_name.clone(),
                 symbol: calc.asset_symbol.clone().unwrap_or_default(),
-                section: section_label(calc.classification, calc.holding_period).to_string(),
+                section: section_label(calc.tax_section).to_string(),
                 holding_period: holding_period_label(calc.holding_period).to_string(),
                 acquisition_date: calc.acquisition_date.format("%d/%m/%Y").to_string(),
                 disposal_date: calc.disposal_date.format("%d/%m/%Y").to_string(),
@@ -102,40 +83,19 @@ pub fn to_schedule_cg_rows(summary: &IndianTaxYearSummary) -> Vec<ScheduleCgRow>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lots::IndianCapitalGainCalculation;
+    use crate::lots::{IndianAssetTaxClassification, IndianCapitalGainCalculation};
     use chrono::NaiveDate;
     use rust_decimal_macros::dec;
 
     #[test]
     fn section_labels_correct() {
+        assert_eq!(section_label(IndianTaxSection::Sec111a), "Section 111A");
+        assert_eq!(section_label(IndianTaxSection::Sec112a), "Section 112A");
         assert_eq!(
-            section_label(
-                IndianAssetTaxClassification::EquityListed,
-                HoldingPeriodCategory::ShortTerm
-            ),
-            "Section 111A"
-        );
-        assert_eq!(
-            section_label(
-                IndianAssetTaxClassification::EquityMf,
-                HoldingPeriodCategory::LongTerm
-            ),
-            "Section 112A"
-        );
-        assert_eq!(
-            section_label(
-                IndianAssetTaxClassification::DebtMfPost2023,
-                HoldingPeriodCategory::ShortTerm
-            ),
+            section_label(IndianTaxSection::Sec50aa),
             "Section 50AA (Slab Rate)"
         );
-        assert_eq!(
-            section_label(
-                IndianAssetTaxClassification::GoldSgb,
-                HoldingPeriodCategory::LongTerm
-            ),
-            "Section 112"
-        );
+        assert_eq!(section_label(IndianTaxSection::Sec112), "Section 112");
     }
 
     #[test]
@@ -146,6 +106,7 @@ mod tests {
                 lot_id: "l1".to_string(),
                 asset_id: "a1".to_string(),
                 classification: IndianAssetTaxClassification::EquityListed,
+                tax_section: IndianTaxSection::Sec112a,
                 acquisition_date: NaiveDate::from_ymd_opt(2017, 6, 15).unwrap(),
                 disposal_date: NaiveDate::from_ymd_opt(2024, 8, 10).unwrap(),
                 holding_period: HoldingPeriodCategory::LongTerm,
