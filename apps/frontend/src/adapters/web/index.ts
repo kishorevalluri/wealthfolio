@@ -119,7 +119,7 @@ export {
   searchActivities,
   updateActivity,
 } from "../shared/activities";
-export { parseCsv } from "./activities";
+export { parseCsv, parsePdf } from "./activities";
 
 // Goal Commands
 export {

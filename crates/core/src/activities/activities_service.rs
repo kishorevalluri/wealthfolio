@@ -51,7 +51,16 @@ use crate::activities::activities_errors::ActivityError;
 use crate::activities::activities_model::*;
 use crate::activities::csv_parser::{self, ParseConfig, ParsedCsvResult};
 use crate::activities::idempotency::{compute_activity_idempotency_key, compute_idempotency_key};
+use crate::activities::pdf_parser;
 use crate::activities::{
+    normalize_context_kind_value, Activity, ActivityBulkMutationError, ActivityBulkMutationRequest,
+    ActivityBulkMutationResult, ActivityImport, ActivitySearchResponse, ActivityStatus,
+    ActivityUpdate, ActivityUpsert, AssetResolutionInput, BrokerSyncProfileData, BulkUpsertResult,
+    ImportActivitiesResult, ImportActivitiesSummary, ImportAssetCandidate, ImportAssetPreviewItem,
+    ImportAssetPreviewStatus, ImportMapping, ImportMappingData, ImportTemplate, ImportTemplateData,
+    ImportTemplateScope, InternalTransferPairRequest, InternalTransferPairResponse, NewActivity,
+    ParsedPdfResult, PrepareActivitiesResult, SaveBrokerSyncProfileRulesRequest, Sort,
+    TemplateKind, TransferMatchCandidate, TransferMatchCandidateRequest,
     ActivityRepositoryTrait, ActivityServiceTrait, TransferPair, TransferPairResolution,
 };
 use crate::activities::{
@@ -2208,6 +2217,16 @@ impl ActivityService {
     /// Parses CSV content with the given configuration.
     pub fn parse_csv(&self, content: &[u8], config: &ParseConfig) -> Result<ParsedCsvResult> {
         csv_parser::parse_csv(content, config)
+    }
+
+    /// Checks if a PDF buffer is encrypted.
+    pub fn is_pdf_encrypted(&self, content: &[u8]) -> bool {
+        pdf_parser::is_pdf_encrypted(content)
+    }
+
+    /// Parses PDF content with optional password.
+    pub fn parse_pdf(&self, content: &[u8], password: Option<&str>) -> Result<ParsedPdfResult> {
+        pdf_parser::parse_pdf(content, password)
     }
 }
 
@@ -6212,6 +6231,14 @@ impl ActivityServiceTrait for ActivityService {
         config: &csv_parser::ParseConfig,
     ) -> Result<csv_parser::ParsedCsvResult> {
         csv_parser::parse_csv(content, config)
+    }
+
+    fn parse_pdf(
+        &self,
+        content: &[u8],
+        password: Option<&str>,
+    ) -> Result<pdf_parser::ParsedPdfResult> {
+        pdf_parser::parse_pdf(content, password)
     }
 
     /// Upserts multiple activities (insert or update on conflict).

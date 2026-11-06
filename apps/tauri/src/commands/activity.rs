@@ -7,8 +7,8 @@ use wealthfolio_core::activities::{
     Activity, ActivityBulkMutationRequest, ActivityBulkMutationResult, ActivityImport,
     ActivitySearchResponse, ActivityUpdate, ImportActivitiesResult, ImportAssetCandidate,
     ImportAssetPreviewItem, ImportMappingData, ImportTemplateData, InternalTransferPairRequest,
-    InternalTransferPairResponse, NewActivity, ParseConfig, ParsedCsvResult, Sort,
-    TransferMatchCandidate, TransferMatchCandidateRequest,
+    InternalTransferPairResponse, NewActivity, ParseConfig, ParsedCsvResult, ParsedPdfResult,
+    Sort, TransferMatchCandidate, TransferMatchCandidateRequest,
 };
 use wealthfolio_core::health::HealthServiceTrait;
 use wealthfolio_core::utils::time_utils::{
@@ -380,6 +380,27 @@ pub async fn parse_csv(
         .parse_csv(&content, &config)
         .map_err(|e| {
             debug!("CSV parse error: {}", e);
+            e.to_string()
+        })
+}
+
+#[tauri::command]
+pub async fn parse_pdf(
+    content: Vec<u8>,
+    password: Option<String>,
+    state: State<'_, DatabaseRuntime>,
+) -> Result<ParsedPdfResult, String> {
+    let context = state.context()?;
+    debug!(
+        "Parsing PDF with {} bytes, password provided: {}",
+        content.len(),
+        password.is_some()
+    );
+    context
+        .activity_service()
+        .parse_pdf(&content, password.as_deref())
+        .map_err(|e| {
+            debug!("PDF parse error: {}", e);
             e.to_string()
         })
 }

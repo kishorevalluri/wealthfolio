@@ -1,5 +1,6 @@
 import {
   parseCsv,
+  parsePdf,
   listImportTemplates,
   getAccountImportMapping,
   linkAccountTemplate,
@@ -41,6 +42,7 @@ import type { TFunction } from "i18next";
 import { CSVFileViewer, type CSVLine } from "../components/csv-file-viewer";
 import { FileDropzone } from "../components/file-dropzone";
 import { HelpTooltip } from "../components/help-tooltip";
+import { PdfPasswordDialog } from "../components/pdf-password-dialog";
 import {
   setAccountId,
   setFile,
@@ -570,7 +572,10 @@ export function UploadStep() {
       : state.selectedTemplateId;
 
   const applyTemplate = useCallback(
-    async (template: ImportTemplateData, options?: { selectTemplate?: boolean }) => {
+    async (
+      template: ImportTemplateData,
+      options?: { selectTemplate?: boolean; overrideHeaders?: string[] },
+    ) => {
       const selectTemplate = options?.selectTemplate ?? true;
       const nextParseConfig =
         importType === ImportType.ACTIVITY && isDefaultActivityTemplateId(template.id)
@@ -583,8 +588,8 @@ export function UploadStep() {
 
       // Re-parse with the template's config to get fresh headers, then compute mappings
       // so auto-detected columns (e.g., ISIN) are merged with the saved template mappings.
-      let headers = state.headers;
-      if (state.file) {
+      let headers = options?.overrideHeaders ?? state.headers;
+      if (state.file && !state.file.name.toLowerCase().endsWith(".pdf")) {
         try {
           const result = await parseCsv(state.file, nextParseConfig);
           setParseError(null);
@@ -661,7 +666,7 @@ export function UploadStep() {
 
     dispatch(setParseConfig(baselineParseConfig));
     dispatch(setMapping(createEmptyHoldingsMapping(state.accountId || "")));
-    if (state.file) {
+    if (state.file && !state.file.name.toLowerCase().endsWith(".pdf")) {
       parseCsv(state.file, baselineParseConfig)
         .then((result) => {
           setParseError(null);
@@ -702,7 +707,7 @@ export function UploadStep() {
       } else {
         dispatch(setParseConfig(baselineParseConfig));
         dispatch(setMapping(createEmptyHoldingsMapping(state.accountId || "")));
-        if (state.file) {
+        if (state.file && !state.file.name.toLowerCase().endsWith(".pdf")) {
           parseCsv(state.file, baselineParseConfig)
             .then((result) => {
               setParseError(null);
@@ -774,7 +779,7 @@ export function UploadStep() {
     };
     dispatch(setParseConfig(updates));
 
-    if (fileRef.current) {
+    if (fileRef.current && !fileRef.current.name.toLowerCase().endsWith(".pdf")) {
       const newConfig = { ...parseConfigRef.current, ...updates };
       parseCsv(fileRef.current, newConfig)
         .then((result) => {
@@ -796,6 +801,66 @@ export function UploadStep() {
     [dispatch],
   );
 
+  const [isPdfPasswordOpen, setIsPdfPasswordOpen] = useState(false);
+  const [pdfPasswordError, setPdfPasswordError] = useState<string | null>(null);
+  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
+  const [isPdfParsing, setIsPdfParsing] = useState(false);
+
+  const handlePdfParse = useCallback(
+    async (file: File, password?: string) => {
+      setIsPdfParsing(true);
+      setPdfPasswordError(null);
+      try {
+        const result = await parsePdf(file, password);
+        setIsPdfPasswordOpen(false);
+        setPendingPdfFile(null);
+        setParseError(null);
+        let rows = result.parsed.rows;
+        if (importType === ImportType.HOLDINGS) {
+          const hasHoldings = rows.some((r) => r[1] === "HOLDING BALANCE");
+          if (hasHoldings) {
+            rows = rows.filter((r) => r[1] === "HOLDING BALANCE");
+          }
+        } else if (importType === ImportType.ACTIVITY) {
+          const hasTxns = rows.some((r) => r[1] !== "HOLDING BALANCE");
+          if (hasTxns) {
+            rows = rows.filter((r) => r[1] !== "HOLDING BALANCE");
+          }
+        }
+
+        dispatch(setParsedData(result.parsed.headers, rows));
+        dispatch(setParseConfig(result.parsed.detectedConfig));
+
+        if (result.recommendedTemplateId) {
+          const recTemplate = templates.find((t) => t.id === result.recommendedTemplateId);
+          if (recTemplate) {
+            void applyTemplate(recTemplate, { overrideHeaders: result.parsed.headers });
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          msg.toLowerCase().includes("encrypted") ||
+          msg.toLowerCase().includes("password") ||
+          msg.toLowerCase().includes("decrypt")
+        ) {
+          setPendingPdfFile(file);
+          setPdfPasswordError(
+            password
+              ? msg || t("activity:import.upload.pdfDecryptionFailed")
+              : null,
+          );
+          setIsPdfPasswordOpen(true);
+        } else {
+          setParseError(msg || t("activity:import.upload.failedToParse"));
+        }
+      } finally {
+        setIsPdfParsing(false);
+      }
+    },
+    [applyTemplate, dispatch, t, templates],
+  );
+
   const { mutate: parseFile, isPending } = useMutation({
     mutationFn: (file: File) => parseCsv(file, state.parseConfig),
     onSuccess: (result) => {
@@ -814,19 +879,40 @@ export function UploadStep() {
     (file: File | null) => {
       if (file) {
         dispatch(setFile(file));
-        parseFile(file);
+        if (file.name.toLowerCase().endsWith(".pdf")) {
+          setPendingPdfFile(file);
+          void handlePdfParse(file);
+        } else {
+          setPendingPdfFile(null);
+          parseFile(file);
+        }
       } else {
         dispatch(setFile(null as unknown as File));
         dispatch(setParsedData([], []));
+        setPendingPdfFile(null);
+        setIsPdfPasswordOpen(false);
       }
     },
-    [dispatch, parseFile],
+    [dispatch, handlePdfParse, parseFile],
+  );
+
+  const handlePdfPasswordSubmit = useCallback(
+    (password: string) => {
+      if (pendingPdfFile) {
+        void handlePdfParse(pendingPdfFile, password);
+      }
+    },
+    [handlePdfParse, pendingPdfFile],
   );
 
   const handleConfigChange = useCallback(
     (updates: Partial<ParseConfig>) => {
       dispatch(setParseConfig(updates));
       if (state.file) {
+        if (state.file.name.toLowerCase().endsWith(".pdf")) {
+          // PDFs use detected text tables
+          return;
+        }
         const newConfig = { ...state.parseConfig, ...updates };
         parseCsv(state.file, newConfig)
           .then((result) => {
@@ -915,8 +1001,8 @@ export function UploadStep() {
             <FileDropzone
               file={state.file}
               onFileChange={handleFileSelect}
-              isLoading={isPending}
-              accept=".csv"
+              isLoading={isPending || isPdfParsing}
+              accept=".csv,.pdf"
               isValid={!hasParseErrors}
               error={parseError}
             />
@@ -948,10 +1034,19 @@ export function UploadStep() {
         />
       </div>
 
-      {/* CSV Preview */}
+      {/* CSV / PDF Preview */}
       {state.file && state.headers.length > 0 && (
         <CsvPreviewTabs file={state.file} headers={state.headers} rows={state.parsedRows} />
       )}
+
+      {/* PDF Password Dialog */}
+      <PdfPasswordDialog
+        open={isPdfPasswordOpen}
+        onOpenChange={setIsPdfPasswordOpen}
+        onSubmit={handlePdfPasswordSubmit}
+        isLoading={isPdfParsing}
+        error={pdfPasswordError}
+      />
     </div>
   );
 }

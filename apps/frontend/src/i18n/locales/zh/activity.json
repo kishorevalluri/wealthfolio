@@ -838,7 +838,13 @@
       "csvOnly": "仅限 CSV",
       "removeFile": "移除文件",
       "failedToParse": "解析 CSV 文件失败",
-      "failedToReparse": "重新解析 CSV 失败"
+      "failedToReparse": "重新解析 CSV 失败",
+      "pdfPasswordTitle": "Enter PDF Password",
+      "pdfPasswordDescription": "This statement is encrypted. Enter the document password to unlock it.",
+      "pdfPasswordPlaceholder": "Password",
+      "pdfPasswordSubmit": "Unlock & Import",
+      "pdfPasswordHint": "Common passwords: For CAMS / KFintech CAS: PAN (uppercase) or PAN + DOB. For CDSL / NSDL e-CAS: PAN or 16-digit Demat Account No / Client ID.",
+      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password."
     },
     "parseSettings": {
       "title": "解析设置",

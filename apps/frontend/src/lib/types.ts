@@ -501,6 +501,19 @@ export interface ParsedCsvResult {
   rowCount: number;
 }
 
+export type StatementType =
+  | "CAMS_CAS"
+  | "KFINTECH_CAS"
+  | "CDSL_CAS"
+  | "NSDL_CAS"
+  | "UNKNOWN";
+
+export interface ParsedPdfResult {
+  parsed: ParsedCsvResult;
+  statementType: StatementType;
+  recommendedTemplateId?: string | null;
+}
+
 export interface SymbolSearchResult {
   exchange: string;
   /** Canonical exchange MIC code (e.g., "XNAS", "XTSE") */

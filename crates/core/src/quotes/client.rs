@@ -771,6 +771,7 @@ impl MarketDataClient {
 
         SymbolSearchResult {
             symbol: review_symbol,
+            isin: result.isin,
             canonical_symbol: canonical_identity.instrument_symbol,
             canonical_exchange_mic: canonical_identity.instrument_exchange_mic,
             provider_id: provider_id.clone(),
@@ -1116,6 +1117,18 @@ mod tests {
 
         assert_eq!(result.quote_type, "EQUITY");
         assert_eq!(result.canonical_symbol.as_deref(), Some("GOLD"));
+    }
+
+    #[test]
+    fn test_convert_search_result_preserves_verified_isin() {
+        let mut provider_result =
+            MarketSearchResult::new("100001", "Example Fund", "AMFI", "MUTUALFUND")
+                .with_currency("INR")
+                .with_data_source("AMFI");
+        provider_result.isin = Some("INF000000001".to_string());
+        let result = MarketDataClient::convert_search_result(provider_result);
+        assert_eq!(result.isin.as_deref(), Some("INF000000001"));
+        assert_eq!(result.provider_symbol.as_deref(), Some("100001"));
     }
 
     #[test]

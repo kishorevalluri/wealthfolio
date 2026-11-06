@@ -79,6 +79,8 @@ pub struct Quote {
 pub struct SymbolSearchResult {
     pub symbol: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub isin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub canonical_symbol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub canonical_exchange_mic: Option<String>,

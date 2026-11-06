@@ -9,6 +9,11 @@
 
 use std::borrow::Cow;
 use std::time::Duration;
+use std::time::Instant;
+use tokio::sync::Mutex;
+
+pub mod matching;
+mod nav_catalogue;
 
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
@@ -28,7 +33,9 @@ use crate::registry::{RateLimitConfig, RateLimiter};
 
 pub const PROVIDER_ID: &str = "AMFI";
 const BASE_URL: &str = "https://api.mfapi.in";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const NAV_CATALOGUE_URL: &str = "https://portal.amfiindia.com/spages/NAVAll.txt";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
+const CATALOGUE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
@@ -61,7 +68,7 @@ pub struct MfResponse {
     pub status: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct MfSearchResultItem {
     #[serde(rename = "schemeCode")]
     pub scheme_code: i64,
@@ -76,6 +83,8 @@ pub struct MfSearchResultItem {
 pub struct AmfiProvider {
     client: Client,
     request_limiter: RateLimiter,
+    catalogue: Mutex<Option<(Instant, Vec<MfSearchResultItem>)>>,
+    nav_catalogue: Mutex<Option<(Instant, Vec<nav_catalogue::NavScheme>)>>,
 }
 
 impl Default for AmfiProvider {
@@ -108,6 +117,8 @@ impl AmfiProvider {
         Self {
             client,
             request_limiter,
+            catalogue: Mutex::new(None),
+            nav_catalogue: Mutex::new(None),
         }
     }
 
@@ -151,6 +162,35 @@ impl AmfiProvider {
         // Close of day in IST (15:30 IST is 10:00 UTC)
         let dt = naive.and_hms_opt(10, 0, 0)?;
         Some(DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
+    }
+
+    fn profile_from_meta(meta: MfMeta) -> AssetProfile {
+        let quote_type = if meta
+            .scheme_category
+            .as_deref()
+            .is_some_and(nav_catalogue::is_etf_category)
+        {
+            "ETF"
+        } else {
+            "MUTUALFUND"
+        };
+        let mut profile = AssetProfile {
+            source: Some(PROVIDER_ID.to_string()),
+            name: meta.scheme_name,
+            quote_type: Some(quote_type.to_string()),
+            currency: Some("INR".to_string()),
+            exchange: Some("AMFI".to_string()),
+            sector: meta.scheme_category,
+            description: meta.scheme_type,
+            country: Some("IN".to_string()),
+            ..Default::default()
+        };
+        if let Some(isin) = meta.isin_growth.or(meta.isin_div_reinvestment) {
+            if !isin.is_empty() {
+                profile.isin = Some(isin);
+            }
+        }
+        profile
     }
 }
 
@@ -342,6 +382,52 @@ impl MarketDataProvider for AmfiProvider {
             return Ok(vec![]);
         }
 
+        let normalized = trimmed.to_ascii_uppercase();
+        if normalized.len() == 12
+            && normalized.starts_with("IN")
+            && normalized.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            if !normalized.starts_with("INF") {
+                return Ok(vec![]);
+            }
+            let mut catalogue = self.nav_catalogue.lock().await;
+            if catalogue
+                .as_ref()
+                .is_none_or(|(loaded, _)| loaded.elapsed() >= CATALOGUE_TTL)
+            {
+                let response = self.send_get(NAV_CATALOGUE_URL).await?;
+                if !response.status().is_success() {
+                    return Err(MarketDataError::ProviderError {
+                        provider: PROVIDER_ID.to_string(),
+                        message: format!("NAV catalogue HTTP {}", response.status()),
+                    });
+                }
+                let text = response
+                    .text()
+                    .await
+                    .map_err(|e| MarketDataError::ProviderError {
+                        provider: PROVIDER_ID.to_string(),
+                        message: format!("NAV catalogue response error: {}", e),
+                    })?;
+                let schemes = nav_catalogue::parse(&text)?;
+                *catalogue = Some((Instant::now(), schemes));
+            }
+            return Ok(catalogue
+                .as_ref()
+                .map(|(_, schemes)| nav_catalogue::lookup(schemes, &normalized))
+                .unwrap_or_default());
+        }
+
+        // AMFI (api.mfapi.in) is strictly for mutual funds.
+        // Skip queries that are clearly exchange stock tickers or demat / account IDs.
+        if trimmed.ends_with(".NS")
+            || trimmed.ends_with(".BO")
+            || trimmed.contains('/')
+            || (trimmed.len() > 10 && trimmed.chars().all(|c| c.is_ascii_digit()))
+        {
+            return Ok(vec![]);
+        }
+
         let url = format!("{}/mf/search?q={}", BASE_URL, urlencoding::encode(trimmed));
         debug!("AMFI search: {}", url);
 
@@ -353,7 +439,7 @@ impl MarketDataProvider for AmfiProvider {
             });
         }
 
-        let items: Vec<MfSearchResultItem> =
+        let mut items: Vec<MfSearchResultItem> =
             resp.json()
                 .await
                 .map_err(|e| MarketDataError::ProviderError {
@@ -361,16 +447,51 @@ impl MarketDataProvider for AmfiProvider {
                     message: format!("JSON parse error: {}", e),
                 })?;
 
+        if items.is_empty()
+            && !trimmed.chars().all(|c| c.is_ascii_digit())
+            && trimmed.len() >= 8
+            && !(trimmed.len() == 12
+                && trimmed.starts_with("IN")
+                && trimmed.chars().all(|c| c.is_ascii_alphanumeric()))
+        {
+            let mut catalogue = self.catalogue.lock().await;
+            if catalogue
+                .as_ref()
+                .is_none_or(|(loaded, _)| loaded.elapsed() >= CATALOGUE_TTL)
+            {
+                let response = self.send_get(&format!("{}/mf", BASE_URL)).await?;
+                if !response.status().is_success() {
+                    return Err(MarketDataError::ProviderError {
+                        provider: PROVIDER_ID.to_string(),
+                        message: format!("Catalogue HTTP {}", response.status()),
+                    });
+                }
+                let schemes = response
+                    .json::<Vec<MfSearchResultItem>>()
+                    .await
+                    .map_err(|e| MarketDataError::ProviderError {
+                        provider: PROVIDER_ID.to_string(),
+                        message: format!("Catalogue JSON parse error: {}", e),
+                    })?;
+                *catalogue = Some((Instant::now(), schemes));
+            }
+            if let Some((_, schemes)) = catalogue.as_ref() {
+                items = schemes
+                    .iter()
+                    .filter(|item| matching::name_similarity(trimmed, &item.scheme_name) >= 0.9)
+                    .cloned()
+                    .collect();
+            }
+        }
+
         let results = items
             .into_iter()
             .map(|item| {
                 let code_str = item.scheme_code.to_string();
                 let score = if code_str.eq_ignore_ascii_case(trimmed) {
                     25000.0
-                } else if item.scheme_name.to_lowercase().contains(&trimmed.to_lowercase()) {
-                    20000.0
                 } else {
-                    15000.0
+                    15000.0 + 5000.0 * matching::name_similarity(trimmed, &item.scheme_name)
                 };
 
                 SearchResult::new(code_str, item.scheme_name, "AMFI", "MUTUALFUND")
@@ -380,6 +501,13 @@ impl MarketDataProvider for AmfiProvider {
             })
             .collect();
 
+        let mut results: Vec<SearchResult> = results;
+        results.sort_by(|a, b| {
+            b.score
+                .unwrap_or_default()
+                .total_cmp(&a.score.unwrap_or_default())
+        });
+        results.truncate(20);
         Ok(results)
     }
 
@@ -409,31 +537,75 @@ impl MarketDataProvider for AmfiProvider {
             .filter(|m| m.scheme_code.unwrap_or(0) != 0)
             .ok_or_else(|| MarketDataError::SymbolNotFound(trimmed.to_string()))?;
 
-        let mut profile = AssetProfile {
-            source: Some(PROVIDER_ID.to_string()),
-            name: meta.scheme_name,
-            quote_type: Some("MUTUALFUND".to_string()),
-            currency: Some("INR".to_string()),
-            exchange: Some("AMFI".to_string()),
-            sector: meta.scheme_category,
-            description: meta.scheme_type,
-            country: Some("IN".to_string()),
-            ..Default::default()
-        };
-
-        if let Some(isin) = meta.isin_growth.or(meta.isin_div_reinvestment) {
-            if !isin.is_empty() {
-                profile.isin = Some(isin);
-            }
-        }
-
-        Ok(profile)
+        Ok(Self::profile_from_meta(meta))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_classifies_etf_only_from_explicit_category() {
+        for (category, expected) in [
+            ("Exchange Traded Funds (ETFs) - Debt ETF", "ETF"),
+            ("Other Scheme - Gold ETF", "ETF"),
+            ("Other Scheme - Other ETFs", "ETF"),
+            ("Other Scheme - FoF Domestic", "MUTUALFUND"),
+            ("Equity Scheme - Index Fund", "MUTUALFUND"),
+        ] {
+            let meta: MfMeta = serde_json::from_value(serde_json::json!({
+                "scheme_code": 100001,
+                "scheme_name": "Example ETF Fund of Funds",
+                "scheme_category": category,
+                "isin_growth": "INF000000001"
+            }))
+            .unwrap();
+            let profile = AmfiProvider::profile_from_meta(meta);
+            assert_eq!(profile.quote_type.as_deref(), Some(expected));
+        }
+    }
+
+    fn offline_provider() -> AmfiProvider {
+        let mut provider = AmfiProvider::new();
+        provider.client = Client::builder()
+            .proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap())
+            .timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+        provider
+    }
+
+    #[tokio::test]
+    async fn isin_search_uses_cached_feed_without_name_search() {
+        let provider = offline_provider();
+        let schemes = nav_catalogue::parse("Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date\nOpen Ended Schemes(Exchange Traded Funds (ETFs) - Gold ETF)\n100001;INF000000001;INF000000002;Example Gold;Regular Plan;Growth Option;10;01-Oct-2026\n").unwrap();
+        *provider.nav_catalogue.lock().await = Some((Instant::now(), schemes));
+        let results = provider.search(" inf000000002 ").await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].symbol, "100001");
+        assert_eq!(results[0].isin.as_deref(), Some("INF000000002"));
+        assert_eq!(results[0].asset_type, "ETF");
+        assert!(provider.search("INF000000003").await.unwrap().is_empty());
+        assert!(provider.search("INE000000001").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn isin_search_reports_feed_failure_instead_of_exact_match() {
+        let provider = offline_provider();
+        assert!(provider.search("INF000000001").await.is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the live public AMFI NAV catalogue"]
+    async fn live_nav_catalogue_resolves_public_scheme_isin() {
+        let provider = AmfiProvider::new();
+        let results = provider.search("INF846K01WO1").await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].symbol, "135762");
+        assert_eq!(results[0].isin.as_deref(), Some("INF846K01WO1"));
+        assert_eq!(results[0].asset_type, "MUTUALFUND");
+    }
 
     #[test]
     fn test_extract_scheme_code() {

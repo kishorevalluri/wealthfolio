@@ -838,7 +838,13 @@
       "csvOnly": "CSVのみ",
       "removeFile": "ファイルを削除",
       "failedToParse": "CSVファイルの解析に失敗しました",
-      "failedToReparse": "CSVの再解析に失敗しました"
+      "failedToReparse": "CSVの再解析に失敗しました",
+      "pdfPasswordTitle": "Enter PDF Password",
+      "pdfPasswordDescription": "This statement is encrypted. Enter the document password to unlock it.",
+      "pdfPasswordPlaceholder": "Password",
+      "pdfPasswordSubmit": "Unlock & Import",
+      "pdfPasswordHint": "Common passwords: For CAMS / KFintech CAS: PAN (uppercase) or PAN + DOB. For CDSL / NSDL e-CAS: PAN or 16-digit Demat Account No / Client ID.",
+      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password."
     },
     "parseSettings": {
       "title": "解析設定",

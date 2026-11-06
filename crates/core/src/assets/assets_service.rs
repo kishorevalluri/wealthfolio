@@ -359,6 +359,7 @@ struct ImportProviderSelectionConstraints<'a> {
     quote_ccy: Option<&'a str>,
     instrument_type: Option<&'a InstrumentType>,
     instrument_type_is_explicit: bool,
+    isin: Option<&'a str>,
 }
 
 /// Service for managing assets
@@ -450,6 +451,7 @@ impl AssetService {
     }
 
     fn import_provider_search_symbols(
+        isin: Option<&str>,
         source_symbol: &str,
         canonical_symbol: &str,
         exchange_mic: Option<&str>,
@@ -457,11 +459,16 @@ impl AssetService {
         instrument_type: Option<&InstrumentType>,
     ) -> Vec<String> {
         let source_symbol = source_symbol.trim();
-        if source_symbol.is_empty() {
-            return Vec::new();
+        let mut candidates = Vec::new();
+
+        if let Some(clean_isin) = isin.map(str::trim).filter(|s| !s.is_empty() && looks_like_isin(s)) {
+            candidates.push(clean_isin.to_uppercase());
         }
 
-        let mut candidates = Vec::new();
+        if source_symbol.is_empty() {
+            return candidates;
+        }
+
         let is_unsuffixed_equity = exchange_mic.is_none()
             && !source_symbol.contains('.')
             && instrument_type
@@ -738,7 +745,7 @@ impl AssetService {
     fn provider_result_import_rank(
         result: &SymbolSearchResult,
         constraints: &ImportProviderSelectionConstraints<'_>,
-    ) -> (u8, u8, u8, u8, u8, u8, u8, u8) {
+    ) -> (u8, u8, u8, u8, u8, u8, u8, u8, u8) {
         let actual_type = InstrumentType::from_external_str(&result.quote_type);
         let type_exact = constraints
             .instrument_type
@@ -748,8 +755,10 @@ impl AssetService {
             Self::provider_result_matches_deterministic_provider_symbol(result, constraints);
         let source_provider_symbol =
             Self::provider_result_provider_symbol_matches_source(result, constraints.source_symbol);
+        let isin_match = Self::provider_result_matches_isin(result, constraints.isin);
         let canonical_match =
-            Self::provider_result_canonical_matches(result, constraints.canonical_symbol);
+            Self::provider_result_canonical_matches(result, constraints.canonical_symbol)
+                || (constraints.isin.is_some() && (deterministic_provider_symbol || source_provider_symbol || isin_match));
         let mic_match = constraints.exchange_mic.is_some_and(|expected_mic| {
             Self::provider_result_mic(result)
                 .is_some_and(|mic| mic.eq_ignore_ascii_case(expected_mic))
@@ -761,6 +770,7 @@ impl AssetService {
 
         (
             explicit_type_exact as u8,
+            isin_match as u8,
             deterministic_provider_symbol as u8,
             source_provider_symbol as u8,
             type_exact as u8,
@@ -771,12 +781,96 @@ impl AssetService {
         )
     }
 
+    fn provider_result_matches_isin(result: &SymbolSearchResult, isin: Option<&str>) -> bool {
+        isin.map(str::trim).is_some_and(|isin| {
+            !isin.is_empty()
+                && (result
+                    .isin
+                    .as_deref()
+                    .is_some_and(|actual| actual.eq_ignore_ascii_case(isin))
+                    || result.symbol.eq_ignore_ascii_case(isin)
+                    || result
+                        .canonical_symbol
+                        .as_deref()
+                        .is_some_and(|s| s.eq_ignore_ascii_case(isin)))
+        })
+    }
+
+    fn conflicting_provider_isin_results(results: &[SymbolSearchResult], isin: Option<&str>) -> bool {
+        let identities: HashSet<_> = results
+            .iter()
+            .filter(|result| Self::provider_result_matches_isin(result, isin))
+            .map(|result| {
+                (
+                    Self::provider_result_provider_id(result),
+                    Self::provider_result_provider_symbol(result),
+                )
+            })
+            .collect();
+        identities.len() > 1
+    }
+
     fn select_provider_result_for_import(
         results: Vec<SymbolSearchResult>,
         constraints: &ImportProviderSelectionConstraints<'_>,
     ) -> Option<SymbolSearchResult> {
+        use wealthfolio_market_data::provider::amfi::matching::{
+            has_matching_variants, name_similarity,
+        };
+
+        const MIN_FUND_SIMILARITY: f64 = 0.9;
+        const MIN_FUND_MATCH_MARGIN: f64 = 0.05;
+
+        if Self::conflicting_provider_isin_results(&results, constraints.isin) {
+            return None;
+        }
+        let results: Vec<_> = results
+            .into_iter()
+            .filter(|result| match (constraints.isin, result.isin.as_deref()) {
+                (Some(expected), Some(actual)) => expected.trim().eq_ignore_ascii_case(actual),
+                _ => true,
+            })
+            .collect();
+        let is_amfi = |result: &SymbolSearchResult| {
+            Self::provider_result_provider_id(result).is_some_and(|id| id.eq_ignore_ascii_case("AMFI"))
+                && result.quote_type.eq_ignore_ascii_case("MUTUALFUND")
+        };
+        let mut funds: Vec<_> = results
+            .iter()
+            .filter(|result| {
+                is_amfi(result)
+                    && Self::provider_result_matches_import_constraints(result, constraints)
+                    && has_matching_variants(constraints.source_symbol, &result.long_name)
+                    && !Self::provider_result_provider_symbol_matches_source(
+                        result,
+                        constraints.source_symbol,
+                    )
+            })
+            .map(|result| (result, name_similarity(constraints.source_symbol, &result.long_name)))
+            .collect();
+        funds.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let safe_fund = funds
+            .first()
+            .filter(|(result, score)| {
+                *score >= MIN_FUND_SIMILARITY
+                    && funds.iter().skip(1).all(|(other, other_score)| {
+                        Self::provider_result_provider_symbol(other)
+                            == Self::provider_result_provider_symbol(result)
+                            || score - other_score >= MIN_FUND_MATCH_MARGIN
+                    })
+            })
+            .map(|(result, _)| Self::provider_result_provider_symbol(result).to_string());
         results
             .into_iter()
+            .filter(|result| {
+                !is_amfi(result)
+                    || Self::provider_result_matches_isin(result, constraints.isin)
+                    || Self::provider_result_provider_symbol_matches_source(
+                        result,
+                        constraints.source_symbol,
+                    )
+                    || safe_fund.as_deref() == Some(Self::provider_result_provider_symbol(result))
+            })
             .filter(|result| Self::provider_result_matches_import_constraints(result, constraints))
             .max_by(|a, b| {
                 Self::provider_result_import_rank(a, constraints)
@@ -1432,6 +1526,14 @@ impl AssetServiceTrait for AssetService {
             } else {
                 source_symbol.clone()
             };
+            let isin = input
+                .isin
+                .as_deref()
+                .map(str::trim)
+                .filter(|isin| !isin.is_empty())
+                .or_else(|| {
+                    looks_like_isin(&resolution_symbol).then_some(resolution_symbol.as_str())
+                });
             let terminal_currency = input
                 .activity_currency
                 .as_deref()
@@ -1514,7 +1616,7 @@ impl AssetServiceTrait for AssetService {
 
             let local_existing_asset = local_index.find_for_import_input(
                 input.asset_id.as_deref(),
-                input.isin.as_deref(),
+                isin,
                 &resolution_symbol,
                 &local_canonical_symbol,
                 local_exchange_mic.as_deref(),
@@ -1576,26 +1678,29 @@ impl AssetServiceTrait for AssetService {
                 quote_ccy: local_quote_ccy,
                 instrument_type: local_instrument_type.as_ref(),
                 instrument_type_is_explicit: instrument_type_input.is_some(),
+                isin,
             };
             let mut provider_result = None;
             for search_symbol in Self::import_provider_search_symbols(
+                isin,
                 &resolution_symbol,
                 &local_canonical_symbol,
                 exchange_mic.as_deref(),
                 local_quote_ccy,
                 local_instrument_type.as_ref(),
             ) {
-                provider_result = self
+                let results = self
                     .quote_service
                     .search_symbol_with_currency(&search_symbol, Some(&terminal_currency))
                     .await
-                    .ok()
-                    .and_then(|results| {
-                        Self::select_provider_result_for_import(
-                            results,
-                            &provider_selection_constraints,
-                        )
-                    });
+                    .unwrap_or_default();
+                if Self::conflicting_provider_isin_results(&results, isin) {
+                    break;
+                }
+                provider_result = Self::select_provider_result_for_import(
+                    results,
+                    &provider_selection_constraints,
+                );
                 if provider_result.is_some() {
                     break;
                 }
@@ -2733,6 +2838,120 @@ impl AssetServiceTrait for AssetService {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mutual_fund_import_exact_isin_overrides_incomplete_name_but_not_conflicts() {
+        let constraints = super::ImportProviderSelectionConstraints {
+            source_symbol: "Example Fund",
+            canonical_symbol: "Example Fund",
+            exchange_mic: None,
+            quote_ccy: Some("INR"),
+            instrument_type: Some(&InstrumentType::Equity),
+            instrument_type_is_explicit: false,
+            isin: Some("INF000000001"),
+        };
+        let mut result = yahoo_search_result(
+            "100001",
+            "100001",
+            "",
+            "Example Fund Direct Growth",
+            "INR",
+            "100001",
+        );
+        result.quote_type = "MUTUALFUND".to_string();
+        result.provider_id = Some("AMFI".to_string());
+        result.isin = Some("INF000000001".to_string());
+        assert_eq!(
+            AssetService::select_provider_result_for_import(vec![result.clone()], &constraints)
+                .unwrap()
+                .symbol,
+            "100001"
+        );
+        let mut conflicting = result.clone();
+        conflicting.symbol = "100002".to_string();
+        conflicting.provider_symbol = Some("100002".to_string());
+        assert!(
+            AssetService::select_provider_result_for_import(
+                vec![result.clone(), conflicting],
+                &constraints,
+            )
+            .is_none()
+        );
+        result.isin = Some("INF000000002".to_string());
+        assert!(AssetService::select_provider_result_for_import(vec![result], &constraints).is_none());
+    }
+
+    #[test]
+    fn mutual_fund_import_does_not_guess_between_variants() {
+        let constraints = super::ImportProviderSelectionConstraints {
+            source_symbol: "NIPPON INDIA SMALL CAP FUND",
+            canonical_symbol: "NIPPON INDIA SMALL CAP FUND",
+            exchange_mic: None,
+            quote_ccy: Some("INR"),
+            instrument_type: Some(&InstrumentType::Equity),
+            instrument_type_is_explicit: false,
+            isin: None,
+        };
+        let mut result = yahoo_search_result(
+            "118778",
+            "118778",
+            "",
+            "Nippon India Small Cap Fund Direct Growth",
+            "INR",
+            "118778",
+        );
+        result.quote_type = "MUTUALFUND".to_string();
+        result.provider_id = Some("AMFI".to_string());
+        assert!(AssetService::select_provider_result_for_import(vec![result], &constraints).is_none());
+    }
+
+    #[test]
+    fn mutual_fund_import_accepts_unique_match_but_rejects_near_ties() {
+        let constraints = super::ImportProviderSelectionConstraints {
+            source_symbol: "NIPPONINDIASMALLCAPFUNDDIRECTGROWTH",
+            canonical_symbol: "NIPPONINDIASMALLCAPFUNDDIRECTGROWTH",
+            exchange_mic: None,
+            quote_ccy: Some("INR"),
+            instrument_type: Some(&InstrumentType::Equity),
+            instrument_type_is_explicit: false,
+            isin: None,
+        };
+        let mut result = yahoo_search_result(
+            "118778",
+            "118778",
+            "",
+            "Nippon India Small Cap Fund Direct Growth",
+            "INR",
+            "118778",
+        );
+        result.quote_type = "MUTUALFUND".to_string();
+        result.provider_id = Some("AMFI".to_string());
+        let selected =
+            AssetService::select_provider_result_for_import(vec![result.clone()], &constraints)
+                .unwrap();
+        assert_eq!(selected.symbol, "118778");
+        let mut incomplete = result.clone();
+        incomplete.symbol = "888888".to_string();
+        incomplete.provider_symbol = Some("888888".to_string());
+        incomplete.long_name = "Nippon India Small Cap Fund Growth".to_string();
+        assert_eq!(
+            AssetService::select_provider_result_for_import(
+                vec![result.clone(), incomplete],
+                &constraints,
+            )
+            .unwrap()
+            .symbol,
+            "118778"
+        );
+        let mut competing = result.clone();
+        competing.symbol = "999999".to_string();
+        competing.provider_symbol = Some("999999".to_string());
+        competing.long_name = "Nippon India Small Cap Funds Direct Growth".to_string();
+        assert!(
+            AssetService::select_provider_result_for_import(vec![result, competing], &constraints)
+                .is_none()
+        );
+    }
+
     use super::super::assets_model::{
         Asset, AssetKind, InstrumentType, NewAsset, ProviderProfile, QuoteCcyResolutionSource,
         UpdateAssetProfile,
@@ -3204,6 +3423,7 @@ mod tests {
     ) -> SymbolSearchResult {
         SymbolSearchResult {
             symbol: symbol.to_string(),
+            isin: None,
             canonical_symbol: Some(canonical_symbol.to_string()),
             canonical_exchange_mic: Some(mic.to_string()),
             provider_id: Some("YAHOO".to_string()),
@@ -3889,6 +4109,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_resolve_import_asset_inputs_searches_isin_when_source_symbol_is_company_name() {
+        let isin = "INE127D01025";
+        let hdfc_result = yahoo_search_result(
+            "HDFCAMC.NS",
+            "HDFCAMC",
+            "XNSE",
+            "HDFC Asset Management Company Limited",
+            "INR",
+            "HDFCAMC.NS",
+        );
+        let quote_service = TestQuoteService::default().with_result(
+            isin,
+            vec![hdfc_result],
+        );
+        let search_calls = Arc::clone(&quote_service.search_calls);
+        let service = test_asset_service(Vec::new(), quote_service);
+
+        let mut input = import_input("HDFC ASSET MANAGEMENT COMPANY LIMITED", "INR");
+        input.key = "hdfcamc".to_string();
+        input.isin = Some(isin.to_string());
+
+        let output = service
+            .resolve_import_asset_inputs(vec![input])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+
+        assert_eq!(search_calls.lock().unwrap().as_slice(), [isin]);
+        assert_eq!(output.canonical_symbol.as_deref(), Some("HDFCAMC"));
+        assert_eq!(output.exchange_mic.as_deref(), Some("XNSE"));
+        assert_eq!(output.quote_ccy.as_deref(), Some("INR"));
+        assert_eq!(output.provider_symbol.as_deref(), Some("HDFCAMC.NS"));
+        assert_eq!(output.name.as_deref(), Some("HDFC Asset Management Company Limited"));
+        assert!(output.draft.is_some());
+    }
+
+    #[tokio::test]
     async fn test_resolve_import_asset_inputs_uses_score_after_identity_constraints() {
         let mut lower_score =
             yahoo_search_result("ACME-A", "ACME", "XNYS", "Acme A", "USD", "ACME-A");
@@ -3911,6 +4169,69 @@ mod tests {
         assert_eq!(output.canonical_symbol.as_deref(), Some("ACME"));
         assert_eq!(output.name.as_deref(), Some("Acme B"));
         assert_eq!(output.provider_symbol.as_deref(), Some("ACME-B"));
+    }
+
+    #[tokio::test]
+    async fn import_conflicting_isin_does_not_fall_back_to_fuzzy_name() {
+        let mut first = yahoo_search_result(
+            "100001",
+            "100001",
+            "",
+            "Example Fund Direct Growth",
+            "INR",
+            "100001",
+        );
+        first.provider_id = Some("AMFI".to_string());
+        first.quote_type = "MUTUALFUND".to_string();
+        first.isin = Some("INF000000001".to_string());
+        let mut second = first.clone();
+        second.symbol = "100002".to_string();
+        second.provider_symbol = Some("100002".to_string());
+        let mut fuzzy = first.clone();
+        fuzzy.isin = None;
+        let service = test_asset_service(
+            Vec::new(),
+            TestQuoteService::default()
+                .with_result("INF000000001", vec![first, second])
+                .with_result("Example Fund Direct Growth", vec![fuzzy]),
+        );
+        let mut input = import_input("Example Fund Direct Growth", "INR");
+        input.isin = Some("INF000000001".to_string());
+        let output = service
+            .resolve_import_asset_inputs(vec![input])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert!(output.provider_symbol.is_none());
+    }
+
+    #[tokio::test]
+    async fn import_isin_source_resolves_without_separate_isin_field() {
+        let mut result = yahoo_search_result(
+            "100001",
+            "100001",
+            "",
+            "Example Fund Direct Growth",
+            "INR",
+            "100001",
+        );
+        result.provider_id = Some("AMFI".to_string());
+        result.quote_type = "MUTUALFUND".to_string();
+        result.isin = Some("INF000000001".to_string());
+        let service = test_asset_service(
+            Vec::new(),
+            TestQuoteService::default().with_result("INF000000001", vec![result]),
+        );
+        let output = service
+            .resolve_import_asset_inputs(vec![import_input("INF000000001", "INR")])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(output.provider_symbol.as_deref(), Some("100001"));
+        assert_eq!(output.canonical_symbol.as_deref(), Some("100001"));
+        assert_eq!(output.name.as_deref(), Some("Example Fund Direct Growth"));
     }
 
     #[tokio::test]

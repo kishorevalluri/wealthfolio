@@ -91,7 +91,7 @@ export * from "../shared/accounts";
 
 // Activity Commands
 export * from "../shared/activities";
-export { parseCsv } from "./activities";
+export { parseCsv, parsePdf } from "./activities";
 
 // Portfolio Commands
 export * from "../shared/portfolio";

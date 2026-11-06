@@ -11,7 +11,7 @@ use wealthfolio_core::activities::{
     import_type, Activity, ActivityBulkMutationRequest, ActivityBulkMutationResult, ActivityImport,
     ActivitySearchResponse, ActivityUpdate, ImportActivitiesResult, ImportAssetCandidate,
     ImportAssetPreviewItem, ImportMappingData, ImportTemplateData, InternalTransferPairRequest,
-    InternalTransferPairResponse, NewActivity, ParseConfig, ParsedCsvResult,
+    InternalTransferPairResponse, NewActivity, ParseConfig, ParsedCsvResult, ParsedPdfResult,
     TransferMatchCandidate, TransferMatchCandidateRequest,
 };
 use wealthfolio_core::utils::time_utils::{
@@ -438,6 +438,52 @@ async fn parse_csv_endpoint(
     Ok(Json(result))
 }
 
+async fn parse_pdf_endpoint(
+    State(_state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> ApiResult<Json<ParsedPdfResult>> {
+    let mut file_content: Option<Vec<u8>> = None;
+    let mut password: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        crate::error::ApiError::BadRequest(format!("Failed to read multipart field: {}", e))
+    })? {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "file" => {
+                file_content = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| {
+                            crate::error::ApiError::BadRequest(format!(
+                                "Failed to read file content: {}",
+                                e
+                            ))
+                        })?
+                        .to_vec(),
+                );
+            }
+            "password" => {
+                let pwd_str = field.text().await.map_err(|e| {
+                    crate::error::ApiError::BadRequest(format!("Failed to read password: {}", e))
+                })?;
+                if !pwd_str.trim().is_empty() {
+                    password = Some(pwd_str.trim().to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let content = file_content.ok_or_else(|| {
+        crate::error::ApiError::BadRequest("Missing file in multipart request".to_string())
+    })?;
+
+    let result = wealthfolio_core::activities::parse_pdf(&content, password.as_deref())?;
+    Ok(Json(result))
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/activities/search", post(search_activities))
@@ -465,6 +511,7 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/activities/import", post(import_activities))
         .route("/activities/import/parse", post(parse_csv_endpoint))
+        .route("/activities/import/parse-pdf", post(parse_pdf_endpoint))
         .route(
             "/activities/import/mapping",
             get(get_account_import_mapping).post(save_account_import_mapping),

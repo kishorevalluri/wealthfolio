@@ -257,6 +257,18 @@ pub fn yahoo_equity_search_queries(query: &str) -> Vec<String> {
     if !queries[0].eq_ignore_ascii_case(trimmed) {
         queries.push(trimmed.to_string());
     }
+
+    // Fuzzy query variations: if the query contains corporate suffixes like LIMITED or LTD,
+    // also search without them (e.g. "NAGARJUNA OIL REFINERY LIMITED" -> "NAGARJUNA OIL REFINERY")
+    for suffix in &[" LIMITED", " LTD", " CORP", " CORPORATION", " INC"] {
+        if let Some(idx) = trimmed.to_uppercase().rfind(suffix) {
+            let root = trimmed[..idx].trim();
+            if root.len() >= 3 && !queries.iter().any(|q| q.eq_ignore_ascii_case(root)) {
+                queries.push(root.to_string());
+            }
+        }
+    }
+
     queries
 }
 

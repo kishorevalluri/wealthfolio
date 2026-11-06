@@ -102,12 +102,20 @@ function autoDetectHoldingsMapping(headers: string[]): Record<string, string> {
       mappings[HoldingsFormat.DATE] = header;
     } else if (
       !mappings[HoldingsFormat.SYMBOL] &&
-      (lower === "symbol" || lower === "ticker" || lower === "name")
+      (lower === "symbol" ||
+        lower === "ticker" ||
+        lower === "name" ||
+        lower === "isin" ||
+        lower === "security description" ||
+        lower === "security name" ||
+        lower === "scheme name" ||
+        lower.includes("security") ||
+        lower.includes("isin"))
     ) {
       mappings[HoldingsFormat.SYMBOL] = header;
     } else if (
       !mappings[HoldingsFormat.QUANTITY] &&
-      (lower === "quantity" || lower === "qty" || lower === "shares" || lower === "amount")
+      (lower === "quantity" || lower === "qty" || lower === "shares" || lower === "units")
     ) {
       mappings[HoldingsFormat.QUANTITY] = header;
     } else if (
@@ -117,13 +125,24 @@ function autoDetectHoldingsMapping(headers: string[]): Record<string, string> {
         lower === "average_cost" ||
         lower === "cost" ||
         lower === "price" ||
+        lower === "rate" ||
+        lower === "nav" ||
         lower.includes("avg") ||
         lower.includes("cost") ||
-        lower.includes("price"))
+        lower.includes("price") ||
+        lower.includes("rate"))
     ) {
       mappings[HoldingsFormat.AVG_COST] = header;
     } else if (!mappings[HoldingsFormat.CURRENCY] && (lower === "currency" || lower === "ccy")) {
       mappings[HoldingsFormat.CURRENCY] = header;
+    }
+  }
+
+  // Fallback: If amount is present and quantity is not mapped, check amount
+  if (!mappings[HoldingsFormat.QUANTITY]) {
+    const amountHeader = headers.find((h) => h.toLowerCase().trim() === "amount");
+    if (amountHeader) {
+      mappings[HoldingsFormat.QUANTITY] = amountHeader;
     }
   }
 
@@ -217,7 +236,11 @@ export function HoldingsMappingStep() {
 
   // Local state for the field mappings being edited
   const [localFieldMappings, setLocalFieldMappings] = useState<Record<string, string>>(() => {
-    return (mapping?.fieldMappings || {}) as Record<string, string>;
+    const existing = (mapping?.fieldMappings || {}) as Record<string, string>;
+    if (Object.keys(existing).length > 0) {
+      return existing;
+    }
+    return autoDetectHoldingsMapping(headers || []);
   });
 
   // Auto-initialize: merge saved mapping from backend, then auto-detect from headers

@@ -858,6 +858,7 @@ where
 
         SymbolSearchResult {
             symbol: display.clone(),
+            isin: None,
             canonical_symbol: asset.instrument_symbol.clone(),
             canonical_exchange_mic: asset.instrument_exchange_mic.clone(),
             provider_id: asset.preferred_provider(),
@@ -881,6 +882,19 @@ where
             existing_asset_id: Some(asset.id.clone()),
             index: String::new(),
             score: 100.0, // High score for existing assets
+        }
+    }
+
+    fn existing_asset_search_result(
+        asset: &Asset,
+        mut provider_result: SymbolSearchResult,
+    ) -> SymbolSearchResult {
+        if provider_result.isin.is_some() {
+            provider_result.is_existing = true;
+            provider_result.existing_asset_id = Some(asset.id.clone());
+            provider_result
+        } else {
+            Self::asset_to_quote_summary(asset)
         }
     }
 
@@ -1542,7 +1556,13 @@ where
 
             if let Some(asset) = existing_asset.filter(|a| a.kind != AssetKind::Fx) {
                 if existing_asset_ids.insert(asset.id.clone()) {
-                    existing_summaries.push(Self::asset_to_quote_summary(&asset));
+                    existing_summaries.push(Self::existing_asset_search_result(&asset, result));
+                } else if result.isin.is_some() {
+                    if let Some(summary) = existing_summaries.iter_mut().find(|summary| {
+                        summary.existing_asset_id.as_deref() == Some(asset.id.as_str())
+                    }) {
+                        *summary = Self::existing_asset_search_result(&asset, result);
+                    }
                 }
                 continue;
             }
@@ -2899,6 +2919,38 @@ mod tests {
 
         assert_eq!(result.data_source, None);
         assert_eq!(result.quote_mode.as_deref(), Some("MARKET"));
+    }
+
+    #[test]
+    fn existing_asset_search_preserves_provider_isin_evidence() {
+        let asset = Asset {
+            id: "existing-fund".to_string(),
+            instrument_symbol: Some("100001".to_string()),
+            instrument_type: Some(InstrumentType::Equity),
+            quote_ccy: "INR".to_string(),
+            ..Default::default()
+        };
+        let provider_result = SymbolSearchResult {
+            symbol: "100001".to_string(),
+            isin: Some("INF000000001".to_string()),
+            provider_id: Some("AMFI".to_string()),
+            provider_symbol: Some("100001".to_string()),
+            quote_type: "MUTUALFUND".to_string(),
+            ..Default::default()
+        };
+        let result = QuoteService::<
+            NoopQuoteStore,
+            MockSyncStateStore,
+            MockProviderSettingsStore,
+            NoopAssetRepository,
+            NoopActivityRepository,
+        >::existing_asset_search_result(&asset, provider_result);
+        assert_eq!(result.isin.as_deref(), Some("INF000000001"));
+        assert_eq!(result.provider_symbol.as_deref(), Some("100001"));
+        assert_eq!(result.provider_id.as_deref(), Some("AMFI"));
+        assert_eq!(result.quote_type, "MUTUALFUND");
+        assert!(result.is_existing);
+        assert_eq!(result.existing_asset_id.as_deref(), Some("existing-fund"));
     }
 
     #[test]
