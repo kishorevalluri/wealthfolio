@@ -49,8 +49,7 @@ fn section_label(
             HoldingPeriodCategory::LongTerm,
         ) => "Section 112A",
         (
-            IndianAssetTaxClassification::OtherCapitalAsset
-            | IndianAssetTaxClassification::GoldSgb,
+            IndianAssetTaxClassification::OtherCapitalAsset | IndianAssetTaxClassification::GoldSgb,
             HoldingPeriodCategory::LongTerm,
         ) => "Section 112",
         (

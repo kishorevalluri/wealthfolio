@@ -58,6 +58,13 @@ export const QueryKeys = {
   CONTRIBUTION_LIMITS: "contributionLimits",
   CONTRIBUTION_LIMIT_PROGRESS: "contributionLimitProgress",
 
+  INDIAN_TAX_SUMMARY: "indianTaxSummary",
+  indianTaxSummary: (filter: unknown, financialYear?: number) => [
+    QueryKeys.INDIAN_TAX_SUMMARY,
+    filter,
+    financialYear,
+  ],
+
   ASSET_DATA: "asset_data",
   ASSETS: "assets",
   ASSET_LOGO_INDEX: "asset_logo_index",

@@ -6,6 +6,7 @@ import {
   CommandGroup,
   CommandInput,
   CommandItem,
+  CommandList,
   CommandSeparator,
 } from "@wealthfolio/ui/components/ui/command";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
@@ -89,60 +90,62 @@ export function TemplatePicker({
       <PopoverContent className="w-[var(--anchor-width)] p-0" align="start">
         <Command>
           <CommandInput placeholder={t("activity:import.template.searchFormats")} className="h-9" />
-          <CommandEmpty>
-            <div className="text-muted-foreground py-2 text-center text-sm">
-              {t("activity:import.template.noMatching")}
-            </div>
-          </CommandEmpty>
-          {userTemplates.length > 0 && (
-            <CommandGroup heading={t("activity:import.template.custom")}>
-              {userTemplates.map((t) => (
-                <CommandItem
-                  key={t.id}
-                  value={t.name}
-                  onSelect={() => {
-                    onSelect(t.id);
-                    setOpen(false);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <Icons.User className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-                  <span className="flex-1">{t.name}</span>
-                  <Icons.Check
-                    className={cn(
-                      "h-4 w-4 shrink-0",
-                      selectedTemplateId === t.id ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-          {userTemplates.length > 0 && systemTemplates.length > 0 && <CommandSeparator />}
-          {systemTemplates.length > 0 && (
-            <CommandGroup heading={t("activity:import.template.builtIn")}>
-              {systemTemplates.map((t) => (
-                <CommandItem
-                  key={t.id}
-                  value={t.name}
-                  onSelect={() => {
-                    onSelect(t.id);
-                    setOpen(false);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <Icons.Building className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-                  <span className="flex-1">{t.name}</span>
-                  <Icons.Check
-                    className={cn(
-                      "h-4 w-4 shrink-0",
-                      selectedTemplateId === t.id ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
+          <CommandList>
+            <CommandEmpty>
+              <div className="text-muted-foreground py-2 text-center text-sm">
+                {t("activity:import.template.noMatching")}
+              </div>
+            </CommandEmpty>
+            {userTemplates.length > 0 && (
+              <CommandGroup heading={t("activity:import.template.custom")}>
+                {userTemplates.map((t) => (
+                  <CommandItem
+                    key={t.id}
+                    value={t.name}
+                    onSelect={() => {
+                      onSelect(t.id);
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Icons.User className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                    <span className="flex-1">{t.name}</span>
+                    <Icons.Check
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        selectedTemplateId === t.id ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {userTemplates.length > 0 && systemTemplates.length > 0 && <CommandSeparator />}
+            {systemTemplates.length > 0 && (
+              <CommandGroup heading={t("activity:import.template.builtIn")}>
+                {systemTemplates.map((t) => (
+                  <CommandItem
+                    key={t.id}
+                    value={t.name}
+                    onSelect={() => {
+                      onSelect(t.id);
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Icons.Building className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                    <span className="flex-1">{t.name}</span>
+                    <Icons.Check
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        selectedTemplateId === t.id ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
         </Command>
       </PopoverContent>
     </Popover>

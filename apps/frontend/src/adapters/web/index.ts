@@ -124,7 +124,7 @@ export {
   reviewActivitiesSplitEffects,
   reviewInternalTransferPairSplitEffects,
 } from "../shared/activities";
-export { parseCsv } from "./activities";
+export { parseCsv, parsePdf } from "./activities";
 
 // Goal Commands
 export {
@@ -195,6 +195,7 @@ export {
   getHoldingsList,
   getHoldingsByAllocation,
   getIncomeSummary,
+  getIndianTaxSummary,
   getCurrentValuation,
   getLatestValuations,
   getPortfolioAllocations,
@@ -407,7 +408,7 @@ export {
 } from "../shared/allocation-targets";
 
 // Data Export Commands
-export { exportDataFile } from "./exports";
+export { exportDataFile, exportIndianScheduleCg } from "./exports";
 
 // ============================================================================
 // Platform-specific modules (different implementations for web vs desktop)

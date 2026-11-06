@@ -19,6 +19,7 @@ import {
 } from "../utils/asset-review-utils";
 import { badgeVariants } from "@wealthfolio/ui";
 import { cn } from "@/lib/utils";
+import { HoldingsFormat } from "./holdings-mapping-step";
 
 interface AssetDialogState {
   open: boolean;
@@ -73,6 +74,7 @@ interface NeedsFixingRowProps {
   onSearch: (item: ImportAssetPreviewItem, result?: SymbolSearchResult) => void;
   onMarkCustom: () => void;
   onCreateAsset: () => void;
+  onSkip: () => void;
 }
 
 // Errors that are self-evident from context (item is in "Needs Fixing") and add no info.
@@ -86,6 +88,7 @@ function NeedsFixingRow({
   onSearch,
   onMarkCustom,
   onCreateAsset,
+  onSkip,
 }: NeedsFixingRowProps) {
   const { t } = useTranslation();
   const logoSymbol = item.draft?.instrumentSymbol || item.draft?.displayCode || symbol;
@@ -132,7 +135,7 @@ function NeedsFixingRow({
       </div>
 
       {/* Col 3: actions */}
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5">
         <Button
           type="button"
           size="sm"
@@ -153,6 +156,17 @@ function NeedsFixingRow({
           <Icons.Plus className="h-3 w-3 shrink-0" />
           <span className="hidden sm:inline">{t("activity:import.assets.createManually")}</span>
         </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onSkip}
+          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/20"
+          title={t("activity:import.assets.skipAsset")}
+        >
+          <Icons.X className="h-3 w-3 shrink-0" />
+          <span className="hidden sm:inline">{t("activity:import.assets.skip")}</span>
+        </Button>
       </div>
 
       {/* Errors span all 3 columns */}
@@ -171,6 +185,7 @@ function NeedsFixingRow({
 interface AutoResolvedRowProps {
   item: ImportAssetPreviewItem;
   symbol: string;
+  symbolName?: string;
   count: number;
   isSuspicious: boolean;
   csvCurrency?: string;
@@ -178,11 +193,13 @@ interface AutoResolvedRowProps {
   onToggleSearch: () => void;
   onSearch: (item: ImportAssetPreviewItem, result?: SymbolSearchResult) => void;
   onEdit: () => void;
+  onSkip: () => void;
 }
 
 function AutoResolvedRow({
   item,
   symbol,
+  symbolName,
   count,
   isSuspicious,
   csvCurrency,
@@ -190,12 +207,14 @@ function AutoResolvedRow({
   onToggleSearch,
   onSearch,
   onEdit,
+  onSkip,
 }: AutoResolvedRowProps) {
   const { t } = useTranslation();
   const asset = item.draft;
   const logoSymbol = asset?.instrumentSymbol || asset?.displayCode || symbol;
+  const rawName = asset?.name || symbolName;
   const assetName =
-    asset?.name && asset.name.toUpperCase() !== symbol.toUpperCase() ? asset.name : undefined;
+    rawName && rawName.toUpperCase() !== symbol.toUpperCase() ? rawName : undefined;
   const exchangeDisplay = asset?.instrumentExchangeMic
     ? getExchangeDisplayName(asset.instrumentExchangeMic)
     : undefined;
@@ -290,6 +309,16 @@ function AutoResolvedRow({
             <span className="hidden sm:inline">{t("activity:import.assets.edit")}</span>
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onSkip}
+          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/20"
+          title={t("activity:import.assets.skipAsset")}
+        >
+          <Icons.X className="h-3 w-3 shrink-0" />
+          <span className="hidden sm:inline">{t("activity:import.assets.skip")}</span>
+        </Button>
       </div>
     </div>
   );
@@ -305,6 +334,7 @@ interface ReadyAssetRowProps {
   onToggleSearch: () => void;
   onSearch: (item: ImportAssetPreviewItem, result?: SymbolSearchResult) => void;
   onEdit: () => void;
+  onSkip: () => void;
 }
 
 function ReadyAssetRow({
@@ -315,6 +345,7 @@ function ReadyAssetRow({
   onToggleSearch,
   onSearch,
   onEdit,
+  onSkip,
 }: ReadyAssetRowProps) {
   const { t } = useTranslation();
   const asset = item.draft;
@@ -402,6 +433,16 @@ function ReadyAssetRow({
             <span className="hidden sm:inline">{t("activity:import.assets.edit")}</span>
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onSkip}
+          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/20"
+          title={t("activity:import.assets.skipAsset")}
+        >
+          <Icons.X className="h-3 w-3 shrink-0" />
+          <span className="hidden sm:inline">{t("activity:import.assets.skip")}</span>
+        </Button>
       </div>
     </div>
   );
@@ -662,6 +703,59 @@ export function AssetReviewStep() {
     [assetDialog.key, dispatch, draftActivities, updatePreviewItem],
   );
 
+  const handleSkipAsset = useCallback(
+    (itemKey: string) => {
+      // 1. Remove rows matching this asset from draftActivities
+      const remainingDrafts = draftActivities.filter(
+        (draft) =>
+          draft.assetCandidateKey !== itemKey &&
+          buildImportAssetCandidateFromDraft(draft)?.key !== itemKey,
+      );
+      dispatch({ type: "SET_DRAFT_ACTIVITIES", payload: remainingDrafts });
+
+      // 2. Remove from pending import assets if present
+      dispatch({ type: "REMOVE_PENDING_IMPORT_ASSET", payload: itemKey });
+
+      // 3. Remove preview item from assetPreviewItems
+      const remainingPreviewItems = assetPreviewItems.filter((item) => item.key !== itemKey);
+      dispatch({ type: "SET_ASSET_PREVIEW_ITEMS", payload: remainingPreviewItems });
+
+      // 4. If in holdings mode, also filter out corresponding raw rows
+      if (state.headers.length > 0 && state.parsedRows.length > 0) {
+        const symbolHeader = (state.mapping?.fieldMappings as Record<string, string>)?.[
+          HoldingsFormat.SYMBOL
+        ];
+        const symbolIdx = symbolHeader ? state.headers.indexOf(symbolHeader) : -1;
+        if (symbolIdx !== -1) {
+          const remainingRows = state.parsedRows.filter((row) => {
+            const rawSymbol = row[symbolIdx]?.trim().toUpperCase();
+            if (!rawSymbol) return true;
+            const resolvedSymbol = state.mapping?.symbolMappings?.[rawSymbol] || rawSymbol;
+            const candidate = candidateMap.get(itemKey);
+            if (!candidate?.draft.symbol) return true;
+            return candidate.draft.symbol.toUpperCase() !== resolvedSymbol;
+          });
+          if (remainingRows.length !== state.parsedRows.length) {
+            dispatch({
+              type: "SET_PARSED_DATA",
+              payload: { headers: state.headers, rows: remainingRows },
+            });
+          }
+        }
+      }
+    },
+    [
+      assetPreviewItems,
+      candidateMap,
+      dispatch,
+      draftActivities,
+      state.headers,
+      state.mapping?.fieldMappings,
+      state.mapping?.symbolMappings,
+      state.parsedRows,
+    ],
+  );
+
   const needsFixing = assetPreviewItems.filter((item) => item.status === "NEEDS_FIXING");
   const autoResolvedItems = assetPreviewItems.filter(
     (item) => item.status === "AUTO_RESOLVED_NEW_ASSET",
@@ -774,8 +868,12 @@ export function AssetReviewStep() {
             <div className="divide-border divide-y">
               {needsFixing.map((item) => {
                 const candidate = candidateMap.get(item.key);
-                const symbol = item.reviewSymbol || candidate?.draft.symbol || item.key;
+                const rawSymbol = item.reviewSymbol || candidate?.draft.symbol || item.key;
                 const symbolName = item.draft?.name || candidate?.draft.symbolName;
+                const symbol =
+                  /^\d{5,7}$/.test(rawSymbol) && symbolName
+                    ? symbolName
+                    : rawSymbol;
                 const count = candidate?.count ?? 0;
                 return (
                   <NeedsFixingRow
@@ -794,6 +892,7 @@ export function AssetReviewStep() {
                         mode: "create",
                       })
                     }
+                    onSkip={() => handleSkipAsset(item.key)}
                   />
                 );
               })}
@@ -873,11 +972,17 @@ export function AssetReviewStep() {
                       assetCcy &&
                       normalizeCurrency(csvCcy) !== normalizeCurrency(assetCcy),
                     );
+                    const symbolName = item.draft?.name || candidate?.draft.symbolName;
+                    const displaySymbol =
+                      /^\d{5,7}$/.test(symbol) && symbolName
+                        ? symbolName
+                        : symbol;
                     return (
                       <AutoResolvedRow
                         key={item.key}
                         item={item}
-                        symbol={symbol}
+                        symbol={displaySymbol}
+                        symbolName={symbolName}
                         count={count}
                         isSuspicious={isSuspicious}
                         csvCurrency={csvCcy}
@@ -899,6 +1004,7 @@ export function AssetReviewStep() {
                             ),
                           })
                         }
+                        onSkip={() => handleSkipAsset(item.key)}
                       />
                     );
                   })}
@@ -974,6 +1080,7 @@ export function AssetReviewStep() {
                         ),
                       })
                     }
+                    onSkip={() => handleSkipAsset(item.key)}
                   />
                 );
               })}

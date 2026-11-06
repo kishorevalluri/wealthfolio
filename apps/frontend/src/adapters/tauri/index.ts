@@ -92,7 +92,7 @@ export * from "../shared/accounts";
 
 // Activity Commands
 export * from "../shared/activities";
-export { parseCsv } from "./activities";
+export { parseCsv, parsePdf } from "./activities";
 
 // Portfolio Commands
 export * from "../shared/portfolio";
@@ -146,7 +146,7 @@ export * from "../shared/health";
 export * from "../shared/allocation-targets";
 
 // Data Export Commands
-export { exportDataFile } from "./exports";
+export { exportDataFile, exportIndianScheduleCg } from "./exports";
 
 // ============================================================================
 // Platform-specific modules (different implementations)

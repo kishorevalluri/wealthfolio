@@ -321,6 +321,7 @@ pub fn run() {
             commands::activity::delete_import_template,
             commands::activity::check_existing_duplicates,
             commands::activity::parse_csv,
+            commands::activity::parse_pdf,
             // Settings commands
             commands::settings::get_settings,
             commands::settings::is_auto_update_check_enabled,
@@ -408,6 +409,8 @@ pub fn run() {
             commands::portfolio::get_portfolio_allocations,
             commands::portfolio::get_holdings_by_allocation,
             commands::portfolio::get_income_summary,
+            commands::portfolio::get_indian_tax_summary,
+            commands::portfolio::export_indian_schedule_cg,
             commands::portfolio::get_historical_valuations,
             commands::portfolio::get_latest_valuations,
             commands::portfolio::get_current_valuation,

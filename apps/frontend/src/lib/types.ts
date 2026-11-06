@@ -570,6 +570,19 @@ export interface ParsedCsvResult {
   rowCount: number;
 }
 
+export type StatementType =
+  | "CAMS_CAS"
+  | "KFINTECH_CAS"
+  | "CDSL_CAS"
+  | "NSDL_CAS"
+  | "UNKNOWN";
+
+export interface ParsedPdfResult {
+  parsed: ParsedCsvResult;
+  statementType: StatementType;
+  recommendedTemplateId?: string | null;
+}
+
 export interface SymbolSearchResult {
   exchange: string;
   /** Canonical exchange MIC code (e.g., "XNAS", "XTSE") */
@@ -3085,4 +3098,61 @@ export interface AllocationWorksheetResult {
   accountFunding: WorksheetAccountFunding[];
   warnings: WorksheetWarning[];
   sourceRecords: WorksheetSourceRecord[];
+}
+
+// ── Indian Tax Types ──────────────────────────────────────────────────────────
+
+export type IndianAssetTaxClassification =
+  | "equity_listed"
+  | "equity_mf"
+  | "reit_invit"
+  | "debt_mf_post_2023"
+  | "unlisted_debenture_post_2024"
+  | "other_capital_asset"
+  | "gold_sgb";
+
+export type HoldingPeriodCategory = "short_term" | "long_term";
+
+export interface IndianCapitalGainCalculation {
+  disposalId: string;
+  lotId: string;
+  assetId: string;
+  classification: IndianAssetTaxClassification;
+  acquisitionDate: string;
+  disposalDate: string;
+  holdingPeriod: HoldingPeriodCategory;
+  actualCost: string;
+  deemedCost: string;
+  proceeds: string;
+  grossGain: string;
+  taxableGain: string;
+  applicableTaxRate: string;
+  estimatedTax: string;
+  assetName?: string;
+  assetSymbol?: string;
+  isin?: string;
+  quantity?: string;
+  salePricePerUnit?: string;
+  costPerUnit?: string;
+  fmvPerUnit2018?: string;
+  transferExpenses?: string;
+}
+
+export interface IndianTaxYearSummary {
+  stcg111aPreBudget: string;
+  stcg111aPostBudget: string;
+  stcgSlabTotal: string;
+  stcgTotal: string;
+  ltcg112aPreBudget: string;
+  ltcg112aPostBudget: string;
+  sec112aLtcgGross: string;
+  sec112aExemptionApplied: string;
+  sec112aLtcgTaxable: string;
+  ltcgOtherTotal: string;
+  ltcgTotal: string;
+  stclCarriedForward: string;
+  ltclCarriedForward: string;
+  estimatedStcgTax: string;
+  estimatedLtcgTax: string;
+  calculations: IndianCapitalGainCalculation[];
 }

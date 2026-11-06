@@ -304,7 +304,7 @@
     "go_to_account": "Go to Account"
   },
   "page": {
-    "import_from_csv": "Import from CSV",
+    "import_from_csv": "Import Activities",
     "transfer_holdings": "Transfer Holdings",
     "add_personal_asset": "Add Personal Asset",
     "connect_account": "Connect Account",
@@ -875,10 +875,16 @@
       "processingFile": "Processing file...",
       "clickToUpload": "Click to upload",
       "orDrop": "or drop",
-      "csvOnly": "CSV only",
+      "csvOnly": "CSV or PDF statements",
       "removeFile": "Remove File",
-      "failedToParse": "Failed to parse CSV file",
-      "failedToReparse": "Failed to re-parse CSV"
+      "failedToParse": "Failed to parse file",
+      "failedToReparse": "Failed to re-parse file",
+      "pdfPasswordTitle": "Enter PDF Password",
+      "pdfPasswordDescription": "This statement is encrypted. Enter the document password to unlock it.",
+      "pdfPasswordPlaceholder": "Password",
+      "pdfPasswordSubmit": "Unlock & Import",
+      "pdfPasswordHint": "Common passwords: For CAMS / KFintech CAS: PAN (uppercase) or PAN + DOB. For CDSL / NSDL e-CAS: PAN or 16-digit Demat Account No / Client ID.",
+      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password."
     },
     "parseSettings": {
       "title": "Parse Settings",
@@ -1203,7 +1209,9 @@
       "editDialogDescription": "Adjust the resolved asset details. Edits apply only to this import.",
       "createDialogDescription": "Create a new asset and link these rows to it immediately.",
       "useEditedAsset": "Use Edited Asset",
-      "createAsset": "Create Asset"
+      "createAsset": "Create Asset",
+      "skip": "Skip",
+      "skipAsset": "Skip asset and its rows from import"
     },
     "holdings": {
       "columns": "Columns",

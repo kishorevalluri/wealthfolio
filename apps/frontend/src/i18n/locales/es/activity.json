@@ -894,7 +894,13 @@
       "csvOnly": "Solo CSV",
       "removeFile": "Eliminar archivo",
       "failedToParse": "No se pudo analizar el archivo CSV",
-      "failedToReparse": "No se pudo volver a analizar el CSV"
+      "failedToReparse": "No se pudo volver a analizar el CSV",
+      "pdfPasswordTitle": "Enter PDF Password",
+      "pdfPasswordDescription": "This statement is encrypted. Enter the document password to unlock it.",
+      "pdfPasswordPlaceholder": "Password",
+      "pdfPasswordSubmit": "Unlock & Import",
+      "pdfPasswordHint": "Common passwords: For CAMS / KFintech CAS: PAN (uppercase) or PAN + DOB. For CDSL / NSDL e-CAS: PAN or 16-digit Demat Account No / Client ID.",
+      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password."
     },
     "parseSettings": {
       "title": "Configuración de análisis",

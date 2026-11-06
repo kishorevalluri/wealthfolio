@@ -446,8 +446,7 @@ mod tests {
     #[test]
     fn local_financial_year_utc_bounds_matches_indian_financial_year() {
         let tz = chrono_tz::Asia::Kolkata; // UTC+5:30
-        let (start_utc, end_exclusive_utc) =
-            local_financial_year_utc_bounds(2024, 4, tz).unwrap();
+        let (start_utc, end_exclusive_utc) = local_financial_year_utc_bounds(2024, 4, tz).unwrap();
         // 2024-04-01 00:00:00 IST is 2024-03-31 18:30:00 UTC
         assert_eq!(
             start_utc,

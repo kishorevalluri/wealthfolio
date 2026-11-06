@@ -12,6 +12,8 @@ mod conversion_pairs;
 mod csv_parser;
 mod idempotency;
 mod import_run_model;
+pub mod parsers;
+mod pdf_parser;
 mod transfer_pairs;
 
 #[cfg(test)]
@@ -63,6 +65,7 @@ pub use import_run_model::{
     ImportRun, ImportRunMode, ImportRunRepositoryTrait, ImportRunStatus, ImportRunSummary,
     ImportRunType, ReviewMode,
 };
+pub use pdf_parser::{is_pdf_encrypted, parse_pdf, ParsedPdfResult, StatementType};
 pub use transfer_pairs::{
     is_contribution_neutral_same_account_cash_fx_conversion, is_same_account_cash_fx_conversion,
     InvalidTransferGroup, TransferLinkState, TransferPair, TransferPairResolution,

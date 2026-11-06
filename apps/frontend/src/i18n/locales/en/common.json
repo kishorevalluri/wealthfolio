@@ -97,12 +97,14 @@
   "assistant": "Assistant",
   "connect": "Connect",
   "addons": "Add-ons",
+  "tax": "Tax & ITR",
   "nav": {
     "label_dashboard": "View Dashboard",
     "label_insights": "View Insights",
     "label_holdings": "View Holdings",
     "label_activities": "View Activities",
     "label_goals": "Goals",
+    "label_tax": "Tax & ITR",
     "label_assistant": "AI Assistant"
   },
   "layout": {

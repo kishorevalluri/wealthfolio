@@ -439,3 +439,24 @@ pub async fn parse_csv(
             e.to_string()
         })
 }
+
+#[tauri::command]
+pub async fn parse_pdf(
+    content: Vec<u8>,
+    password: Option<String>,
+    state: State<'_, DatabaseRuntime>,
+) -> Result<ParsedPdfResult, String> {
+    let context = state.context()?;
+    debug!(
+        "Parsing PDF with {} bytes, password provided: {}",
+        content.len(),
+        password.is_some()
+    );
+    context
+        .activity_service()
+        .parse_pdf(&content, password.as_deref())
+        .map_err(|e| {
+            debug!("PDF parse error: {}", e);
+            e.to_string()
+        })
+}

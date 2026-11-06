@@ -12,7 +12,8 @@ use wealthfolio_core::activities::{
     ActivitySearchResponse, ActivitySplitEffect, ActivityUpdate, ConvertToTransferRequest,
     ImportActivitiesResult, ImportAssetCandidate, ImportAssetPreviewItem, ImportMappingData,
     ImportTemplateData, InternalTransferPairRequest, InternalTransferPairResponse, NewActivity,
-    ParseConfig, ParsedCsvResult, TransferMatchCandidate, TransferMatchCandidateRequest,
+    ParseConfig, ParsedCsvResult, ParsedPdfResult, TransferMatchCandidate,
+    TransferMatchCandidateRequest,
 };
 use wealthfolio_core::utils::time_utils::{
     local_date_range_utc_bounds, parse_user_timezone_or_default,
@@ -498,6 +499,49 @@ async fn parse_csv_endpoint(
     Ok(Json(result))
 }
 
+async fn parse_pdf_endpoint(mut multipart: Multipart) -> ApiResult<Json<ParsedPdfResult>> {
+    let mut file_content: Option<Vec<u8>> = None;
+    let mut password: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        crate::error::ApiError::BadRequest(format!("Failed to read multipart field: {}", e))
+    })? {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "file" => {
+                file_content = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| {
+                            crate::error::ApiError::BadRequest(format!(
+                                "Failed to read file content: {}",
+                                e
+                            ))
+                        })?
+                        .to_vec(),
+                );
+            }
+            "password" => {
+                let pwd_str = field.text().await.map_err(|e| {
+                    crate::error::ApiError::BadRequest(format!("Failed to read password: {}", e))
+                })?;
+                if !pwd_str.trim().is_empty() {
+                    password = Some(pwd_str.trim().to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let content = file_content.ok_or_else(|| {
+        crate::error::ApiError::BadRequest("Missing file in multipart request".to_string())
+    })?;
+
+    let result = wealthfolio_core::activities::parse_pdf(&content, password.as_deref())?;
+    Ok(Json(result))
+}
+
 /// Imports send every row of a CSV in one request; axum's 2 MB default rejects
 /// a few thousand rows with 413 Payload Too Large.
 const IMPORT_BODY_LIMIT: usize = 64 * 1024 * 1024;
@@ -553,6 +597,10 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
         .route(
             "/activities/import/parse",
             post(parse_csv_endpoint).layer(DefaultBodyLimit::max(IMPORT_BODY_LIMIT)),
+        )
+        .route(
+            "/activities/import/parse-pdf",
+            post(parse_pdf_endpoint).layer(DefaultBodyLimit::max(IMPORT_BODY_LIMIT)),
         )
         .route(
             "/activities/import/mapping",

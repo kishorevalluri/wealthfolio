@@ -61,6 +61,7 @@ use crate::activities::csv_parser::{self, ParseConfig, ParsedCsvResult};
 use crate::activities::idempotency::{
     compute_activity_idempotency_key, compute_idempotency_key, idempotency_activity_type,
 };
+use crate::activities::pdf_parser::{self, ParsedPdfResult};
 use crate::activities::{
     is_conversion_row, ActivityRepositoryTrait, ActivityServiceTrait, ConversionPair,
     ConversionPairResolution, TransferLinkState, TransferPair, TransferPairResolution,
@@ -3610,6 +3611,16 @@ impl ActivityService {
     /// Parses CSV content with the given configuration.
     pub fn parse_csv(&self, content: &[u8], config: &ParseConfig) -> Result<ParsedCsvResult> {
         csv_parser::parse_csv(content, config)
+    }
+
+    /// Checks if a PDF buffer is encrypted.
+    pub fn is_pdf_encrypted(&self, content: &[u8]) -> bool {
+        pdf_parser::is_pdf_encrypted(content)
+    }
+
+    /// Parses PDF content with optional password.
+    pub fn parse_pdf(&self, content: &[u8], password: Option<&str>) -> Result<ParsedPdfResult> {
+        pdf_parser::parse_pdf(content, password)
     }
 }
 
@@ -8346,6 +8357,14 @@ impl ActivityServiceTrait for ActivityService {
         config: &csv_parser::ParseConfig,
     ) -> Result<csv_parser::ParsedCsvResult> {
         csv_parser::parse_csv(content, config)
+    }
+
+    fn parse_pdf(
+        &self,
+        content: &[u8],
+        password: Option<&str>,
+    ) -> Result<pdf_parser::ParsedPdfResult> {
+        pdf_parser::parse_pdf(content, password)
     }
 
     /// Upserts multiple activities (insert or update on conflict).

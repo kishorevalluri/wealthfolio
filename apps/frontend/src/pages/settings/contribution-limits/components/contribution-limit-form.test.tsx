@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
   useAddLimit: null as null | (() => unknown),
 }));
 
+// The form picks Indian presets from the formatting region; these tests use the default.
+vi.mock("@/lib/settings-provider", () => ({
+  useSettingsContext: () => ({ settings: { formattingRegion: "US", baseCurrency: "USD" } }),
+}));
+
 vi.mock("../use-contribution-limit-mutations", () => ({
   useContributionLimitMutations: () => ({
     addContributionLimitMutation: mocks.useAddLimit?.() ?? {

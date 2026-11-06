@@ -17,17 +17,26 @@ use crate::errors::Result;
 pub fn classify_asset_for_indian_tax(asset: &Asset) -> IndianAssetTaxClassification {
     // 1. Check explicit override in metadata
     if let Some(metadata) = &asset.metadata {
-        if let Some(val) = metadata.get("taxClassification").or_else(|| metadata.get("assetTaxClassification")) {
+        if let Some(val) = metadata
+            .get("taxClassification")
+            .or_else(|| metadata.get("assetTaxClassification"))
+        {
             if let Some(s) = val.as_str() {
                 match s.to_lowercase().as_str() {
-                    "equity_listed" | "equitylisted" => return IndianAssetTaxClassification::EquityListed,
+                    "equity_listed" | "equitylisted" => {
+                        return IndianAssetTaxClassification::EquityListed
+                    }
                     "equity_mf" | "equitymf" => return IndianAssetTaxClassification::EquityMf,
                     "reit_invit" | "reitinvit" => return IndianAssetTaxClassification::ReitInvIt,
-                    "debt_mf_post_2023" | "debtmfpost2023" => return IndianAssetTaxClassification::DebtMfPost2023,
+                    "debt_mf_post_2023" | "debtmfpost2023" => {
+                        return IndianAssetTaxClassification::DebtMfPost2023
+                    }
                     "unlisted_debenture_post_2024" | "unlisteddebenturepost2024" => {
                         return IndianAssetTaxClassification::UnlistedDebenturePost2024;
                     }
-                    "other_capital_asset" | "othercapitalasset" => return IndianAssetTaxClassification::OtherCapitalAsset,
+                    "other_capital_asset" | "othercapitalasset" => {
+                        return IndianAssetTaxClassification::OtherCapitalAsset
+                    }
                     "gold_sgb" | "goldsgb" => return IndianAssetTaxClassification::GoldSgb,
                     _ => {}
                 }
@@ -39,7 +48,11 @@ pub fn classify_asset_for_indian_tax(asset: &Asset) -> IndianAssetTaxClassificat
     match asset.instrument_type {
         Some(InstrumentType::Equity) => {
             let name_lower = asset.name.as_deref().unwrap_or("").to_lowercase();
-            let symbol_lower = asset.instrument_symbol.as_deref().unwrap_or("").to_lowercase();
+            let symbol_lower = asset
+                .instrument_symbol
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase();
             let mic = asset.instrument_exchange_mic.as_deref().unwrap_or("");
 
             if name_lower.contains("reit")
@@ -145,7 +158,10 @@ pub async fn compute_indian_tax_summary(
             asset.id.clone(),
             IndianTaxAssetInfo {
                 name: asset.name.clone().unwrap_or_default(),
-                symbol: asset.display_code.clone().or_else(|| asset.instrument_symbol.clone()),
+                symbol: asset
+                    .display_code
+                    .clone()
+                    .or_else(|| asset.instrument_symbol.clone()),
                 isin,
             },
         );

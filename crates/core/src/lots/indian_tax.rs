@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use super::LotDisposal;
 
-
 /// Classification of Indian capital assets for holding period and tax rate determination.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -120,7 +119,11 @@ pub fn determine_holding_period_category(
         }
         IndianAssetTaxClassification::ReitInvIt => {
             // Pre-Budget 2024: 36 months (1095 days). Post-Budget 2024: 12 months (365 days).
-            let threshold = if disposal_date < budget_2024_date { 1095 } else { 365 };
+            let threshold = if disposal_date < budget_2024_date {
+                1095
+            } else {
+                365
+            };
             if days > threshold {
                 HoldingPeriodCategory::LongTerm
             } else {
@@ -129,7 +132,11 @@ pub fn determine_holding_period_category(
         }
         IndianAssetTaxClassification::OtherCapitalAsset | IndianAssetTaxClassification::GoldSgb => {
             // Pre-Budget 2024: 36 months (1095 days). Post-Budget 2024: 24 months (730 days).
-            let threshold = if disposal_date < budget_2024_date { 1095 } else { 730 };
+            let threshold = if disposal_date < budget_2024_date {
+                1095
+            } else {
+                730
+            };
             if days > threshold {
                 HoldingPeriodCategory::LongTerm
             } else {
@@ -236,11 +243,12 @@ pub fn calculate_indian_capital_gains(
         .max()
         .unwrap_or(budget_2024_date);
 
-    let sec_112a_exemption_limit = if max_disposal_date >= NaiveDate::from_ymd_opt(2024, 4, 1).unwrap() {
-        Decimal::new(125000, 0)
-    } else {
-        Decimal::new(100000, 0)
-    };
+    let sec_112a_exemption_limit =
+        if max_disposal_date >= NaiveDate::from_ymd_opt(2024, 4, 1).unwrap() {
+            Decimal::new(125000, 0)
+        } else {
+            Decimal::new(100000, 0)
+        };
 
     let mut ltcg_other_pre_pool = Decimal::ZERO;
     let mut ltcg_other_post_pool = Decimal::ZERO;
@@ -250,10 +258,7 @@ pub fn calculate_indian_capital_gains(
             Ok(dt) => dt,
             Err(_) => continue,
         };
-        let acq_date = lot_open_dates
-            .get(&d.lot_id)
-            .copied()
-            .unwrap_or(disp_date);
+        let acq_date = lot_open_dates.get(&d.lot_id).copied().unwrap_or(disp_date);
 
         let classification = asset_classifications
             .get(&d.asset_id)
@@ -271,8 +276,16 @@ pub fn calculate_indian_capital_gains(
         let isin = info.and_then(|i| i.isin.clone());
 
         let qty: Decimal = d.quantity.parse().unwrap_or(Decimal::ONE);
-        let sale_price_per_unit = if qty > Decimal::ZERO { proceeds / qty } else { Decimal::ZERO };
-        let cost_per_unit = if qty > Decimal::ZERO { cost_basis / qty } else { Decimal::ZERO };
+        let sale_price_per_unit = if qty > Decimal::ZERO {
+            proceeds / qty
+        } else {
+            Decimal::ZERO
+        };
+        let cost_per_unit = if qty > Decimal::ZERO {
+            cost_basis / qty
+        } else {
+            Decimal::ZERO
+        };
         let fmv_per_unit_2018 = fmv_2018;
         let transfer_expenses = Decimal::ZERO;
 
@@ -545,7 +558,6 @@ mod tests {
     use rust_decimal_macros::dec;
     use std::collections::HashMap;
 
-
     #[test]
     fn test_budget_2024_tax_rates_and_limits() {
         let pre_budget = NaiveDate::from_ymd_opt(2024, 7, 22).unwrap();
@@ -568,27 +580,32 @@ mod tests {
         let post_2018 = NaiveDate::from_ymd_opt(2018, 2, 1).unwrap();
 
         // Case 1: Acquired after Jan 31, 2018 -> grandfathering does not apply
-        let basis1 = calculate_grandfathered_cost_basis(post_2018, dec!(100), Some(dec!(150)), dec!(200));
+        let basis1 =
+            calculate_grandfathered_cost_basis(post_2018, dec!(100), Some(dec!(150)), dec!(200));
         assert_eq!(basis1, dec!(100));
 
         // Case 2: Actual cost (100) < FMV (150) < Sale price (200)
         // Lower of (FMV, Sale) = 150. Max(100, 150) = 150. Gain taxed = 200 - 150 = 50.
-        let basis2 = calculate_grandfathered_cost_basis(pre_2018, dec!(100), Some(dec!(150)), dec!(200));
+        let basis2 =
+            calculate_grandfathered_cost_basis(pre_2018, dec!(100), Some(dec!(150)), dec!(200));
         assert_eq!(basis2, dec!(150));
 
         // Case 3: Actual cost (100) < Sale price (120) < FMV (150)
         // Lower of (FMV, Sale) = 120. Max(100, 120) = 120. Gain taxed = 120 - 120 = 0 (No artificial loss).
-        let basis3 = calculate_grandfathered_cost_basis(pre_2018, dec!(100), Some(dec!(150)), dec!(120));
+        let basis3 =
+            calculate_grandfathered_cost_basis(pre_2018, dec!(100), Some(dec!(150)), dec!(120));
         assert_eq!(basis3, dec!(120));
 
         // Case 4: Sale price (80) < FMV (150), Actual cost = 100
         // Lower of (FMV, Sale) = 80. Max(100, 80) = 100. Loss = 80 - 100 = -20.
-        let basis4 = calculate_grandfathered_cost_basis(pre_2018, dec!(100), Some(dec!(150)), dec!(80));
+        let basis4 =
+            calculate_grandfathered_cost_basis(pre_2018, dec!(100), Some(dec!(150)), dec!(80));
         assert_eq!(basis4, dec!(100));
 
         // Case 5: FMV (80) < Actual cost (100) < Sale price (200)
         // Lower of (FMV, Sale) = 80. Max(100, 80) = 100. Basis remains 100.
-        let basis5 = calculate_grandfathered_cost_basis(pre_2018, dec!(100), Some(dec!(80)), dec!(200));
+        let basis5 =
+            calculate_grandfathered_cost_basis(pre_2018, dec!(100), Some(dec!(80)), dec!(200));
         assert_eq!(basis5, dec!(100));
     }
 
@@ -598,11 +615,19 @@ mod tests {
         let disp = NaiveDate::from_ymd_opt(2025, 6, 1).unwrap(); // > 2 years holding
 
         // Standard equity would be LongTerm
-        let equity_cat = determine_holding_period_category(acq, disp, IndianAssetTaxClassification::EquityListed);
+        let equity_cat = determine_holding_period_category(
+            acq,
+            disp,
+            IndianAssetTaxClassification::EquityListed,
+        );
         assert_eq!(equity_cat, HoldingPeriodCategory::LongTerm);
 
         // Section 50AA Debt MF is deemed ShortTerm regardless of duration
-        let debt_cat = determine_holding_period_category(acq, disp, IndianAssetTaxClassification::DebtMfPost2023);
+        let debt_cat = determine_holding_period_category(
+            acq,
+            disp,
+            IndianAssetTaxClassification::DebtMfPost2023,
+        );
         assert_eq!(debt_cat, HoldingPeriodCategory::ShortTerm);
     }
 
@@ -657,12 +682,24 @@ mod tests {
         };
 
         let mut lot_open_dates = HashMap::new();
-        lot_open_dates.insert("lot-1".to_string(), NaiveDate::from_ymd_opt(2017, 1, 1).unwrap());
-        lot_open_dates.insert("lot-2".to_string(), NaiveDate::from_ymd_opt(2024, 3, 1).unwrap());
+        lot_open_dates.insert(
+            "lot-1".to_string(),
+            NaiveDate::from_ymd_opt(2017, 1, 1).unwrap(),
+        );
+        lot_open_dates.insert(
+            "lot-2".to_string(),
+            NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
+        );
 
         let mut asset_classifications = HashMap::new();
-        asset_classifications.insert("RELIANCE".to_string(), IndianAssetTaxClassification::EquityListed);
-        asset_classifications.insert("TCS".to_string(), IndianAssetTaxClassification::EquityListed);
+        asset_classifications.insert(
+            "RELIANCE".to_string(),
+            IndianAssetTaxClassification::EquityListed,
+        );
+        asset_classifications.insert(
+            "TCS".to_string(),
+            IndianAssetTaxClassification::EquityListed,
+        );
 
         let mut asset_fmv_2018 = HashMap::new();
         asset_fmv_2018.insert("RELIANCE".to_string(), dec!(150000));
@@ -736,12 +773,24 @@ mod tests {
         };
 
         let mut lot_open_dates = HashMap::new();
-        lot_open_dates.insert("l1".to_string(), NaiveDate::from_ymd_opt(2024, 7, 1).unwrap());
-        lot_open_dates.insert("l2".to_string(), NaiveDate::from_ymd_opt(2024, 7, 1).unwrap());
+        lot_open_dates.insert(
+            "l1".to_string(),
+            NaiveDate::from_ymd_opt(2024, 7, 1).unwrap(),
+        );
+        lot_open_dates.insert(
+            "l2".to_string(),
+            NaiveDate::from_ymd_opt(2024, 7, 1).unwrap(),
+        );
 
         let mut asset_classifications = HashMap::new();
-        asset_classifications.insert("INFY".to_string(), IndianAssetTaxClassification::EquityListed);
-        asset_classifications.insert("WIPRO".to_string(), IndianAssetTaxClassification::EquityListed);
+        asset_classifications.insert(
+            "INFY".to_string(),
+            IndianAssetTaxClassification::EquityListed,
+        );
+        asset_classifications.insert(
+            "WIPRO".to_string(),
+            IndianAssetTaxClassification::EquityListed,
+        );
 
         let summary = calculate_indian_capital_gains(
             &[disp_stcg_gain, disp_stcg_loss],
@@ -766,19 +815,35 @@ mod tests {
         let post_budget_disp = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
 
         // REIT pre-budget: requires >1095 days -> 800 days is Short-Term
-        let reit_pre = determine_holding_period_category(acq, pre_budget_disp, IndianAssetTaxClassification::ReitInvIt);
+        let reit_pre = determine_holding_period_category(
+            acq,
+            pre_budget_disp,
+            IndianAssetTaxClassification::ReitInvIt,
+        );
         assert_eq!(reit_pre, HoldingPeriodCategory::ShortTerm);
 
         // REIT post-budget: requires >365 days -> 800 days is Long-Term
-        let reit_post = determine_holding_period_category(acq, post_budget_disp, IndianAssetTaxClassification::ReitInvIt);
+        let reit_post = determine_holding_period_category(
+            acq,
+            post_budget_disp,
+            IndianAssetTaxClassification::ReitInvIt,
+        );
         assert_eq!(reit_post, HoldingPeriodCategory::LongTerm);
 
         // Gold pre-budget: requires >1095 days -> 800 days is Short-Term
-        let gold_pre = determine_holding_period_category(acq, pre_budget_disp, IndianAssetTaxClassification::GoldSgb);
+        let gold_pre = determine_holding_period_category(
+            acq,
+            pre_budget_disp,
+            IndianAssetTaxClassification::GoldSgb,
+        );
         assert_eq!(gold_pre, HoldingPeriodCategory::ShortTerm);
 
         // Gold post-budget: requires >730 days -> 800 days is Long-Term
-        let gold_post = determine_holding_period_category(acq, post_budget_disp, IndianAssetTaxClassification::GoldSgb);
+        let gold_post = determine_holding_period_category(
+            acq,
+            post_budget_disp,
+            IndianAssetTaxClassification::GoldSgb,
+        );
         assert_eq!(gold_post, HoldingPeriodCategory::LongTerm);
     }
 }

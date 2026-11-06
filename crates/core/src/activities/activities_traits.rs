@@ -608,6 +608,13 @@ pub trait ActivityServiceTrait: Send + Sync {
         config: &super::csv_parser::ParseConfig,
     ) -> Result<super::csv_parser::ParsedCsvResult>;
 
+    /// Parses PDF content with optional password.
+    fn parse_pdf(
+        &self,
+        content: &[u8],
+        password: Option<&str>,
+    ) -> Result<super::pdf_parser::ParsedPdfResult>;
+
     /// Upserts multiple activities (insert or update on conflict).
     /// Used by broker sync to efficiently sync activities.
     /// Emits a single aggregated ActivitiesChanged event for all upserted activities.

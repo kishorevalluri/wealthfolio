@@ -17,6 +17,7 @@ import AssetsPage from "@/pages/asset/assets-page";
 import PortfolioPage from "@/pages/dashboard/portfolio-page";
 import HoldingsPage from "@/pages/holdings/holdings-page";
 import PortfolioInsightsPage from "@/pages/insights/portfolio-insights";
+import TaxPage from "@/pages/tax/tax-page";
 import NotFoundPage from "@/pages/not-found";
 import SettingsAccountsPage from "@/pages/settings/accounts/accounts-page";
 import PortfoliosPage from "@/pages/settings/portfolios/portfolios-page";
@@ -103,6 +104,7 @@ export const AppScreenRoutes = memo(function AppScreenRoutes({ location }: AppSc
       <Route path="income" element={<Navigate to="/insights?tab=income" replace />} />
       <Route path="performance" element={<Navigate to="/insights?tab=performance" replace />} />
       <Route path="insights" element={<PortfolioInsightsPage />} />
+      <Route path="tax" element={<TaxPage />} />
       <Route path="health" element={<HealthPage />} />
       <Route path="assistant" element={<AiAssistantPage />} />
       <Route path="connect" element={<ConnectPage />} />
