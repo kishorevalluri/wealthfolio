@@ -23,6 +23,13 @@ use std::str::FromStr;
 
 use crate::errors::Result;
 
+pub mod indian_tax;
+pub mod tax_export;
+pub mod tax_service;
+pub use indian_tax::*;
+pub use tax_export::{to_schedule_cg_rows, ScheduleCgRow};
+pub use tax_service::{classify_asset_for_indian_tax, compute_indian_tax_summary, extract_fmv_2018};
+
 // ── Repository trait ──────────────────────────────────────────────────────────
 
 /// A deterministic disposal slice produced when a sell consumes a FIFO lot.
