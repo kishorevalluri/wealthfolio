@@ -7,7 +7,8 @@ use wealthfolio_core::activities::{
     ActivitySearchResponse, ActivitySplitEffect, ActivityUpdate, ConvertToTransferRequest,
     ImportActivitiesResult, ImportAssetCandidate, ImportAssetPreviewItem, ImportMappingData,
     ImportTemplateData, InternalTransferPairRequest, InternalTransferPairResponse, NewActivity,
-    ParseConfig, ParsedCsvResult, Sort, TransferMatchCandidate, TransferMatchCandidateRequest,
+    ParseConfig, ParsedCsvResult, ParsedPdfResult, Sort, TransferMatchCandidate,
+    TransferMatchCandidateRequest,
 };
 use wealthfolio_core::health::HealthServiceTrait;
 use wealthfolio_core::utils::time_utils::{
@@ -444,7 +445,7 @@ pub async fn parse_csv(
 pub async fn parse_pdf(
     content: Vec<u8>,
     password: Option<String>,
-    state: State<'_, DatabaseRuntime>,
+    state: ProfileAccess,
 ) -> Result<ParsedPdfResult, String> {
     let context = state.context()?;
     debug!(

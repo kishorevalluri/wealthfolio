@@ -629,6 +629,14 @@ impl ActivityServiceTrait for MockActivityService {
         wealthfolio_core::activities::parse_csv(content, config)
     }
 
+    fn parse_pdf(
+        &self,
+        content: &[u8],
+        password: Option<&str>,
+    ) -> CoreResult<wealthfolio_core::activities::ParsedPdfResult> {
+        wealthfolio_core::activities::parse_pdf(content, password)
+    }
+
     async fn prepare_activities_for_save(
         &self,
         _activities: Vec<NewActivity>,
