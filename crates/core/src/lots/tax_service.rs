@@ -28,8 +28,8 @@ pub fn classify_asset_for_indian_tax(asset: &Asset) -> IndianAssetTaxClassificat
                     }
                     "equity_mf" | "equitymf" => return IndianAssetTaxClassification::EquityMf,
                     "reit_invit" | "reitinvit" => return IndianAssetTaxClassification::ReitInvIt,
-                    "debt_mf_post_2023" | "debtmfpost2023" => {
-                        return IndianAssetTaxClassification::DebtMfPost2023
+                    "debt_mf" | "debtmf" | "debt_mf_post_2023" | "debtmfpost2023" => {
+                        return IndianAssetTaxClassification::DebtMf
                     }
                     "unlisted_debenture_post_2024" | "unlisteddebenturepost2024" => {
                         return IndianAssetTaxClassification::UnlistedDebenturePost2024;
@@ -103,8 +103,12 @@ pub async fn compute_indian_tax_summary(
     account_ids: &[String],
     fy_start_year: i32,
 ) -> Result<IndianTaxYearSummary> {
+    let empty = || IndianTaxYearSummary {
+        fy_start_year,
+        ..Default::default()
+    };
     if account_ids.is_empty() {
-        return Ok(IndianTaxYearSummary::default());
+        return Ok(empty());
     }
 
     let start_date_exclusive = NaiveDate::from_ymd_opt(fy_start_year, 3, 31).unwrap();
@@ -119,7 +123,7 @@ pub async fn compute_indian_tax_summary(
         .await?;
 
     if disposals.is_empty() {
-        return Ok(IndianTaxYearSummary::default());
+        return Ok(empty());
     }
 
     // Retrieve all lot open dates
@@ -173,6 +177,7 @@ pub async fn compute_indian_tax_summary(
         &asset_classifications,
         &asset_fmv_2018,
         &asset_info_map,
+        fy_start_year,
     );
 
     Ok(summary)
@@ -230,7 +235,7 @@ mod tests {
         }));
         assert_eq!(
             classify_asset_for_indian_tax(&equity_asset),
-            IndianAssetTaxClassification::DebtMfPost2023
+            IndianAssetTaxClassification::DebtMf
         );
     }
 

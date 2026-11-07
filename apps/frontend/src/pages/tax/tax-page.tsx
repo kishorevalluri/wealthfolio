@@ -5,11 +5,17 @@ import { QueryKeys } from "@/lib/query-keys";
 import type {
   IndianAssetTaxClassification,
   IndianCapitalGainCalculation,
+  IndianTaxSection,
   IndianTaxYearSummary,
 } from "@/lib/types";
 import { Badge } from "@wealthfolio/ui/components/ui/badge";
 import { Button } from "@wealthfolio/ui/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@wealthfolio/ui/components/ui/card";
 import { EmptyPlaceholder } from "@wealthfolio/ui/components/ui/empty-placeholder";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
@@ -59,8 +65,8 @@ function classificationLabel(c: IndianAssetTaxClassification): string {
       return "Equity MF";
     case "reit_invit":
       return "REIT / InvIT";
-    case "debt_mf_post_2023":
-      return "Debt MF (post-2023)";
+    case "debt_mf":
+      return "Debt / Other MF";
     case "unlisted_debenture_post_2024":
       return "Unlisted Deb (post-2024)";
     case "gold_sgb":
@@ -68,6 +74,24 @@ function classificationLabel(c: IndianAssetTaxClassification): string {
     case "other_capital_asset":
     default:
       return "Other";
+  }
+}
+
+function taxSectionLabel(s: IndianTaxSection): string {
+  switch (s) {
+    case "sec111a":
+      return "111A";
+    case "sec112a":
+      return "112A";
+    case "sec112":
+      return "112";
+    case "sec50aa":
+      return "50AA";
+    case "sec10_38":
+      return "10(38)";
+    case "slab_stcg":
+    default:
+      return "Slab";
   }
 }
 
@@ -93,7 +117,9 @@ function MetricCard({ title, value, subtitle, icon, accent }: MetricCardProps) {
         <div className="text-2xl font-bold">
           <AmountDisplay value={numericValue} currency="INR" isHidden={false} />
         </div>
-        {subtitle && <p className="text-muted-foreground mt-1 text-xs">{subtitle}</p>}
+        {subtitle && (
+          <p className="text-muted-foreground mt-1 text-xs">{subtitle}</p>
+        )}
       </CardContent>
     </Card>
   );
@@ -105,24 +131,37 @@ function Sec112ACard({ summary }: { summary: IndianTaxYearSummary }) {
   const gross = parseFloat(summary.sec112aLtcgGross) || 0;
   const exemption = parseFloat(summary.sec112aExemptionApplied) || 0;
   const taxable = parseFloat(summary.sec112aLtcgTaxable) || 0;
-  const limit = 125_000;
-  const percentUsed = Math.min(100, Math.round((gross / limit) * 100));
-  const remainingExemption = Math.max(0, limit - gross);
+  // ₹1L up to FY 2023-24, ₹1.25L from FY 2024-25. The exemption applies to
+  // gains left after loss set-off, so measure use against what was applied.
+  const limit = summary.fyStartYear >= 2024 ? 125_000 : 100_000;
+  const used = exemption + taxable;
+  const percentUsed = Math.min(100, Math.round((used / limit) * 100));
+  const remainingExemption = Math.max(0, limit - exemption);
+  const limitLabel = limit === 125_000 ? "₹1.25L" : "₹1L";
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium">Section 112A — LTCG & Tax Harvesting</CardTitle>
-          <Badge variant={gross > limit ? "destructive" : "outline"} className="text-[11px]">
-            {gross >= limit ? "Exemption Exhausted" : `₹${Math.round(remainingExemption).toLocaleString("en-IN")} buffer left`}
+          <CardTitle className="text-sm font-medium">
+            Section 112A — LTCG & Tax Harvesting
+          </CardTitle>
+          <Badge
+            variant={used > limit ? "destructive" : "outline"}
+            className="text-[11px]"
+          >
+            {used >= limit
+              ? "Exemption Exhausted"
+              : `₹${Math.round(remainingExemption).toLocaleString("en-IN")} buffer left`}
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-1.5">
           <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">Exemption Threshold Used (₹1.25L)</span>
+            <span className="text-muted-foreground">
+              Exemption Threshold Used ({limitLabel})
+            </span>
             <span className="font-medium">{percentUsed}%</span>
           </div>
           <Progress value={percentUsed} className="h-2" />
@@ -136,11 +175,16 @@ function Sec112ACard({ summary }: { summary: IndianTaxYearSummary }) {
           <div className="flex justify-between">
             <span className="text-muted-foreground">Exemption Applied</span>
             <span className="text-success">
-              − <AmountDisplay value={exemption} currency="INR" isHidden={false} />
+              −{" "}
+              <AmountDisplay
+                value={exemption}
+                currency="INR"
+                isHidden={false}
+              />
             </span>
           </div>
           <div className="flex justify-between border-t pt-2 font-medium">
-            <span>Taxable LTCG (@ 12.5%)</span>
+            <span>Taxable LTCG (after set-off)</span>
             <AmountDisplay value={taxable} currency="INR" isHidden={false} />
           </div>
         </div>
@@ -161,7 +205,10 @@ function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
       label: "STCG — Sec 111A (Post Budget 2024, @ 20%)",
       value: parseFloat(summary.stcg111aPostBudget) || 0,
     },
-    { label: "STCG — Slab Rate", value: parseFloat(summary.stcgSlabTotal) || 0 },
+    {
+      label: "STCG — Slab Rate",
+      value: parseFloat(summary.stcgSlabTotal) || 0,
+    },
     {
       label: "LTCG — Sec 112A (Pre Budget 2024, @ 10%)",
       value: parseFloat(summary.ltcg112aPreBudget) || 0,
@@ -170,7 +217,15 @@ function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
       label: "LTCG — Sec 112A (Post Budget 2024, @ 12.5%)",
       value: parseFloat(summary.ltcg112aPostBudget) || 0,
     },
-    { label: "LTCG — Other (@ 20% with indexation)", value: parseFloat(summary.ltcgOtherTotal) || 0 },
+    {
+      label:
+        "LTCG — Sec 112 (20% with indexation before 23 Jul 2024, 12.5% after)",
+      value: parseFloat(summary.ltcgOtherTotal) || 0,
+    },
+    {
+      label: "LTCG — Exempt u/s 10(38) (sold before 1 Apr 2018)",
+      value: parseFloat(summary.exemptLtcgSec1038) || 0,
+    },
   ].filter((r) => r.value !== 0);
 
   if (rows.length === 0) return null;
@@ -178,14 +233,20 @@ function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Gain Breakdown by Rate Bucket</CardTitle>
+        <CardTitle className="text-sm font-medium">
+          Gain Breakdown by Rate Bucket
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 text-sm">
           {rows.map((row, i) => (
             <div key={i} className="flex justify-between">
               <span className="text-muted-foreground">{row.label}</span>
-              <AmountDisplay value={row.value} currency="INR" isHidden={false} />
+              <AmountDisplay
+                value={row.value}
+                currency="INR"
+                isHidden={false}
+              />
             </div>
           ))}
         </div>
@@ -212,19 +273,23 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
       </CardHeader>
       <CardContent>
         <div className="space-y-2 text-sm">
-          {stcl < 0 && (
+          {stcl > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Short-Term Capital Loss</span>
+              <span className="text-muted-foreground">
+                Short-Term Capital Loss
+              </span>
               <span className="text-destructive">
-                <AmountDisplay value={Math.abs(stcl)} currency="INR" isHidden={false} />
+                <AmountDisplay value={stcl} currency="INR" isHidden={false} />
               </span>
             </div>
           )}
-          {ltcl < 0 && (
+          {ltcl > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Long-Term Capital Loss</span>
+              <span className="text-muted-foreground">
+                Long-Term Capital Loss
+              </span>
               <span className="text-destructive">
-                <AmountDisplay value={Math.abs(ltcl)} currency="INR" isHidden={false} />
+                <AmountDisplay value={ltcl} currency="INR" isHidden={false} />
               </span>
             </div>
           )}
@@ -239,7 +304,11 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
 
 // ── Disposal Table ─────────────────────────────────────────────────────────────
 
-function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalculation[] }) {
+function DisposalTable({
+  calculations,
+}: {
+  calculations: IndianCapitalGainCalculation[];
+}) {
   if (calculations.length === 0) return null;
 
   return (
@@ -284,7 +353,9 @@ function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalcul
                         </span>
                         {(calc.assetSymbol || calc.isin) && (
                           <span className="text-muted-foreground text-[11px]">
-                            {[calc.assetSymbol, calc.isin].filter(Boolean).join(" • ")}
+                            {[calc.assetSymbol, calc.isin]
+                              .filter(Boolean)
+                              .join(" • ")}
                           </span>
                         )}
                       </div>
@@ -294,14 +365,23 @@ function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalcul
                         {classificationLabel(calc.classification)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs">{calc.acquisitionDate.slice(0, 10)}</TableCell>
-                    <TableCell className="text-xs">{calc.disposalDate.slice(0, 10)}</TableCell>
+                    <TableCell className="text-xs">
+                      {calc.acquisitionDate.slice(0, 10)}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {calc.disposalDate.slice(0, 10)}
+                    </TableCell>
                     <TableCell>
                       <Badge
-                        variant={calc.holdingPeriod === "long_term" ? "secondary" : "outline"}
+                        variant={
+                          calc.holdingPeriod === "long_term"
+                            ? "secondary"
+                            : "outline"
+                        }
                         className="text-xs"
                       >
-                        {calc.holdingPeriod === "long_term" ? "LT" : "ST"}
+                        {calc.holdingPeriod === "long_term" ? "LT" : "ST"} ·{" "}
+                        {taxSectionLabel(calc.taxSection)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right text-xs">
@@ -321,14 +401,28 @@ function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalcul
                     <TableCell
                       className={`text-right text-xs font-medium ${isLoss ? "text-destructive" : "text-success"}`}
                     >
-                      <AmountDisplay value={grossGain} currency="INR" isHidden={false} />
+                      <AmountDisplay
+                        value={grossGain}
+                        currency="INR"
+                        isHidden={false}
+                      />
                     </TableCell>
                     <TableCell className="text-right text-xs">
-                      <AmountDisplay value={taxableGain} currency="INR" isHidden={false} />
+                      <AmountDisplay
+                        value={taxableGain}
+                        currency="INR"
+                        isHidden={false}
+                      />
                     </TableCell>
-                    <TableCell className="text-right text-xs">{(rate * 100).toFixed(1)}%</TableCell>
                     <TableCell className="text-right text-xs">
-                      <AmountDisplay value={estTax} currency="INR" isHidden={false} />
+                      {(rate * 100).toFixed(1)}%
+                    </TableCell>
+                    <TableCell className="text-right text-xs">
+                      <AmountDisplay
+                        value={estTax}
+                        currency="INR"
+                        isHidden={false}
+                      />
                     </TableCell>
                   </TableRow>
                 );
@@ -405,7 +499,10 @@ export default function TaxPage() {
   const handleExportScheduleCg = async () => {
     try {
       setIsExporting(true);
-      const result = await exportIndianScheduleCg(accountFilter, parseInt(selectedFY));
+      const result = await exportIndianScheduleCg(
+        accountFilter,
+        parseInt(selectedFY),
+      );
       if (result.status === "saved") {
         toast({
           title: "Schedule CG Exported",
@@ -417,13 +514,17 @@ export default function TaxPage() {
       } else if (result.status === "empty") {
         toast({
           title: "No Data to Export",
-          description: "No capital gains or disposal transactions found for the selected financial year.",
+          description:
+            "No capital gains or disposal transactions found for the selected financial year.",
         });
       }
     } catch (err) {
       toast({
         title: "Export Failed",
-        description: err instanceof Error ? err.message : "Failed to export Schedule CG CSV.",
+        description:
+          err instanceof Error
+            ? err.message
+            : "Failed to export Schedule CG CSV.",
         variant: "destructive",
       });
     } finally {
@@ -452,7 +553,10 @@ export default function TaxPage() {
     <>
       <div className="pointer-events-auto fixed right-2 top-4 z-20 hidden items-center gap-2 md:flex lg:right-4">
         {exportButton}
-        <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
+        <AccountScopeSelector
+          value={accountFilter}
+          onChange={setAccountScope}
+        />
         <AnimatedToggleGroup
           variant="secondary"
           size="sm"
@@ -469,7 +573,10 @@ export default function TaxPage() {
           value={selectedFY}
           onValueChange={(v) => v && setSelectedFY(v)}
         />
-        <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
+        <AccountScopeSelector
+          value={accountFilter}
+          onChange={setAccountScope}
+        />
         {exportButton}
       </div>
     </>
@@ -506,7 +613,7 @@ export default function TaxPage() {
   const estLtcgTax = parseFloat(summary.estimatedLtcgTax) || 0;
   const hasData = summary.calculations.length > 0;
 
-  const stcgSlabTotal = parseFloat(summary.stcgSlabTotal) || 0;
+  const stcgSlabNet = parseFloat(summary.stcgSlabNet) || 0;
 
   if (!hasData) {
     return (
@@ -537,31 +644,71 @@ export default function TaxPage() {
             title="Total STCG"
             value={summary.stcgTotal}
             subtitle="Short-Term Capital Gains"
-            icon={<Icons.TrendingUp className="text-muted-foreground h-4 w-4" />}
-            accent={stcgTotal >= 0 ? "border-blue-500/10 bg-blue-500/5" : "border-destructive/10 bg-destructive/5"}
+            icon={
+              <Icons.TrendingUp className="text-muted-foreground h-4 w-4" />
+            }
+            accent={
+              stcgTotal >= 0
+                ? "border-blue-500/10 bg-blue-500/5"
+                : "border-destructive/10 bg-destructive/5"
+            }
           />
           <MetricCard
             title="Total LTCG"
             value={summary.ltcgTotal}
             subtitle="Long-Term Capital Gains"
-            icon={<Icons.TrendingUp className="text-muted-foreground h-4 w-4" />}
-            accent={ltcgTotal >= 0 ? "border-green-500/10 bg-green-500/5" : "border-destructive/10 bg-destructive/5"}
+            icon={
+              <Icons.TrendingUp className="text-muted-foreground h-4 w-4" />
+            }
+            accent={
+              ltcgTotal >= 0
+                ? "border-green-500/10 bg-green-500/5"
+                : "border-destructive/10 bg-destructive/5"
+            }
           />
           <MetricCard
             title="Est. STCG Tax"
             value={summary.estimatedStcgTax}
             subtitle="Estimated tax on STCG"
             icon={<Icons.Receipt className="text-muted-foreground h-4 w-4" />}
-            accent={estStcgTax > 0 ? "border-orange-500/10 bg-orange-500/5" : undefined}
+            accent={
+              estStcgTax > 0
+                ? "border-orange-500/10 bg-orange-500/5"
+                : undefined
+            }
           />
           <MetricCard
             title="Est. LTCG Tax"
             value={summary.estimatedLtcgTax}
-            subtitle="Estimated tax on LTCG"
+            subtitle={`After set-off and exemption. Total with 4% cess: ₹${Math.round(
+              parseFloat(summary.estimatedTotalTax) || 0,
+            ).toLocaleString("en-IN")}`}
             icon={<Icons.Receipt className="text-muted-foreground h-4 w-4" />}
-            accent={estLtcgTax > 0 ? "border-orange-500/10 bg-orange-500/5" : undefined}
+            accent={
+              estLtcgTax > 0
+                ? "border-orange-500/10 bg-orange-500/5"
+                : undefined
+            }
           />
         </div>
+
+        {summary.warnings.length > 0 && (
+          <Card className="border-orange-500/20 bg-orange-500/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                <Icons.AlertTriangle className="h-4 w-4 text-orange-500" />
+                Check before filing
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="list-disc space-y-1 pl-5 text-sm">
+                {summary.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Detail cards */}
         <div className="grid gap-4 md:grid-cols-2">
@@ -573,14 +720,16 @@ export default function TaxPage() {
         <CarryForwardCard summary={summary} />
 
         {/* Dual-Regime Optimizer */}
-        <DualRegimeOptimizer stcgSlabTotal={stcgSlabTotal} />
+        <DualRegimeOptimizer stcgSlabTotal={stcgSlabNet} />
 
         {/* Disposal-level table */}
         <DisposalTable calculations={summary.calculations} />
 
         <p className="text-muted-foreground text-xs">
-          * Tax estimates are indicative and based on the rates applicable to each gain bucket.
-          Consult a chartered accountant before filing your ITR.
+          * Estimates apply loss set-off (Section 70) and the Section 112A
+          exemption, and add 4% cess. Slab-rate gains, surcharge and indexation
+          are not included. Per-row tax is before set-off. Consult a chartered
+          accountant before filing your ITR.
         </p>
       </div>
     </>
