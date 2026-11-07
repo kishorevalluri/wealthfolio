@@ -161,7 +161,7 @@ function NeedsFixingRow({
           size="sm"
           variant="ghost"
           onClick={onSkip}
-          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/20"
+          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20 dark:hover:text-red-400"
           title={t("activity:import.assets.skipAsset")}
         >
           <Icons.X className="h-3 w-3 shrink-0" />
@@ -213,8 +213,7 @@ function AutoResolvedRow({
   const asset = item.draft;
   const logoSymbol = asset?.instrumentSymbol || asset?.displayCode || symbol;
   const rawName = asset?.name || symbolName;
-  const assetName =
-    rawName && rawName.toUpperCase() !== symbol.toUpperCase() ? rawName : undefined;
+  const assetName = rawName && rawName.toUpperCase() !== symbol.toUpperCase() ? rawName : undefined;
   const exchangeDisplay = asset?.instrumentExchangeMic
     ? getExchangeDisplayName(asset.instrumentExchangeMic)
     : undefined;
@@ -313,7 +312,7 @@ function AutoResolvedRow({
           size="sm"
           variant="ghost"
           onClick={onSkip}
-          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/20"
+          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20 dark:hover:text-red-400"
           title={t("activity:import.assets.skipAsset")}
         >
           <Icons.X className="h-3 w-3 shrink-0" />
@@ -437,7 +436,7 @@ function ReadyAssetRow({
           size="sm"
           variant="ghost"
           onClick={onSkip}
-          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/20"
+          className="text-muted-foreground h-7 gap-1 px-2 text-[11px] hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20 dark:hover:text-red-400"
           title={t("activity:import.assets.skipAsset")}
         >
           <Icons.X className="h-3 w-3 shrink-0" />
@@ -870,10 +869,7 @@ export function AssetReviewStep() {
                 const candidate = candidateMap.get(item.key);
                 const rawSymbol = item.reviewSymbol || candidate?.draft.symbol || item.key;
                 const symbolName = item.draft?.name || candidate?.draft.symbolName;
-                const symbol =
-                  /^\d{5,7}$/.test(rawSymbol) && symbolName
-                    ? symbolName
-                    : rawSymbol;
+                const symbol = /^\d{5,7}$/.test(rawSymbol) && symbolName ? symbolName : rawSymbol;
                 const count = candidate?.count ?? 0;
                 return (
                   <NeedsFixingRow
@@ -974,9 +970,7 @@ export function AssetReviewStep() {
                     );
                     const symbolName = item.draft?.name || candidate?.draft.symbolName;
                     const displaySymbol =
-                      /^\d{5,7}$/.test(symbol) && symbolName
-                        ? symbolName
-                        : symbol;
+                      /^\d{5,7}$/.test(symbol) && symbolName ? symbolName : symbol;
                     return (
                       <AutoResolvedRow
                         key={item.key}

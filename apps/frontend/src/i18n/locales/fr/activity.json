@@ -1245,7 +1245,9 @@
       "editDialogDescription": "Ajustez les détails de l'actif résolu. Les modifications ne s'appliquent qu'à cet import.",
       "createDialogDescription": "Créez un nouvel actif et liez immédiatement ces lignes.",
       "useEditedAsset": "Utiliser l'actif modifié",
-      "createAsset": "Créer l'actif"
+      "createAsset": "Créer l'actif",
+      "skip": "Ignorer",
+      "skipAsset": "Ignorer l'actif et ses lignes à l'import"
     },
     "holdings": {
       "columns": "Colonnes",

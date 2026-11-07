@@ -205,12 +205,12 @@ fn extract_text_from_document(doc: &Document) -> String {
                     .and_then(|o| o.as_reference())
                 {
                     doc.get_dictionary(res_id).ok()
-                } else if let Ok(dict) =
-                    xobj_stream.dict.get(b"Resources").and_then(|o| o.as_dict())
-                {
-                    Some(dict)
                 } else {
-                    None
+                    xobj_stream
+                        .dict
+                        .get(b"Resources")
+                        .and_then(|o| o.as_dict())
+                        .ok()
                 };
 
                 if let Some(res_dict) = res_dict {
@@ -308,10 +308,8 @@ fn extract_text_from_document(doc: &Document) -> String {
                                     }
                                 }
                             }
-                            "ET" | "T*" => {
-                                if !page_text.ends_with('\n') {
-                                    page_text.push('\n');
-                                }
+                            "ET" | "T*" if !page_text.ends_with('\n') => {
+                                page_text.push('\n');
                             }
                             _ => {}
                         }

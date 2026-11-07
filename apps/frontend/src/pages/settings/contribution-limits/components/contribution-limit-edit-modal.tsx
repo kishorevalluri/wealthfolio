@@ -18,12 +18,8 @@ export function ContributionLimitEditModal({
   const isIndia = settings?.formattingRegion === "IN" || settings?.baseCurrency === "INR";
   const currentYear = new Date().getFullYear();
 
-  const defaultStartDate = isIndia
-    ? new Date(currentYear, 3, 1)
-    : new Date(currentYear, 0, 1);
-  const defaultEndDate = isIndia
-    ? new Date(currentYear + 1, 2, 31)
-    : new Date(currentYear, 11, 31);
+  const defaultStartDate = isIndia ? new Date(currentYear, 3, 1) : new Date(currentYear, 0, 1);
+  const defaultEndDate = isIndia ? new Date(currentYear + 1, 2, 31) : new Date(currentYear, 11, 31);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>

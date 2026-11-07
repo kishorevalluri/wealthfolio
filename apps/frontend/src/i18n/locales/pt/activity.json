@@ -1245,7 +1245,9 @@
       "editDialogDescription": "Ajuste os detalhes do ativo resolvido. As edições se aplicam apenas a esta importação.",
       "createDialogDescription": "Crie um novo ativo e vincule estas linhas a ele imediatamente.",
       "useEditedAsset": "Usar ativo editado",
-      "createAsset": "Criar ativo"
+      "createAsset": "Criar ativo",
+      "skip": "Pular",
+      "skipAsset": "Pular o ativo e suas linhas na importação"
     },
     "holdings": {
       "columns": "Colunas",

@@ -80,7 +80,7 @@ export function PdfPasswordDialog({
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="text-muted-foreground hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 p-1 text-xs"
+                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 p-1 text-xs"
               >
                 {showPassword ? (
                   <Icons.EyeOff className="h-4 w-4" />
@@ -93,7 +93,7 @@ export function PdfPasswordDialog({
             {error && <p className="text-destructive text-xs">{error}</p>}
 
             <p className="text-muted-foreground bg-muted/30 rounded-md p-2 text-xs leading-relaxed">
-              <span className="font-medium text-foreground">💡 Hint: </span>
+              <span className="text-foreground font-medium">💡 Hint: </span>
               {t("activity:import.upload.pdfPasswordHint")}
             </p>
           </div>

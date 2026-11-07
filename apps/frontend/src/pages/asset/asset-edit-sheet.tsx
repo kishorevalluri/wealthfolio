@@ -83,6 +83,7 @@ import {
 } from "./asset-contract-multiplier";
 import { serializeProviderConfig } from "./asset-provider-config";
 import { useAssetProfileMutations } from "./hooks/use-asset-profile-mutations";
+import { applyIndianTax, extractIndianTax, INDIAN_TAX_CLASSIFICATIONS } from "./asset-indian-tax";
 
 // Schema for a single provider override (type is derived from instrument type)
 const providerOverrideSchema = z.object({
@@ -121,10 +122,16 @@ const assetFormSchema = (t: TFunction) =>
     // min(0), not positive(): zero-coupon T-bills are valid and common.
     couponRate: z.coerce.number().min(0).optional().nullable(),
     couponFrequency: z.string().optional(),
+    // Optional/nullable for the same reason as contractMultiplier.
+    indianTaxClassification: z.string().optional(),
+    fmv2018: z.coerce.number().min(0).optional().nullable(),
   });
 
 type AssetFormValues = z.infer<ReturnType<typeof assetFormSchema>>;
 type ProviderOverride = z.infer<typeof providerOverrideSchema>;
+
+/** Select value standing for "no override stored". */
+const AUTO_TAX_TYPE = "__auto__";
 
 const normalizeMic = (mic?: string | null): string => mic?.trim().toUpperCase() ?? "";
 
@@ -616,6 +623,7 @@ export function AssetEditSheet({
       ),
       contractMultiplier: explicitContractMultiplier(asset?.metadata, asset?.instrumentType),
       ...extractBondSpec(asset?.metadata),
+      ...extractIndianTax(asset?.metadata),
     },
   });
 
@@ -631,6 +639,13 @@ export function AssetEditSheet({
   // Instrument type drives the multiplier default (100 for options, 1 otherwise),
   // so read the live form value rather than the persisted one.
   const watchedInstrumentType = form.watch("instrumentType");
+  // Indian tax details matter only for rupee assets, or ones already carrying them.
+  const watchedQuoteCcy = form.watch("quoteCcy");
+  const storedIndianTax = extractIndianTax(asset?.metadata);
+  const showIndianTax =
+    watchedQuoteCcy?.toUpperCase() === "INR" ||
+    storedIndianTax.indianTaxClassification !== "" ||
+    storedIndianTax.fmv2018 != null;
   const defaultMultiplier = instrumentDefaultMultiplier(watchedInstrumentType);
 
   // Reset form when asset changes
@@ -652,6 +667,7 @@ export function AssetEditSheet({
         ),
         contractMultiplier: explicitContractMultiplier(asset.metadata, asset.instrumentType),
         ...extractBondSpec(asset.metadata),
+        ...extractIndianTax(asset.metadata),
       });
     }
   }, [asset, form]);
@@ -710,7 +726,7 @@ export function AssetEditSheet({
           values.contractMultiplier,
         );
 
-        const newMetadata =
+        const withBondSpec =
           effectiveInstrumentType === BOND_INSTRUMENT_TYPE
             ? applyBondSpec(withMultiplier, {
                 maturityDate: values.maturityDate ?? null,
@@ -718,6 +734,11 @@ export function AssetEditSheet({
                 couponFrequency: values.couponFrequency ?? "",
               })
             : withMultiplier;
+
+        const newMetadata = applyIndianTax(withBondSpec, {
+          indianTaxClassification: values.indianTaxClassification ?? "",
+          fmv2018: values.fmv2018 ?? null,
+        });
 
         // Update profile with all fields including quote mode
         await updateAssetProfileMutation.mutateAsync({
@@ -1165,6 +1186,88 @@ export function AssetEditSheet({
                           />
                         </div>
                       )}
+
+                      {showIndianTax && (
+                        <div className="space-y-4 border-t pt-6">
+                          <h3 className="text-sm font-medium">
+                            {t("asset:editSheet.indian_tax_section")}
+                          </h3>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <FormField
+                              control={form.control}
+                              name="indianTaxClassification"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t("asset:editSheet.indian_tax_type")}</FormLabel>
+                                  <Select
+                                    items={[
+                                      {
+                                        value: AUTO_TAX_TYPE,
+                                        label: t("asset:editSheet.indian_tax_type_auto"),
+                                      },
+                                      ...INDIAN_TAX_CLASSIFICATIONS.map((c) => ({
+                                        value: c,
+                                        label: t(`asset:editSheet.indianTaxTypes.${c}`),
+                                      })),
+                                    ]}
+                                    onValueChange={(v) =>
+                                      field.onChange(v === AUTO_TAX_TYPE ? "" : v)
+                                    }
+                                    value={field.value || AUTO_TAX_TYPE}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger
+                                        className="h-11"
+                                        data-testid="asset-indian-tax-type"
+                                      >
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      <SelectItem value={AUTO_TAX_TYPE}>
+                                        {t("asset:editSheet.indian_tax_type_auto")}
+                                      </SelectItem>
+                                      {INDIAN_TAX_CLASSIFICATIONS.map((c) => (
+                                        <SelectItem key={c} value={c}>
+                                          {t(`asset:editSheet.indianTaxTypes.${c}`)}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <p className="text-muted-foreground text-xs">
+                                    {t("asset:editSheet.indian_tax_type_hint")}
+                                  </p>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name="fmv2018"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t("asset:editSheet.fmv_2018")}</FormLabel>
+                                  <FormControl>
+                                    <QuantityInput
+                                      ref={field.ref}
+                                      name={field.name}
+                                      value={field.value ?? ""}
+                                      onValueChange={(value) => field.onChange(value ?? null)}
+                                      maxDecimalPlaces={4}
+                                      data-testid="asset-fmv-2018"
+                                    />
+                                  </FormControl>
+                                  <p className="text-muted-foreground text-xs">
+                                    {t("asset:editSheet.fmv_2018_hint")}
+                                  </p>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </form>
@@ -1282,8 +1385,14 @@ export function AssetEditSheet({
                               <Select
                                 value={field.value ?? "__auto__"}
                                 items={[
-                                  { value: "__auto__", label: t("asset:editSheet.auto_default") },
-                                  ...builtinProviders.map((p) => ({ value: p.id, label: p.name })),
+                                  {
+                                    value: "__auto__",
+                                    label: t("asset:editSheet.auto_default"),
+                                  },
+                                  ...builtinProviders.map((p) => ({
+                                    value: p.id,
+                                    label: p.name,
+                                  })),
                                   ...customProviders.map((cp) => ({
                                     value: `CUSTOM:${cp.id}`,
                                     label: cp.name,

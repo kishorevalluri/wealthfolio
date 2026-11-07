@@ -140,12 +140,13 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     let mut statement_date = String::new();
     let mut in_transaction_section = false;
 
-    let isin_regex = Regex::new(r"\b(IN[A-Z0-9]{10})\b").unwrap();
+    let isin_regex = Regex::new(r"\b(IN[A-Z0-9]{10})\b").expect("hard-coded regex is valid");
     let date_regex =
         Regex::new(r"^\b(\d{1,2}[-/][A-Za-z]{3}[-/]\d{2,4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b")
-            .unwrap();
-    let boid_regex = Regex::new(r"\b(\d{16})\b").unwrap();
-    let mf_code_prefix_regex = Regex::new(r"^[A-Z0-9]{2,8}\s*-\s*").unwrap();
+            .expect("hard-coded regex is valid");
+    let boid_regex = Regex::new(r"\b(\d{16})\b").expect("hard-coded regex is valid");
+    let mf_code_prefix_regex =
+        Regex::new(r"^[A-Z0-9]{2,8}\s*-\s*").expect("hard-coded regex is valid");
 
     let lines: Vec<&str> = text
         .lines()
@@ -205,6 +206,8 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
         scan_idx += 1;
     }
 
+    let date_match_re = Regex::new(r"\b(\d{1,2}[-/][A-Za-z0-9]{2,3}[-/]\d{2,4})\b")
+        .expect("hard-coded regex is valid");
     let mut i = 0;
     while i < lines.len() {
         let line = lines[i];
@@ -244,8 +247,6 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
             || lower.contains("statement date"))
             && statement_date.is_empty()
         {
-            let date_match_re =
-                Regex::new(r"\b(\d{1,2}[-/][A-Za-z0-9]{2,3}[-/]\d{2,4})\b").unwrap();
             if let Some(m) = date_match_re.find(line) {
                 statement_date = m.as_str().to_string();
             }
@@ -432,7 +433,7 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                 if tokens.len() >= 2 {
                     let mut num_indices = Vec::new();
                     for (idx, t) in tokens.iter().enumerate() {
-                        let cleaned = t.replace(',', "").replace('(', "").replace(')', "");
+                        let cleaned = t.replace([',', '(', ')'], "");
                         if cleaned.parse::<f64>().is_ok() {
                             num_indices.push(idx);
                         }

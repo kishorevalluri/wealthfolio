@@ -1194,7 +1194,9 @@
       "editDialogDescription": "调整已解析的资产详情。编辑仅适用于本次导入。",
       "createDialogDescription": "创建一项新资产并立即将这些行关联到它。",
       "useEditedAsset": "使用已编辑的资产",
-      "createAsset": "创建资产"
+      "createAsset": "创建资产",
+      "skip": "跳过",
+      "skipAsset": "导入时跳过该资产及其行"
     },
     "holdings": {
       "columns": "列",

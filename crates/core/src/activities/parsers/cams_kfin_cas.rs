@@ -30,11 +30,12 @@ pub fn parse_cams_kfin_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     let mut current_scheme = String::new();
     let mut current_isin = String::new();
 
-    let isin_regex = Regex::new(r"\b(INF[A-Z0-9]{9})\b").unwrap();
-    let folio_regex = Regex::new(r"(?i)Folio(?:\s*No\.?)?[:\s]+([0-9A-Za-z/_-]+)").unwrap();
+    let isin_regex = Regex::new(r"\b(INF[A-Z0-9]{9})\b").expect("hard-coded regex is valid");
+    let folio_regex = Regex::new(r"(?i)Folio(?:\s*No\.?)?[:\s]+([0-9A-Za-z/_-]+)")
+        .expect("hard-coded regex is valid");
     let date_regex =
         Regex::new(r"^\b(\d{1,2}[-/][A-Za-z]{3}[-/]\d{2,4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b")
-            .unwrap();
+            .expect("hard-coded regex is valid");
 
     for line in text.lines() {
         let trimmed = line.trim();
@@ -85,7 +86,7 @@ pub fn parse_cams_kfin_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
             if tokens.len() >= 2 {
                 let mut num_indices = Vec::new();
                 for (i, t) in tokens.iter().enumerate() {
-                    let cleaned = t.replace(',', "").replace('(', "").replace(')', "");
+                    let cleaned = t.replace([',', '(', ')'], "");
                     if cleaned.parse::<f64>().is_ok() {
                         num_indices.push(i);
                     }

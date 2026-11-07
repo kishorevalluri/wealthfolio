@@ -1194,7 +1194,9 @@
       "editDialogDescription": "解決された資産の詳細を調整します。編集はこのインポートにのみ適用されます。",
       "createDialogDescription": "新しい資産を作成し、これらの行を直ちにリンクします。",
       "useEditedAsset": "編集した資産を使用",
-      "createAsset": "資産を作成"
+      "createAsset": "資産を作成",
+      "skip": "スキップ",
+      "skipAsset": "この資産とその行をインポートしない"
     },
     "holdings": {
       "columns": "列",

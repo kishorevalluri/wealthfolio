@@ -103,7 +103,8 @@
     "label_holdings": "Ver posiciones",
     "label_activities": "Ver actividades",
     "label_goals": "Objetivos",
-    "label_assistant": "Asistente de IA"
+    "label_assistant": "Asistente de IA",
+    "label_tax": "Impuestos e ITR"
   },
   "layout": {
     "search": "Buscar...",
@@ -714,5 +715,6 @@
     "accountNumberMax": "El número de cuenta no debe superar los 64 caracteres.",
     "accountCurrency": "Seleccione una moneda.",
     "creditCardTracking": "Las cuentas de tarjeta de crédito no pueden usar el seguimiento de posiciones."
-  }
+  },
+  "tax": "Impuestos e ITR"
 }

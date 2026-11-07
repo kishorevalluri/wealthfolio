@@ -49,8 +49,8 @@ destabilizing existing desktop/web parity or US workflows, we adopt a
      };
      ```
 2. **Grandfathering Formula (Section 55(2)(ac))**:
-   - For equity/mutual funds acquired before **31-Jan-2018**:
-     $$\text{Deemed Cost of Acquisition} = \max\Big(\text{Actual Cost}, \min(\text{FMV as of 31-Jan-2018}, \text{Sale Price})\Big)$$
+   - For equity/mutual funds acquired before
+     **31-Jan-2018**: $$\text{Deemed Cost of Acquisition} = \max\Big(\text{Actual Cost}, \min(\text{FMV as of 31-Jan-2018}, \text{Sale Price})\Big)$$
    - Prevents artificial loss generation while exempting gains accrued up to Jan
      31, 2018.
 3. **Debt Mutual Fund Deemed Short-Term (Section 50AA)**:
@@ -195,9 +195,11 @@ destabilizing existing desktop/web parity or US workflows, we adopt a
 
 - [x] Add Zerodha Kite and Groww tradebook CSV mapping profiles and templates in
       [`crates/storage-sqlite/migrations/2026-09-19-000001_indian_broker_templates/`](crates/storage-sqlite/migrations/2026-09-19-000001_indian_broker_templates/)
-      and [`use-import-mapping.ts`](apps/frontend/src/pages/activity/import/hooks/use-import-mapping.ts).
+      and
+      [`use-import-mapping.ts`](apps/frontend/src/pages/activity/import/hooks/use-import-mapping.ts).
 - [x] Implement CAMS/KFintech CAS statement parser mappings and auto-detection.
-- **Gate 5**: Import roundtrip tests for Zerodha, Groww, and CAMS sample files pass
+- **Gate 5**: Import roundtrip tests for Zerodha, Groww, and CAMS sample files
+  pass
   ([`indian-broker-import.test.ts`](apps/frontend/src/pages/activity/import/utils/indian-broker-import.test.ts)).
 
 ---

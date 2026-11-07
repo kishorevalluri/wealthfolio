@@ -1209,7 +1209,9 @@
       "editDialogDescription": "Passen Sie die Details des aufgelösten Vermögenswerts an. Änderungen gelten nur für diesen Import.",
       "createDialogDescription": "Erstellen Sie einen neuen Vermögenswert und verknüpfen Sie diese Zeilen sofort damit.",
       "useEditedAsset": "Bearbeiteten Vermögenswert verwenden",
-      "createAsset": "Vermögenswert erstellen"
+      "createAsset": "Vermögenswert erstellen",
+      "skip": "Überspringen",
+      "skipAsset": "Wert und seine Zeilen beim Import überspringen"
     },
     "holdings": {
       "columns": "Spalten",

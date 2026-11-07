@@ -44,7 +44,11 @@ fn resolve_tax_accounts(
             Ok(accounts.into_iter().map(|a| a.id).collect())
         }
         Some(scope) => {
-            let base = state.base_currency.read().unwrap().clone();
+            let base = state
+                .base_currency
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
             let resolved = state
                 .portfolio_service
                 .resolve_account_scope(scope, &base)

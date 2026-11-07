@@ -886,9 +886,7 @@ export function UploadStep() {
         ) {
           setPendingPdfFile(file);
           setPdfPasswordError(
-            password
-              ? msg || t("activity:import.upload.pdfDecryptionFailed")
-              : null,
+            password ? msg || t("activity:import.upload.pdfDecryptionFailed") : null,
           );
           setIsPdfPasswordOpen(true);
         } else {

@@ -1209,7 +1209,9 @@
       "editDialogDescription": "調整已解析的資產詳細資訊。編輯僅適用於本次匯入。",
       "createDialogDescription": "建立一項新資產，並立即將這些資料列連結到該資產。",
       "useEditedAsset": "使用已編輯的資產",
-      "createAsset": "建立資產"
+      "createAsset": "建立資產",
+      "skip": "略過",
+      "skipAsset": "匯入時略過該資產及其列"
     },
     "holdings": {
       "columns": "欄位",

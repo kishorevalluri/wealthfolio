@@ -100,7 +100,8 @@
     "label_holdings": "Bestände anzeigen",
     "label_activities": "Aktivitäten anzeigen",
     "label_goals": "Ziele",
-    "label_assistant": "KI-Assistent"
+    "label_assistant": "KI-Assistent",
+    "label_tax": "Steuern & ITR"
   },
   "layout": {
     "search": "Suchen...",
@@ -697,5 +698,6 @@
     "accountNumberMax": "Die Kontonummer darf höchstens 64 Zeichen enthalten.",
     "accountCurrency": "Bitte wählen Sie eine Währung.",
     "creditCardTracking": "Kreditkartenkonten können den Bestandsverfolgungsmodus nicht verwenden."
-  }
+  },
+  "tax": "Steuern & ITR"
 }

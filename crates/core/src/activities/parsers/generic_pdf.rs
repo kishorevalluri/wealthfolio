@@ -5,7 +5,7 @@ use regex::Regex;
 /// Fallback generic table extractor for arbitrary tabular text.
 pub fn parse_generic_pdf_table(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     let mut rows: Vec<Vec<String>> = Vec::new();
-    let date_regex = Regex::new(r"\b(\d{1,2}[-/][A-Za-z]{3}[-/]\d{2,4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{4}[-/]\d{1,2}[-/]\d{1,2})\b").unwrap();
+    let date_regex = Regex::new(r"\b(\d{1,2}[-/][A-Za-z]{3}[-/]\d{2,4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{4}[-/]\d{1,2}[-/]\d{1,2})\b").expect("hard-coded regex is valid");
 
     let headers = vec![
         "Date".to_string(),

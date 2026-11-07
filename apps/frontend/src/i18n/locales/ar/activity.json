@@ -520,7 +520,9 @@
       "resolvingMessage": "جارٍ معالجة الأصول ومطابقة الرموز…",
       "retry": "إعادة المحاولة",
       "searchPlaceholder": "ابحث بالرمز أو الاسم أو ISIN…",
-      "useEditedAsset": "استخدام الأصل المعدل"
+      "useEditedAsset": "استخدام الأصل المعدل",
+      "skip": "تخطٍّ",
+      "skipAsset": "تخطي الأصل وصفوفه من الاستيراد"
     },
     "columns": {
       "account": "الحساب",
@@ -1157,7 +1159,13 @@
       "selectFormat": "اختر التنسيق",
       "showingFirstRows": "عرض أول {{max}} من أصل {{total}} من الصفوف",
       "uploadCsv": "رفع ملف CSV",
-      "uploadCsvHelp": "بعد الرفع، تحقق مجددًا من إعدادات التحليل أدناه — تأكد من أن الفاصل وتنسيق التاريخ والصفوف المراد تخطيها تطابق ملفك."
+      "uploadCsvHelp": "بعد الرفع، تحقق مجددًا من إعدادات التحليل أدناه — تأكد من أن الفاصل وتنسيق التاريخ والصفوف المراد تخطيها تطابق ملفك.",
+      "pdfPasswordTitle": "أدخل كلمة مرور ملف PDF",
+      "pdfPasswordDescription": "هذا الكشف مشفّر. أدخل كلمة مرور المستند لفتحه.",
+      "pdfPasswordPlaceholder": "كلمة المرور",
+      "pdfPasswordSubmit": "فتح واستيراد",
+      "pdfPasswordHint": "كلمات المرور الشائعة: لكشوف CAMS / KFintech: رقم PAN بأحرف كبيرة أو PAN + تاريخ الميلاد. لكشوف CDSL / NSDL: رقم PAN أو رقم حساب الإيداع المكون من 16 رقمًا.",
+      "pdfDecryptionFailed": "تعذّر فك تشفير ملف PDF. يُرجى التحقق من كلمة المرور."
     },
     "validationAlert": {
       "allValidDescriptionPrefix": "انقر ",
