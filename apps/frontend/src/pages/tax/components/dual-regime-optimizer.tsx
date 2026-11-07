@@ -228,7 +228,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               <div className="flex items-center justify-between rounded-md border p-2">
                 <div className="space-y-0.5">
                   <span className="text-xs font-medium">Include Slab Gains</span>
-                  <p className="text-muted-foreground text-[10px]">
+                  <p className="text-muted-foreground text-2xs">
                     +₹{Math.round(stcgSlabTotal).toLocaleString("en-IN")} from portfolio
                   </p>
                 </div>
@@ -247,7 +247,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <div className="text-xs font-medium">Old Regime Deductions (Chapter VI-A & HRA)</div>
-              <p className="text-muted-foreground text-[11px]">
+              <p className="text-muted-foreground text-2xs">
                 Active deductions:{" "}
                 <AmountDisplay
                   value={totalOldDeductions - STANDARD_DEDUCTION_OLD}
@@ -271,7 +271,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
           {showDeductions && (
             <div className="grid gap-3 pt-2 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1">
-                <Label htmlFor="ded-80c" className="text-muted-foreground text-[11px]">
+                <Label htmlFor="ded-80c" className="text-muted-foreground text-2xs">
                   Section 80C (EPF, PPF, ELSS, max ₹1.5L)
                 </Label>
                 <Input
@@ -286,7 +286,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-80ccd" className="text-muted-foreground text-[11px]">
+                <Label htmlFor="ded-80ccd" className="text-muted-foreground text-2xs">
                   Section 80CCD(1B) (NPS, max ₹50k)
                 </Label>
                 <Input
@@ -301,7 +301,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-80d" className="text-muted-foreground text-[11px]">
+                <Label htmlFor="ded-80d" className="text-muted-foreground text-2xs">
                   Section 80D (Health Insurance)
                 </Label>
                 <Input
@@ -315,7 +315,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-hra" className="text-muted-foreground text-[11px]">
+                <Label htmlFor="ded-hra" className="text-muted-foreground text-2xs">
                   HRA Exemption (House Rent)
                 </Label>
                 <Input
@@ -329,7 +329,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-homeloan" className="text-muted-foreground text-[11px]">
+                <Label htmlFor="ded-homeloan" className="text-muted-foreground text-2xs">
                   Sec 24(b) Home Loan Interest (max ₹2L)
                 </Label>
                 <Input
@@ -344,7 +344,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-other" className="text-muted-foreground text-[11px]">
+                <Label htmlFor="ded-other" className="text-muted-foreground text-2xs">
                   Other Deductions (80E, 80G, etc.)
                 </Label>
                 <Input
@@ -366,26 +366,26 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[35%]">Component</TableHead>
-                <TableHead className="text-right">Old Regime</TableHead>
-                <TableHead className="text-right">New Regime (Budget 2024)</TableHead>
+                <TableHead className="text-end">Old Regime</TableHead>
+                <TableHead className="text-end">New Regime (Budget 2024)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="text-xs">
               <TableRow>
                 <TableCell className="font-medium">Gross Total Income</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={totalGrossIncome} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={totalGrossIncome} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
               <TableRow>
                 <TableCell className="text-muted-foreground">Standard Deduction</TableCell>
-                <TableCell className="text-success text-right">
+                <TableCell className="text-success text-end">
                   − <AmountDisplay value={STANDARD_DEDUCTION_OLD} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-success text-right font-medium">
+                <TableCell className="text-success text-end font-medium">
                   − <AmountDisplay value={STANDARD_DEDUCTION_NEW} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
@@ -393,7 +393,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
                 <TableCell className="text-muted-foreground">
                   Chapter VI-A / Other Deductions
                 </TableCell>
-                <TableCell className="text-success text-right">
+                <TableCell className="text-success text-end">
                   −{" "}
                   <AmountDisplay
                     value={totalOldDeductions - STANDARD_DEDUCTION_OLD}
@@ -401,14 +401,14 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
                     isHidden={false}
                   />
                 </TableCell>
-                <TableCell className="text-muted-foreground text-right">Not Allowed</TableCell>
+                <TableCell className="text-muted-foreground text-end">Not Allowed</TableCell>
               </TableRow>
               <TableRow className="border-t font-semibold">
                 <TableCell>Net Taxable Income</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={oldTaxableIncome} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={newTaxableIncome} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
@@ -416,10 +416,10 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
                 <TableCell className="text-muted-foreground">
                   Income Tax (after Sec 87A rebate)
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={oldTaxBeforeCess} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={newTaxBeforeCess} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
@@ -427,22 +427,22 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
                 <TableCell className="text-muted-foreground">
                   Health & Education Cess (4%)
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={oldCess} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={newCess} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
               <TableRow className="bg-muted/30 border-t text-sm font-bold">
                 <TableCell>Total Tax Payable</TableCell>
                 <TableCell
-                  className={`text-right ${recommendedRegime === "old" && !isBreakEven ? "text-success font-bold" : ""}`}
+                  className={`text-end ${recommendedRegime === "old" && !isBreakEven ? "text-success font-bold" : ""}`}
                 >
                   <AmountDisplay value={oldTotalTax} currency="INR" isHidden={false} />
                 </TableCell>
                 <TableCell
-                  className={`text-right ${recommendedRegime === "new" && !isBreakEven ? "text-success font-bold" : ""}`}
+                  className={`text-end ${recommendedRegime === "new" && !isBreakEven ? "text-success font-bold" : ""}`}
                 >
                   <AmountDisplay value={newTotalTax} currency="INR" isHidden={false} />
                 </TableCell>
@@ -455,10 +455,10 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
         <div
           className={`flex items-start gap-3 rounded-lg border p-4 ${
             isBreakEven
-              ? "border-blue-500/20 bg-blue-500/5 text-blue-900 dark:text-blue-200"
+              ? "border-info-subtle-border bg-info-subtle text-info-subtle-foreground"
               : recommendedRegime === "new"
-                ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-950 dark:text-emerald-200"
-                : "border-amber-500/20 bg-amber-500/5 text-amber-950 dark:text-amber-200"
+                ? "border-success-subtle-border bg-success-subtle text-success-subtle-foreground"
+                : "border-warning-subtle-border bg-warning-subtle text-warning-subtle-foreground"
           }`}
         >
           <Icons.CheckCircle className="mt-0.5 h-5 w-5 shrink-0" />

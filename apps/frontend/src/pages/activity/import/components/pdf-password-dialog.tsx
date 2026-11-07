@@ -52,8 +52,8 @@ export function PdfPasswordDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
-                <Icons.Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-warning-subtle">
+                <Icons.Lock className="h-4 w-4 text-warning-subtle-foreground" />
               </div>
               <DialogTitle>{t("activity:import.upload.pdfPasswordTitle")}</DialogTitle>
             </div>
@@ -73,14 +73,14 @@ export function PdfPasswordDialog({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
-                className="pr-10"
+                className="pe-10"
                 autoFocus
                 disabled={isLoading}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 p-1 text-xs"
+                className="text-muted-foreground hover:text-foreground absolute top-1/2 end-2 -translate-y-1/2 p-1 text-xs"
               >
                 {showPassword ? (
                   <Icons.EyeOff className="h-4 w-4" />
@@ -108,7 +108,7 @@ export function PdfPasswordDialog({
               {t("activity:import.toolbar.cancel")}
             </Button>
             <Button type="submit" disabled={!password.trim() || isLoading}>
-              {isLoading && <Icons.Spinner className="mr-2 h-4 w-4 animate-spin" />}
+              {isLoading && <Icons.Spinner className="me-2 h-4 w-4 animate-spin" />}
               {t("activity:import.upload.pdfPasswordSubmit")}
             </Button>
           </DialogFooter>

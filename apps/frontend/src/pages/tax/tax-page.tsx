@@ -139,7 +139,7 @@ function Sec112ACard({ summary }: { summary: IndianTaxYearSummary }) {
           <CardTitle className="text-sm font-medium">
             Section 112A — LTCG & Tax Harvesting
           </CardTitle>
-          <Badge variant={used > limit ? "destructive" : "outline"} className="text-[11px]">
+          <Badge variant={used > limit ? "destructive" : "outline"} className="text-2xs">
             {used >= limit
               ? "Exemption Exhausted"
               : `₹${Math.round(remainingExemption).toLocaleString("en-IN")} buffer left`}
@@ -240,10 +240,10 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
   if (stcl === 0 && ltcl === 0) return null;
 
   return (
-    <Card className="border-destructive/20 bg-destructive/5">
+    <Card className="border-warning-subtle-border bg-warning-subtle">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Icons.AlertTriangle className="h-4 w-4 text-orange-500" />
+          <Icons.AlertTriangle className="h-4 w-4 text-warning" />
           Carry-Forward Capital Losses
         </CardTitle>
       </CardHeader>
@@ -252,7 +252,7 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
           {stcl > 0 && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Short-Term Capital Loss</span>
-              <span className="text-destructive">
+              <span className="text-loss">
                 <AmountDisplay value={stcl} currency="INR" isHidden={false} />
               </span>
             </div>
@@ -260,7 +260,7 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
           {ltcl > 0 && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Long-Term Capital Loss</span>
-              <span className="text-destructive">
+              <span className="text-loss">
                 <AmountDisplay value={ltcl} currency="INR" isHidden={false} />
               </span>
             </div>
@@ -296,12 +296,12 @@ function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalcul
                 <TableHead>Acquired</TableHead>
                 <TableHead>Disposed</TableHead>
                 <TableHead>Period</TableHead>
-                <TableHead className="text-right">Cost Basis</TableHead>
-                <TableHead className="text-right">Proceeds</TableHead>
-                <TableHead className="text-right">Gross Gain</TableHead>
-                <TableHead className="text-right">Taxable Gain</TableHead>
-                <TableHead className="text-right">Rate</TableHead>
-                <TableHead className="text-right">Est. Tax</TableHead>
+                <TableHead className="text-end">Cost Basis</TableHead>
+                <TableHead className="text-end">Proceeds</TableHead>
+                <TableHead className="text-end">Gross Gain</TableHead>
+                <TableHead className="text-end">Taxable Gain</TableHead>
+                <TableHead className="text-end">Rate</TableHead>
+                <TableHead className="text-end">Est. Tax</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -320,7 +320,7 @@ function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalcul
                           {calc.assetName || calc.assetSymbol || calc.assetId}
                         </span>
                         {(calc.assetSymbol || calc.isin) && (
-                          <span className="text-muted-foreground text-[11px]">
+                          <span className="text-muted-foreground text-2xs">
                             {[calc.assetSymbol, calc.isin].filter(Boolean).join(" • ")}
                           </span>
                         )}
@@ -342,14 +342,14 @@ function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalcul
                         {taxSectionLabel(calc.taxSection)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right text-xs">
+                    <TableCell className="text-end text-xs">
                       <AmountDisplay
                         value={parseFloat(calc.deemedCost) || 0}
                         currency="INR"
                         isHidden={false}
                       />
                     </TableCell>
-                    <TableCell className="text-right text-xs">
+                    <TableCell className="text-end text-xs">
                       <AmountDisplay
                         value={parseFloat(calc.proceeds) || 0}
                         currency="INR"
@@ -357,15 +357,15 @@ function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalcul
                       />
                     </TableCell>
                     <TableCell
-                      className={`text-right text-xs font-medium ${isLoss ? "text-destructive" : "text-success"}`}
+                      className={`text-end text-xs font-medium ${isLoss ? "text-loss" : "text-gain"}`}
                     >
                       <AmountDisplay value={grossGain} currency="INR" isHidden={false} />
                     </TableCell>
-                    <TableCell className="text-right text-xs">
+                    <TableCell className="text-end text-xs">
                       <AmountDisplay value={taxableGain} currency="INR" isHidden={false} />
                     </TableCell>
-                    <TableCell className="text-right text-xs">{(rate * 100).toFixed(1)}%</TableCell>
-                    <TableCell className="text-right text-xs">
+                    <TableCell className="text-end text-xs">{(rate * 100).toFixed(1)}%</TableCell>
+                    <TableCell className="text-end text-xs">
                       <AmountDisplay value={estTax} currency="INR" isHidden={false} />
                     </TableCell>
                   </TableRow>
@@ -489,7 +489,7 @@ export default function TaxPage() {
 
   const filters = (
     <>
-      <div className="pointer-events-auto fixed top-4 right-2 z-20 hidden items-center gap-2 md:flex lg:right-4">
+      <div className="pointer-events-auto fixed top-4 end-2 z-20 hidden items-center gap-2 md:flex lg:end-4">
         {exportButton}
         <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
         <AnimatedToggleGroup
@@ -553,7 +553,7 @@ export default function TaxPage() {
         {filters}
         <div className="space-y-6">
           <EmptyPlaceholder
-            className="mx-auto flex max-w-[420px] items-center justify-center pt-8 pb-4"
+            className="mx-auto flex max-w-105 items-center justify-center pt-8 pb-4"
             icon={<Icons.FileText className="h-10 w-10" />}
             title="No disposals in this period"
             description={`No capital gains or losses recorded for ${fyLabel(parseInt(selectedFY))}.`}
@@ -579,8 +579,8 @@ export default function TaxPage() {
             icon={<Icons.TrendingUp className="text-muted-foreground h-4 w-4" />}
             accent={
               stcgTotal >= 0
-                ? "border-blue-500/10 bg-blue-500/5"
-                : "border-destructive/10 bg-destructive/5"
+                ? "border-gain-subtle-border bg-gain-subtle"
+                : "border-loss-subtle-border bg-loss-subtle"
             }
           />
           <MetricCard
@@ -590,8 +590,8 @@ export default function TaxPage() {
             icon={<Icons.TrendingUp className="text-muted-foreground h-4 w-4" />}
             accent={
               ltcgTotal >= 0
-                ? "border-green-500/10 bg-green-500/5"
-                : "border-destructive/10 bg-destructive/5"
+                ? "border-gain-subtle-border bg-gain-subtle"
+                : "border-loss-subtle-border bg-loss-subtle"
             }
           />
           <MetricCard
@@ -599,7 +599,7 @@ export default function TaxPage() {
             value={summary.estimatedStcgTax}
             subtitle="Estimated tax on STCG"
             icon={<Icons.Receipt className="text-muted-foreground h-4 w-4" />}
-            accent={estStcgTax > 0 ? "border-orange-500/10 bg-orange-500/5" : undefined}
+            accent={estStcgTax > 0 ? "border-warning-subtle-border bg-warning-subtle" : undefined}
           />
           <MetricCard
             title="Est. LTCG Tax"
@@ -608,20 +608,20 @@ export default function TaxPage() {
               parseFloat(summary.estimatedTotalTax) || 0,
             ).toLocaleString("en-IN")}`}
             icon={<Icons.Receipt className="text-muted-foreground h-4 w-4" />}
-            accent={estLtcgTax > 0 ? "border-orange-500/10 bg-orange-500/5" : undefined}
+            accent={estLtcgTax > 0 ? "border-warning-subtle-border bg-warning-subtle" : undefined}
           />
         </div>
 
         {summary.warnings.length > 0 && (
-          <Card className="border-orange-500/20 bg-orange-500/5">
+          <Card className="border-warning-subtle-border bg-warning-subtle">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                <Icons.AlertTriangle className="h-4 w-4 text-orange-500" />
+                <Icons.AlertTriangle className="h-4 w-4 text-warning" />
                 Check before filing
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ul className="list-disc space-y-1 pl-5 text-sm">
+              <ul className="list-disc space-y-1 ps-5 text-sm">
                 {summary.warnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
