@@ -103,7 +103,8 @@
     "label_holdings": "查看持仓",
     "label_activities": "查看活动",
     "label_goals": "目标",
-    "label_assistant": "AI 助手"
+    "label_assistant": "AI 助手",
+    "label_tax": "税务与报税"
   },
   "layout": {
     "search": "搜索...",
@@ -686,5 +687,6 @@
     "accountNumberMax": "账户号码不得超过 64 个字符。",
     "accountCurrency": "请选择货币。",
     "creditCardTracking": "信用卡账户不能使用持仓跟踪模式。"
-  }
+  },
+  "tax": "税务与报税"
 }

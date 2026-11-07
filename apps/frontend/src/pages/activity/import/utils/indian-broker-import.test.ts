@@ -88,12 +88,7 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
         "SWP",
         "SYSTEMATIC WITHDRAWAL",
       ],
-      [ActivityType.DIVIDEND]: [
-        "DIVIDEND PAYOUT",
-        "DIVIDEND REINVESTMENT",
-        "DIVIDEND",
-        "DIV",
-      ],
+      [ActivityType.DIVIDEND]: ["DIVIDEND PAYOUT", "DIVIDEND REINVESTMENT", "DIVIDEND", "DIV"],
       [ActivityType.TAX]: [
         "STAMP DUTY",
         "STAMP_DUTY",
@@ -102,11 +97,7 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
         "TDS",
         "WITHHOLDING TAX",
       ],
-      [ActivityType.FEE]: [
-        "BROKERAGE",
-        "TRANSACTION CHARGES",
-        "CHARGES",
-      ],
+      [ActivityType.FEE]: ["BROKERAGE", "TRANSACTION CHARGES", "CHARGES"],
     },
     symbolMappings: {},
     accountMappings: {},
@@ -143,10 +134,18 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
     });
 
     it("maps buy/sell trade types using Zerodha template mappings", () => {
-      expect(findMappedActivityType("buy", zerodhaTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("BUY", zerodhaTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("sell", zerodhaTemplate.activityMappings)).toBe(ActivityType.SELL);
-      expect(findMappedActivityType("SELL", zerodhaTemplate.activityMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("buy", zerodhaTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(findMappedActivityType("BUY", zerodhaTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(findMappedActivityType("sell", zerodhaTemplate.activityMappings)).toBe(
+        ActivityType.SELL,
+      );
+      expect(findMappedActivityType("SELL", zerodhaTemplate.activityMappings)).toBe(
+        ActivityType.SELL,
+      );
     });
   });
 
@@ -177,7 +176,9 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
 
     it("maps trade types using Groww template mappings", () => {
       expect(findMappedActivityType("BUY", growwTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("SELL", growwTemplate.activityMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("SELL", growwTemplate.activityMappings)).toBe(
+        ActivityType.SELL,
+      );
     });
   });
 
@@ -208,28 +209,60 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
 
     it("resolves Indian mutual fund transaction descriptions to canonical activity types", () => {
       // Purchases
-      expect(findMappedActivityType("PURCHASE", camsCasTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("SIP", camsCasTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("ADDITIONAL PURCHASE", camsCasTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("SWITCH IN", camsCasTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("SYSTEMATIC INVESTMENT", camsCasTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("REINVESTMENT", camsCasTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("PURCHASE", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(findMappedActivityType("SIP", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(findMappedActivityType("ADDITIONAL PURCHASE", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(findMappedActivityType("SWITCH IN", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(
+        findMappedActivityType("SYSTEMATIC INVESTMENT", camsCasTemplate.activityMappings),
+      ).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("REINVESTMENT", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
 
       // Redemptions / Withdrawals
-      expect(findMappedActivityType("REDEMPTION", camsCasTemplate.activityMappings)).toBe(ActivityType.SELL);
-      expect(findMappedActivityType("SWITCH OUT", camsCasTemplate.activityMappings)).toBe(ActivityType.SELL);
-      expect(findMappedActivityType("SWP", camsCasTemplate.activityMappings)).toBe(ActivityType.SELL);
-      expect(findMappedActivityType("SYSTEMATIC WITHDRAWAL", camsCasTemplate.activityMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("REDEMPTION", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.SELL,
+      );
+      expect(findMappedActivityType("SWITCH OUT", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.SELL,
+      );
+      expect(findMappedActivityType("SWP", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.SELL,
+      );
+      expect(
+        findMappedActivityType("SYSTEMATIC WITHDRAWAL", camsCasTemplate.activityMappings),
+      ).toBe(ActivityType.SELL);
 
       // Dividends
-      expect(findMappedActivityType("DIVIDEND PAYOUT", camsCasTemplate.activityMappings)).toBe(ActivityType.DIVIDEND);
-      expect(findMappedActivityType("DIVIDEND REINVESTMENT", camsCasTemplate.activityMappings)).toBe(ActivityType.DIVIDEND);
+      expect(findMappedActivityType("DIVIDEND PAYOUT", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.DIVIDEND,
+      );
+      expect(
+        findMappedActivityType("DIVIDEND REINVESTMENT", camsCasTemplate.activityMappings),
+      ).toBe(ActivityType.DIVIDEND);
 
       // Taxes & Charges
-      expect(findMappedActivityType("STAMP DUTY", camsCasTemplate.activityMappings)).toBe(ActivityType.TAX);
-      expect(findMappedActivityType("STT", camsCasTemplate.activityMappings)).toBe(ActivityType.TAX);
-      expect(findMappedActivityType("TDS", camsCasTemplate.activityMappings)).toBe(ActivityType.TAX);
-      expect(findMappedActivityType("TRANSACTION CHARGES", camsCasTemplate.activityMappings)).toBe(ActivityType.FEE);
+      expect(findMappedActivityType("STAMP DUTY", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.TAX,
+      );
+      expect(findMappedActivityType("STT", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.TAX,
+      );
+      expect(findMappedActivityType("TDS", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.TAX,
+      );
+      expect(findMappedActivityType("TRANSACTION CHARGES", camsCasTemplate.activityMappings)).toBe(
+        ActivityType.FEE,
+      );
     });
   });
 
@@ -311,20 +344,36 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
 
     it("maps CDSL depository activity descriptions correctly", () => {
       // Inward movements
-      expect(findMappedActivityType("PURCHASE", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("OFF-MARKET INWARD", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("IPO ALLOTMENT", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("PURCHASE", cdslTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(findMappedActivityType("OFF-MARKET INWARD", cdslTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(findMappedActivityType("IPO ALLOTMENT", cdslTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
       expect(findMappedActivityType("BONUS", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("INTER-DEPOSITORY TRANSFER INWARD", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(
+        findMappedActivityType("INTER-DEPOSITORY TRANSFER INWARD", cdslTemplate.activityMappings),
+      ).toBe(ActivityType.BUY);
 
       // Outward movements
       expect(findMappedActivityType("SALE", cdslTemplate.activityMappings)).toBe(ActivityType.SELL);
-      expect(findMappedActivityType("OFF-MARKET OUTWARD", cdslTemplate.activityMappings)).toBe(ActivityType.SELL);
-      expect(findMappedActivityType("INTER-DEPOSITORY TRANSFER OUTWARD", cdslTemplate.activityMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("OFF-MARKET OUTWARD", cdslTemplate.activityMappings)).toBe(
+        ActivityType.SELL,
+      );
+      expect(
+        findMappedActivityType("INTER-DEPOSITORY TRANSFER OUTWARD", cdslTemplate.activityMappings),
+      ).toBe(ActivityType.SELL);
 
       // Corporate action split
-      expect(findMappedActivityType("STOCK SPLIT", cdslTemplate.activityMappings)).toBe(ActivityType.SPLIT);
-      expect(findMappedActivityType("SUBDIVISION", cdslTemplate.activityMappings)).toBe(ActivityType.SPLIT);
+      expect(findMappedActivityType("STOCK SPLIT", cdslTemplate.activityMappings)).toBe(
+        ActivityType.SPLIT,
+      );
+      expect(findMappedActivityType("SUBDIVISION", cdslTemplate.activityMappings)).toBe(
+        ActivityType.SPLIT,
+      );
     });
   });
 
@@ -407,17 +456,29 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
     it("maps NSDL depository activity descriptions correctly", () => {
       // Inward movements
       expect(findMappedActivityType("BUY", nsdlTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("DEMAT INWARD", nsdlTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("OFF-MARKET INWARD", nsdlTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(findMappedActivityType("RIGHTS", nsdlTemplate.activityMappings)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("DEMAT INWARD", nsdlTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(findMappedActivityType("OFF-MARKET INWARD", nsdlTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
+      expect(findMappedActivityType("RIGHTS", nsdlTemplate.activityMappings)).toBe(
+        ActivityType.BUY,
+      );
 
       // Outward movements
       expect(findMappedActivityType("SELL", nsdlTemplate.activityMappings)).toBe(ActivityType.SELL);
-      expect(findMappedActivityType("DEMAT OUTWARD", nsdlTemplate.activityMappings)).toBe(ActivityType.SELL);
-      expect(findMappedActivityType("OFF-MARKET OUTWARD", nsdlTemplate.activityMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("DEMAT OUTWARD", nsdlTemplate.activityMappings)).toBe(
+        ActivityType.SELL,
+      );
+      expect(findMappedActivityType("OFF-MARKET OUTWARD", nsdlTemplate.activityMappings)).toBe(
+        ActivityType.SELL,
+      );
 
       // Split
-      expect(findMappedActivityType("SUB-DIVISION", nsdlTemplate.activityMappings)).toBe(ActivityType.SPLIT);
+      expect(findMappedActivityType("SUB-DIVISION", nsdlTemplate.activityMappings)).toBe(
+        ActivityType.SPLIT,
+      );
     });
   });
 });

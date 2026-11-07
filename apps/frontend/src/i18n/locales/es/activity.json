@@ -1245,7 +1245,9 @@
       "editDialogDescription": "Ajusta los detalles del activo resuelto. Las ediciones se aplican solo a esta importación.",
       "createDialogDescription": "Crea un nuevo activo y vincula estas filas a él de inmediato.",
       "useEditedAsset": "Usar activo editado",
-      "createAsset": "Crear activo"
+      "createAsset": "Crear activo",
+      "skip": "Omitir",
+      "skipAsset": "Omitir el activo y sus filas en la importación"
     },
     "holdings": {
       "columns": "Columnas",

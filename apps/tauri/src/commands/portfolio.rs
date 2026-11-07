@@ -4,9 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::{
-    commands::utilities::{
-        save_content_with_dialog, write_pending_export_content, DataExportResult,
-    },
+    commands::utilities::DataExportResult,
     context::ServiceContext,
     events::{
         emit_portfolio_trigger_recalculate, emit_portfolio_trigger_update, PortfolioRequestPayload,
@@ -1816,7 +1814,8 @@ pub async fn export_indian_schedule_cg(
 
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {
-        let pending_export = write_pending_export_content(
+        let _ = &app_handle;
+        let pending_export = crate::commands::utilities::write_pending_export_content(
             std::path::Path::new(state.app_data_dir()),
             &filename,
             &content,
@@ -1826,7 +1825,7 @@ pub async fn export_indian_schedule_cg(
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        if save_content_with_dialog(&app_handle, &filename, &content)? {
+        if crate::commands::utilities::save_content_with_dialog(&app_handle, &filename, &content)? {
             Ok(DataExportResult::saved(filename))
         } else {
             Ok(DataExportResult::canceled())

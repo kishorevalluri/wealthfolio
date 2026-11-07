@@ -1,7 +1,13 @@
 import { AmountDisplay } from "@wealthfolio/ui";
 import { Badge } from "@wealthfolio/ui/components/ui/badge";
 import { Button } from "@wealthfolio/ui/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@wealthfolio/ui/components/ui/card";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Input } from "@wealthfolio/ui/components/ui/input";
 import { Label } from "@wealthfolio/ui/components/ui/label";
@@ -30,11 +36,11 @@ function calculateOldRegimeTax(taxableIncome: number): number {
   if (taxableIncome <= 0) return 0;
   let tax = 0;
   if (taxableIncome > 1_000_000) {
-    tax += (taxableIncome - 1_000_000) * 0.30;
-    tax += 500_000 * 0.20; // 5L to 10L
+    tax += (taxableIncome - 1_000_000) * 0.3;
+    tax += 500_000 * 0.2; // 5L to 10L
     tax += 250_000 * 0.05; // 2.5L to 5L
   } else if (taxableIncome > 500_000) {
-    tax += (taxableIncome - 500_000) * 0.20;
+    tax += (taxableIncome - 500_000) * 0.2;
     tax += 250_000 * 0.05;
   } else if (taxableIncome > 250_000) {
     tax += (taxableIncome - 250_000) * 0.05;
@@ -59,22 +65,22 @@ function calculateNewRegimeTax(taxableIncome: number): number {
   if (taxableIncome <= 0) return 0;
   let tax = 0;
   if (taxableIncome > 1_500_000) {
-    tax += (taxableIncome - 1_500_000) * 0.30;
-    tax += 300_000 * 0.20; // 12L to 15L
+    tax += (taxableIncome - 1_500_000) * 0.3;
+    tax += 300_000 * 0.2; // 12L to 15L
     tax += 200_000 * 0.15; // 10L to 12L
-    tax += 300_000 * 0.10; // 7L to 10L
+    tax += 300_000 * 0.1; // 7L to 10L
     tax += 400_000 * 0.05; // 3L to 7L
   } else if (taxableIncome > 1_200_000) {
-    tax += (taxableIncome - 1_200_000) * 0.20;
+    tax += (taxableIncome - 1_200_000) * 0.2;
     tax += 200_000 * 0.15;
-    tax += 300_000 * 0.10;
+    tax += 300_000 * 0.1;
     tax += 400_000 * 0.05;
   } else if (taxableIncome > 1_000_000) {
     tax += (taxableIncome - 1_000_000) * 0.15;
-    tax += 300_000 * 0.10;
+    tax += 300_000 * 0.1;
     tax += 400_000 * 0.05;
   } else if (taxableIncome > 700_000) {
-    tax += (taxableIncome - 700_000) * 0.10;
+    tax += (taxableIncome - 700_000) * 0.1;
     tax += 400_000 * 0.05;
   } else if (taxableIncome > 300_000) {
     tax += (taxableIncome - 300_000) * 0.05;
@@ -164,7 +170,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Icons.Receipt className="h-5 w-5 text-primary" />
+              <Icons.Receipt className="text-primary h-5 w-5" />
               Dual-Regime Tax Optimizer (Budget 2024)
             </CardTitle>
             <CardDescription className="text-xs">
@@ -174,7 +180,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
           </div>
           <Badge
             variant={recommendedRegime === "new" ? "default" : "secondary"}
-            className="w-fit text-xs font-semibold px-3 py-1"
+            className="w-fit px-3 py-1 text-xs font-semibold"
           >
             {isBreakEven
               ? "Both Regimes Equal"
@@ -222,7 +228,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               <div className="flex items-center justify-between rounded-md border p-2">
                 <div className="space-y-0.5">
                   <span className="text-xs font-medium">Include Slab Gains</span>
-                  <p className="text-muted-foreground text-[10px]">
+                  <p className="text-muted-foreground text-2xs">
                     +₹{Math.round(stcgSlabTotal).toLocaleString("en-IN")} from portfolio
                   </p>
                 </div>
@@ -237,12 +243,18 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
         </div>
 
         {/* Collapsible Old Regime Deductions */}
-        <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+        <div className="bg-muted/20 space-y-3 rounded-lg border p-3">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <div className="text-xs font-medium">Old Regime Deductions (Chapter VI-A & HRA)</div>
-              <p className="text-muted-foreground text-[11px]">
-                Active deductions: <AmountDisplay value={totalOldDeductions - STANDARD_DEDUCTION_OLD} currency="INR" isHidden={false} /> (+ ₹50,000 std ded)
+              <p className="text-muted-foreground text-2xs">
+                Active deductions:{" "}
+                <AmountDisplay
+                  value={totalOldDeductions - STANDARD_DEDUCTION_OLD}
+                  currency="INR"
+                  isHidden={false}
+                />{" "}
+                (+ ₹50,000 std ded)
               </p>
             </div>
             <Button
@@ -259,7 +271,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
           {showDeductions && (
             <div className="grid gap-3 pt-2 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1">
-                <Label htmlFor="ded-80c" className="text-[11px] text-muted-foreground">
+                <Label htmlFor="ded-80c" className="text-muted-foreground text-2xs">
                   Section 80C (EPF, PPF, ELSS, max ₹1.5L)
                 </Label>
                 <Input
@@ -274,7 +286,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-80ccd" className="text-[11px] text-muted-foreground">
+                <Label htmlFor="ded-80ccd" className="text-muted-foreground text-2xs">
                   Section 80CCD(1B) (NPS, max ₹50k)
                 </Label>
                 <Input
@@ -289,7 +301,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-80d" className="text-[11px] text-muted-foreground">
+                <Label htmlFor="ded-80d" className="text-muted-foreground text-2xs">
                   Section 80D (Health Insurance)
                 </Label>
                 <Input
@@ -303,7 +315,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-hra" className="text-[11px] text-muted-foreground">
+                <Label htmlFor="ded-hra" className="text-muted-foreground text-2xs">
                   HRA Exemption (House Rent)
                 </Label>
                 <Input
@@ -317,7 +329,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-homeloan" className="text-[11px] text-muted-foreground">
+                <Label htmlFor="ded-homeloan" className="text-muted-foreground text-2xs">
                   Sec 24(b) Home Loan Interest (max ₹2L)
                 </Label>
                 <Input
@@ -332,7 +344,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="ded-other" className="text-[11px] text-muted-foreground">
+                <Label htmlFor="ded-other" className="text-muted-foreground text-2xs">
                   Other Deductions (80E, 80G, etc.)
                 </Label>
                 <Input
@@ -354,71 +366,84 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[35%]">Component</TableHead>
-                <TableHead className="text-right">Old Regime</TableHead>
-                <TableHead className="text-right">New Regime (Budget 2024)</TableHead>
+                <TableHead className="text-end">Old Regime</TableHead>
+                <TableHead className="text-end">New Regime (Budget 2024)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="text-xs">
               <TableRow>
                 <TableCell className="font-medium">Gross Total Income</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={totalGrossIncome} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={totalGrossIncome} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
               <TableRow>
                 <TableCell className="text-muted-foreground">Standard Deduction</TableCell>
-                <TableCell className="text-right text-success">
+                <TableCell className="text-success text-end">
                   − <AmountDisplay value={STANDARD_DEDUCTION_OLD} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-right text-success font-medium">
+                <TableCell className="text-success text-end font-medium">
                   − <AmountDisplay value={STANDARD_DEDUCTION_NEW} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell className="text-muted-foreground">Chapter VI-A / Other Deductions</TableCell>
-                <TableCell className="text-right text-success">
-                  − <AmountDisplay value={totalOldDeductions - STANDARD_DEDUCTION_OLD} currency="INR" isHidden={false} />
+                <TableCell className="text-muted-foreground">
+                  Chapter VI-A / Other Deductions
                 </TableCell>
-                <TableCell className="text-right text-muted-foreground">
-                  Not Allowed
+                <TableCell className="text-success text-end">
+                  −{" "}
+                  <AmountDisplay
+                    value={totalOldDeductions - STANDARD_DEDUCTION_OLD}
+                    currency="INR"
+                    isHidden={false}
+                  />
                 </TableCell>
+                <TableCell className="text-muted-foreground text-end">Not Allowed</TableCell>
               </TableRow>
               <TableRow className="border-t font-semibold">
                 <TableCell>Net Taxable Income</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={oldTaxableIncome} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={newTaxableIncome} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell className="text-muted-foreground">Income Tax (after Sec 87A rebate)</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-muted-foreground">
+                  Income Tax (after Sec 87A rebate)
+                </TableCell>
+                <TableCell className="text-end">
                   <AmountDisplay value={oldTaxBeforeCess} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={newTaxBeforeCess} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell className="text-muted-foreground">Health & Education Cess (4%)</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-muted-foreground">
+                  Health & Education Cess (4%)
+                </TableCell>
+                <TableCell className="text-end">
                   <AmountDisplay value={oldCess} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-end">
                   <AmountDisplay value={newCess} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
-              <TableRow className="border-t bg-muted/30 text-sm font-bold">
+              <TableRow className="bg-muted/30 border-t text-sm font-bold">
                 <TableCell>Total Tax Payable</TableCell>
-                <TableCell className={`text-right ${recommendedRegime === "old" && !isBreakEven ? "text-success font-bold" : ""}`}>
+                <TableCell
+                  className={`text-end ${recommendedRegime === "old" && !isBreakEven ? "text-success font-bold" : ""}`}
+                >
                   <AmountDisplay value={oldTotalTax} currency="INR" isHidden={false} />
                 </TableCell>
-                <TableCell className={`text-right ${recommendedRegime === "new" && !isBreakEven ? "text-success font-bold" : ""}`}>
+                <TableCell
+                  className={`text-end ${recommendedRegime === "new" && !isBreakEven ? "text-success font-bold" : ""}`}
+                >
                   <AmountDisplay value={newTotalTax} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
@@ -430,16 +455,21 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
         <div
           className={`flex items-start gap-3 rounded-lg border p-4 ${
             isBreakEven
-              ? "border-blue-500/20 bg-blue-500/5 text-blue-900 dark:text-blue-200"
+              ? "border-info-subtle-border bg-info-subtle text-info-subtle-foreground"
               : recommendedRegime === "new"
-                ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-950 dark:text-emerald-200"
-                : "border-amber-500/20 bg-amber-500/5 text-amber-950 dark:text-amber-200"
+                ? "border-success-subtle-border bg-success-subtle text-success-subtle-foreground"
+                : "border-warning-subtle-border bg-warning-subtle text-warning-subtle-foreground"
           }`}
         >
           <Icons.CheckCircle className="mt-0.5 h-5 w-5 shrink-0" />
           <div className="space-y-1 text-xs">
-            <div className="font-semibold text-sm">
-              Recommendation: {isBreakEven ? "Choose either regime" : recommendedRegime === "new" ? "Opt for New Tax Regime" : "Opt for Old Tax Regime"}
+            <div className="text-sm font-semibold">
+              Recommendation:{" "}
+              {isBreakEven
+                ? "Choose either regime"
+                : recommendedRegime === "new"
+                  ? "Opt for New Tax Regime"
+                  : "Opt for Old Tax Regime"}
             </div>
             <p className="leading-relaxed">
               {isBreakEven ? (
@@ -447,13 +477,16 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               ) : recommendedRegime === "new" ? (
                 <>
                   The <strong>New Tax Regime</strong> saves you{" "}
-                  <strong>₹{difference.toLocaleString("en-IN")}</strong> in tax. Its lower slab rates and enhanced ₹75,000 standard deduction outweigh your Old Regime exemptions.
+                  <strong>₹{difference.toLocaleString("en-IN")}</strong> in tax. Its lower slab
+                  rates and enhanced ₹75,000 standard deduction outweigh your Old Regime exemptions.
                 </>
               ) : (
                 <>
                   The <strong>Old Tax Regime</strong> saves you{" "}
-                  <strong>₹{difference.toLocaleString("en-IN")}</strong> in tax due to your claimed deductions of{" "}
-                  ₹{(totalOldDeductions - STANDARD_DEDUCTION_OLD).toLocaleString("en-IN")} under Section 80C, 80D, and HRA.
+                  <strong>₹{difference.toLocaleString("en-IN")}</strong> in tax due to your claimed
+                  deductions of ₹
+                  {(totalOldDeductions - STANDARD_DEDUCTION_OLD).toLocaleString("en-IN")} under
+                  Section 80C, 80D, and HRA.
                 </>
               )}
             </p>

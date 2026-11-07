@@ -103,7 +103,8 @@
     "label_holdings": "보유 종목 보기",
     "label_activities": "활동 보기",
     "label_goals": "목표",
-    "label_assistant": "AI 어시스턴트"
+    "label_assistant": "AI 어시스턴트",
+    "label_tax": "세금 및 ITR"
   },
   "layout": {
     "search": "검색...",
@@ -686,5 +687,6 @@
     "accountNumberMax": "계좌 번호는 64자를 초과할 수 없습니다.",
     "accountCurrency": "통화를 선택해 주세요.",
     "creditCardTracking": "신용카드 계좌는 보유 자산 추적 모드를 사용할 수 없습니다."
-  }
+  },
+  "tax": "세금 및 ITR"
 }

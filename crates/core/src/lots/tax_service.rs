@@ -10,38 +10,40 @@ use super::{
     IndianTaxYearSummary, LotRepositoryTrait,
 };
 use crate::assets::{Asset, AssetServiceTrait, InstrumentType};
-use crate::errors::Result;
+use crate::errors::{Result, ValidationError};
+
+/// The tax type set explicitly in the asset's metadata (`taxClassification`),
+/// if any.
+pub fn explicit_tax_classification(asset: &Asset) -> Option<IndianAssetTaxClassification> {
+    let metadata = asset.metadata.as_ref()?;
+    let s = metadata
+        .get("taxClassification")
+        .or_else(|| metadata.get("assetTaxClassification"))?
+        .as_str()?;
+    match s.to_lowercase().as_str() {
+        "equity_listed" | "equitylisted" => Some(IndianAssetTaxClassification::EquityListed),
+        "equity_mf" | "equitymf" => Some(IndianAssetTaxClassification::EquityMf),
+        "reit_invit" | "reitinvit" => Some(IndianAssetTaxClassification::ReitInvIt),
+        "debt_mf" | "debtmf" | "debt_mf_post_2023" | "debtmfpost2023" => {
+            Some(IndianAssetTaxClassification::DebtMf)
+        }
+        "unlisted_debenture_post_2024" | "unlisteddebenturepost2024" => {
+            Some(IndianAssetTaxClassification::UnlistedDebenturePost2024)
+        }
+        "other_capital_asset" | "othercapitalasset" => {
+            Some(IndianAssetTaxClassification::OtherCapitalAsset)
+        }
+        "gold_sgb" | "goldsgb" => Some(IndianAssetTaxClassification::GoldSgb),
+        _ => None,
+    }
+}
 
 /// Classifies an asset for Indian capital gains taxation based on its instrument type,
 /// exchange MIC, and explicit metadata overrides.
 pub fn classify_asset_for_indian_tax(asset: &Asset) -> IndianAssetTaxClassification {
-    // 1. Check explicit override in metadata
-    if let Some(metadata) = &asset.metadata {
-        if let Some(val) = metadata
-            .get("taxClassification")
-            .or_else(|| metadata.get("assetTaxClassification"))
-        {
-            if let Some(s) = val.as_str() {
-                match s.to_lowercase().as_str() {
-                    "equity_listed" | "equitylisted" => {
-                        return IndianAssetTaxClassification::EquityListed
-                    }
-                    "equity_mf" | "equitymf" => return IndianAssetTaxClassification::EquityMf,
-                    "reit_invit" | "reitinvit" => return IndianAssetTaxClassification::ReitInvIt,
-                    "debt_mf" | "debtmf" | "debt_mf_post_2023" | "debtmfpost2023" => {
-                        return IndianAssetTaxClassification::DebtMf
-                    }
-                    "unlisted_debenture_post_2024" | "unlisteddebenturepost2024" => {
-                        return IndianAssetTaxClassification::UnlistedDebenturePost2024;
-                    }
-                    "other_capital_asset" | "othercapitalasset" => {
-                        return IndianAssetTaxClassification::OtherCapitalAsset
-                    }
-                    "gold_sgb" | "goldsgb" => return IndianAssetTaxClassification::GoldSgb,
-                    _ => {}
-                }
-            }
-        }
+    // 1. Explicit tax type in metadata wins
+    if let Some(c) = explicit_tax_classification(asset) {
+        return c;
     }
 
     // 2. Derive classification from instrument identity & metadata
@@ -111,8 +113,15 @@ pub async fn compute_indian_tax_summary(
         return Ok(empty());
     }
 
-    let start_date_exclusive = NaiveDate::from_ymd_opt(fy_start_year, 3, 31).unwrap();
-    let end_date_inclusive = NaiveDate::from_ymd_opt(fy_start_year + 1, 3, 31).unwrap();
+    let (Some(start_date_exclusive), Some(end_date_inclusive)) = (
+        NaiveDate::from_ymd_opt(fy_start_year, 3, 31),
+        NaiveDate::from_ymd_opt(fy_start_year + 1, 3, 31),
+    ) else {
+        return Err(ValidationError::InvalidInput(format!(
+            "Financial year {fy_start_year} is out of range"
+        ))
+        .into());
+    };
 
     let disposals = lots_repo
         .get_lot_disposals_for_accounts_in_date_range(
@@ -171,7 +180,7 @@ pub async fn compute_indian_tax_summary(
         );
     }
 
-    let summary = calculate_indian_capital_gains(
+    let mut summary = calculate_indian_capital_gains(
         &disposals,
         &lot_open_dates,
         &asset_classifications,
@@ -179,6 +188,26 @@ pub async fn compute_indian_tax_summary(
         &asset_info_map,
         fy_start_year,
     );
+
+    // Funds whose tax type was guessed: a debt or international fund guessed as
+    // an equity fund is taxed at the wrong rate, so ask for it to be set.
+    let sold: std::collections::HashSet<&str> =
+        disposals.iter().map(|d| d.asset_id.as_str()).collect();
+    let mut guessed: Vec<String> = assets
+        .iter()
+        .filter(|a| sold.contains(a.id.as_str()))
+        .filter(|a| explicit_tax_classification(a).is_none())
+        .filter(|a| classify_asset_for_indian_tax(a) == IndianAssetTaxClassification::EquityMf)
+        .map(|a| a.name.clone().unwrap_or_else(|| a.id.clone()))
+        .collect();
+    guessed.sort();
+    if !guessed.is_empty() {
+        summary.warnings.push(format!(
+            "The tax type of {} was guessed as equity fund. If any is a debt, gold or \
+             international fund, set its Indian tax type on the asset's page.",
+            guessed.join(", ")
+        ));
+    }
 
     Ok(summary)
 }

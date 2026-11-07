@@ -52,18 +52,90 @@ interface LimitPreset {
 
 const LIMIT_PRESETS: LimitPreset[] = [
   // India (Income Tax Act & CG Exemptions)
-  { name: "Section 80C (PPF/ELSS/EPF)", label: "80C (₹1.5L)", amount: 150000, isFinancialYear: true, category: "in" },
-  { name: "Section 80CCD(1B) NPS", label: "80CCD(1B) NPS (₹50k)", amount: 50000, isFinancialYear: true, category: "in" },
-  { name: "Section 80D Self & Family Health", label: "80D Health (₹25k)", amount: 25000, isFinancialYear: true, category: "in" },
-  { name: "Section 80D Senior Citizen Parents", label: "80D Parents (₹50k)", amount: 50000, isFinancialYear: true, category: "in" },
-  { name: "Section 80CCD(2) Employer NPS", label: "80CCD(2) Corp NPS", amount: 100000, isFinancialYear: true, category: "in" },
-  { name: "Section 24(b) Home Loan Interest", label: "24(b) Home Loan (₹2L)", amount: 200000, isFinancialYear: true, category: "in" },
-  { name: "Section 80TTA Savings Interest", label: "80TTA Interest (₹10k)", amount: 10000, isFinancialYear: true, category: "in" },
-  { name: "Section 80TTB Senior Interest", label: "80TTB Sr Interest (₹50k)", amount: 50000, isFinancialYear: true, category: "in" },
-  { name: "Section 80E Education Loan", label: "80E Edu Loan", amount: 50000, isFinancialYear: true, category: "in" },
-  { name: "Section 80G Donations", label: "80G Donations", amount: 25000, isFinancialYear: true, category: "in" },
-  { name: "Section 112A LTCG Equity Exemption", label: "112A LTCG Exemption (₹1.25L)", amount: 125000, isFinancialYear: true, category: "in" },
-  { name: "Section 54EC Capital Gains Bonds", label: "54EC CG Bonds (₹50L)", amount: 5000000, isFinancialYear: true, category: "in" },
+  {
+    name: "Section 80C (PPF/ELSS/EPF)",
+    label: "80C (₹1.5L)",
+    amount: 150000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 80CCD(1B) NPS",
+    label: "80CCD(1B) NPS (₹50k)",
+    amount: 50000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 80D Self & Family Health",
+    label: "80D Health (₹25k)",
+    amount: 25000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 80D Senior Citizen Parents",
+    label: "80D Parents (₹50k)",
+    amount: 50000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 80CCD(2) Employer NPS",
+    label: "80CCD(2) Corp NPS",
+    amount: 100000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 24(b) Home Loan Interest",
+    label: "24(b) Home Loan (₹2L)",
+    amount: 200000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 80TTA Savings Interest",
+    label: "80TTA Interest (₹10k)",
+    amount: 10000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 80TTB Senior Interest",
+    label: "80TTB Sr Interest (₹50k)",
+    amount: 50000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 80E Education Loan",
+    label: "80E Edu Loan",
+    amount: 50000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 80G Donations",
+    label: "80G Donations",
+    amount: 25000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 112A LTCG Equity Exemption",
+    label: "112A LTCG Exemption (₹1.25L)",
+    amount: 125000,
+    isFinancialYear: true,
+    category: "in",
+  },
+  {
+    name: "Section 54EC Capital Gains Bonds",
+    label: "54EC CG Bonds (₹50L)",
+    amount: 5000000,
+    isFinancialYear: true,
+    category: "in",
+  },
 
   // US & Others
   { name: "Traditional / Roth IRA", label: "IRA ($7k)", amount: 7000, category: "us" },
@@ -223,7 +295,9 @@ export function ContributionLimitForm({
               <div className="space-y-6">
                 <div className="space-y-2">
                   <div className="text-muted-foreground flex items-center justify-between text-xs font-medium">
-                    <span>{t("settings:limits_form_presets_label", { defaultValue: "Presets" })}</span>
+                    <span>
+                      {t("settings:limits_form_presets_label", { defaultValue: "Presets" })}
+                    </span>
                     <div className="flex gap-1">
                       <Button
                         type="button"

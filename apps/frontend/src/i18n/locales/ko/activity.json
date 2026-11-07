@@ -1194,7 +1194,9 @@
       "editDialogDescription": "확인된 자산의 세부 정보를 조정하세요. 편집 내용은 이번 가져오기에만 적용됩니다.",
       "createDialogDescription": "새 자산을 만들고 이 행들을 즉시 연결합니다.",
       "useEditedAsset": "편집한 자산 사용",
-      "createAsset": "자산 만들기"
+      "createAsset": "자산 만들기",
+      "skip": "건너뛰기",
+      "skipAsset": "이 자산과 해당 행을 가져오지 않음"
     },
     "holdings": {
       "columns": "열",

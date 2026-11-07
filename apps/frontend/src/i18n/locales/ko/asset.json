@@ -314,6 +314,21 @@
       "bond": "채권",
       "option": "옵션",
       "metal": "귀금속 (원자재)"
+    },
+    "indian_tax_section": "인도 세금",
+    "indian_tax_type": "인도 과세 유형",
+    "indian_tax_type_auto": "자동",
+    "indian_tax_type_hint": "이 자산의 양도차익이 인도에서 과세되는 방식입니다. 자동은 자산 유형으로 추정하며 모든 펀드를 주식형으로 처리하므로 채권·금·해외 펀드는 직접 설정하세요.",
+    "fmv_2018": "2018년 1월 31일 가격",
+    "fmv_2018_hint": "2018년 1월 31일 단위당 최고가(펀드는 기준가). 2018년 2월 1일 이전에 매수한 단위의 경과 규정에 사용됩니다.",
+    "indianTaxTypes": {
+      "equity_listed": "상장 주식",
+      "equity_mf": "주식형 펀드 또는 ETF",
+      "reit_invit": "REIT 또는 InvIT",
+      "debt_mf": "채권·금·기타 펀드",
+      "unlisted_debenture_post_2024": "비상장 채권",
+      "gold_sgb": "금 또는 국채형 금 채권",
+      "other_capital_asset": "기타 자산"
     }
   },
   "assetForm": {

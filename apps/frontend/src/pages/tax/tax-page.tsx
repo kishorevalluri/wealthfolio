@@ -10,12 +10,7 @@ import type {
 } from "@/lib/types";
 import { Badge } from "@wealthfolio/ui/components/ui/badge";
 import { Button } from "@wealthfolio/ui/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@wealthfolio/ui/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
 import { EmptyPlaceholder } from "@wealthfolio/ui/components/ui/empty-placeholder";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
@@ -117,9 +112,7 @@ function MetricCard({ title, value, subtitle, icon, accent }: MetricCardProps) {
         <div className="text-2xl font-bold">
           <AmountDisplay value={numericValue} currency="INR" isHidden={false} />
         </div>
-        {subtitle && (
-          <p className="text-muted-foreground mt-1 text-xs">{subtitle}</p>
-        )}
+        {subtitle && <p className="text-muted-foreground mt-1 text-xs">{subtitle}</p>}
       </CardContent>
     </Card>
   );
@@ -146,10 +139,7 @@ function Sec112ACard({ summary }: { summary: IndianTaxYearSummary }) {
           <CardTitle className="text-sm font-medium">
             Section 112A — LTCG & Tax Harvesting
           </CardTitle>
-          <Badge
-            variant={used > limit ? "destructive" : "outline"}
-            className="text-[11px]"
-          >
+          <Badge variant={used > limit ? "destructive" : "outline"} className="text-2xs">
             {used >= limit
               ? "Exemption Exhausted"
               : `₹${Math.round(remainingExemption).toLocaleString("en-IN")} buffer left`}
@@ -159,9 +149,7 @@ function Sec112ACard({ summary }: { summary: IndianTaxYearSummary }) {
       <CardContent className="space-y-4">
         <div className="space-y-1.5">
           <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">
-              Exemption Threshold Used ({limitLabel})
-            </span>
+            <span className="text-muted-foreground">Exemption Threshold Used ({limitLabel})</span>
             <span className="font-medium">{percentUsed}%</span>
           </div>
           <Progress value={percentUsed} className="h-2" />
@@ -175,12 +163,7 @@ function Sec112ACard({ summary }: { summary: IndianTaxYearSummary }) {
           <div className="flex justify-between">
             <span className="text-muted-foreground">Exemption Applied</span>
             <span className="text-success">
-              −{" "}
-              <AmountDisplay
-                value={exemption}
-                currency="INR"
-                isHidden={false}
-              />
+              − <AmountDisplay value={exemption} currency="INR" isHidden={false} />
             </span>
           </div>
           <div className="flex justify-between border-t pt-2 font-medium">
@@ -218,8 +201,7 @@ function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
       value: parseFloat(summary.ltcg112aPostBudget) || 0,
     },
     {
-      label:
-        "LTCG — Sec 112 (20% with indexation before 23 Jul 2024, 12.5% after)",
+      label: "LTCG — Sec 112 (20% with indexation before 23 Jul 2024, 12.5% after)",
       value: parseFloat(summary.ltcgOtherTotal) || 0,
     },
     {
@@ -233,20 +215,14 @@ function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">
-          Gain Breakdown by Rate Bucket
-        </CardTitle>
+        <CardTitle className="text-sm font-medium">Gain Breakdown by Rate Bucket</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 text-sm">
           {rows.map((row, i) => (
             <div key={i} className="flex justify-between">
               <span className="text-muted-foreground">{row.label}</span>
-              <AmountDisplay
-                value={row.value}
-                currency="INR"
-                isHidden={false}
-              />
+              <AmountDisplay value={row.value} currency="INR" isHidden={false} />
             </div>
           ))}
         </div>
@@ -264,10 +240,10 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
   if (stcl === 0 && ltcl === 0) return null;
 
   return (
-    <Card className="border-destructive/20 bg-destructive/5">
+    <Card className="border-warning-subtle-border bg-warning-subtle">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Icons.AlertTriangle className="h-4 w-4 text-orange-500" />
+          <Icons.AlertTriangle className="text-warning h-4 w-4" />
           Carry-Forward Capital Losses
         </CardTitle>
       </CardHeader>
@@ -275,20 +251,16 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
         <div className="space-y-2 text-sm">
           {stcl > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">
-                Short-Term Capital Loss
-              </span>
-              <span className="text-destructive">
+              <span className="text-muted-foreground">Short-Term Capital Loss</span>
+              <span className="text-loss">
                 <AmountDisplay value={stcl} currency="INR" isHidden={false} />
               </span>
             </div>
           )}
           {ltcl > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">
-                Long-Term Capital Loss
-              </span>
-              <span className="text-destructive">
+              <span className="text-muted-foreground">Long-Term Capital Loss</span>
+              <span className="text-loss">
                 <AmountDisplay value={ltcl} currency="INR" isHidden={false} />
               </span>
             </div>
@@ -304,11 +276,7 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
 
 // ── Disposal Table ─────────────────────────────────────────────────────────────
 
-function DisposalTable({
-  calculations,
-}: {
-  calculations: IndianCapitalGainCalculation[];
-}) {
+function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalculation[] }) {
   if (calculations.length === 0) return null;
 
   return (
@@ -328,12 +296,12 @@ function DisposalTable({
                 <TableHead>Acquired</TableHead>
                 <TableHead>Disposed</TableHead>
                 <TableHead>Period</TableHead>
-                <TableHead className="text-right">Cost Basis</TableHead>
-                <TableHead className="text-right">Proceeds</TableHead>
-                <TableHead className="text-right">Gross Gain</TableHead>
-                <TableHead className="text-right">Taxable Gain</TableHead>
-                <TableHead className="text-right">Rate</TableHead>
-                <TableHead className="text-right">Est. Tax</TableHead>
+                <TableHead className="text-end">Cost Basis</TableHead>
+                <TableHead className="text-end">Proceeds</TableHead>
+                <TableHead className="text-end">Gross Gain</TableHead>
+                <TableHead className="text-end">Taxable Gain</TableHead>
+                <TableHead className="text-end">Rate</TableHead>
+                <TableHead className="text-end">Est. Tax</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -352,10 +320,8 @@ function DisposalTable({
                           {calc.assetName || calc.assetSymbol || calc.assetId}
                         </span>
                         {(calc.assetSymbol || calc.isin) && (
-                          <span className="text-muted-foreground text-[11px]">
-                            {[calc.assetSymbol, calc.isin]
-                              .filter(Boolean)
-                              .join(" • ")}
+                          <span className="text-muted-foreground text-2xs">
+                            {[calc.assetSymbol, calc.isin].filter(Boolean).join(" • ")}
                           </span>
                         )}
                       </div>
@@ -365,33 +331,25 @@ function DisposalTable({
                         {classificationLabel(calc.classification)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs">
-                      {calc.acquisitionDate.slice(0, 10)}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {calc.disposalDate.slice(0, 10)}
-                    </TableCell>
+                    <TableCell className="text-xs">{calc.acquisitionDate.slice(0, 10)}</TableCell>
+                    <TableCell className="text-xs">{calc.disposalDate.slice(0, 10)}</TableCell>
                     <TableCell>
                       <Badge
-                        variant={
-                          calc.holdingPeriod === "long_term"
-                            ? "secondary"
-                            : "outline"
-                        }
+                        variant={calc.holdingPeriod === "long_term" ? "secondary" : "outline"}
                         className="text-xs"
                       >
                         {calc.holdingPeriod === "long_term" ? "LT" : "ST"} ·{" "}
                         {taxSectionLabel(calc.taxSection)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right text-xs">
+                    <TableCell className="text-end text-xs">
                       <AmountDisplay
                         value={parseFloat(calc.deemedCost) || 0}
                         currency="INR"
                         isHidden={false}
                       />
                     </TableCell>
-                    <TableCell className="text-right text-xs">
+                    <TableCell className="text-end text-xs">
                       <AmountDisplay
                         value={parseFloat(calc.proceeds) || 0}
                         currency="INR"
@@ -399,30 +357,16 @@ function DisposalTable({
                       />
                     </TableCell>
                     <TableCell
-                      className={`text-right text-xs font-medium ${isLoss ? "text-destructive" : "text-success"}`}
+                      className={`text-end text-xs font-medium ${isLoss ? "text-loss" : "text-gain"}`}
                     >
-                      <AmountDisplay
-                        value={grossGain}
-                        currency="INR"
-                        isHidden={false}
-                      />
+                      <AmountDisplay value={grossGain} currency="INR" isHidden={false} />
                     </TableCell>
-                    <TableCell className="text-right text-xs">
-                      <AmountDisplay
-                        value={taxableGain}
-                        currency="INR"
-                        isHidden={false}
-                      />
+                    <TableCell className="text-end text-xs">
+                      <AmountDisplay value={taxableGain} currency="INR" isHidden={false} />
                     </TableCell>
-                    <TableCell className="text-right text-xs">
-                      {(rate * 100).toFixed(1)}%
-                    </TableCell>
-                    <TableCell className="text-right text-xs">
-                      <AmountDisplay
-                        value={estTax}
-                        currency="INR"
-                        isHidden={false}
-                      />
+                    <TableCell className="text-end text-xs">{(rate * 100).toFixed(1)}%</TableCell>
+                    <TableCell className="text-end text-xs">
+                      <AmountDisplay value={estTax} currency="INR" isHidden={false} />
                     </TableCell>
                   </TableRow>
                 );
@@ -499,10 +443,7 @@ export default function TaxPage() {
   const handleExportScheduleCg = async () => {
     try {
       setIsExporting(true);
-      const result = await exportIndianScheduleCg(
-        accountFilter,
-        parseInt(selectedFY),
-      );
+      const result = await exportIndianScheduleCg(accountFilter, parseInt(selectedFY));
       if (result.status === "saved") {
         toast({
           title: "Schedule CG Exported",
@@ -521,10 +462,7 @@ export default function TaxPage() {
     } catch (err) {
       toast({
         title: "Export Failed",
-        description:
-          err instanceof Error
-            ? err.message
-            : "Failed to export Schedule CG CSV.",
+        description: err instanceof Error ? err.message : "Failed to export Schedule CG CSV.",
         variant: "destructive",
       });
     } finally {
@@ -551,12 +489,9 @@ export default function TaxPage() {
 
   const filters = (
     <>
-      <div className="pointer-events-auto fixed right-2 top-4 z-20 hidden items-center gap-2 md:flex lg:right-4">
+      <div className="pointer-events-auto fixed end-2 top-4 z-20 hidden items-center gap-2 md:flex lg:end-4">
         {exportButton}
-        <AccountScopeSelector
-          value={accountFilter}
-          onChange={setAccountScope}
-        />
+        <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
         <AnimatedToggleGroup
           variant="secondary"
           size="sm"
@@ -573,10 +508,7 @@ export default function TaxPage() {
           value={selectedFY}
           onValueChange={(v) => v && setSelectedFY(v)}
         />
-        <AccountScopeSelector
-          value={accountFilter}
-          onChange={setAccountScope}
-        />
+        <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
         {exportButton}
       </div>
     </>
@@ -621,7 +553,7 @@ export default function TaxPage() {
         {filters}
         <div className="space-y-6">
           <EmptyPlaceholder
-            className="mx-auto flex max-w-[420px] items-center justify-center pt-8 pb-4"
+            className="mx-auto flex max-w-105 items-center justify-center pt-8 pb-4"
             icon={<Icons.FileText className="h-10 w-10" />}
             title="No disposals in this period"
             description={`No capital gains or losses recorded for ${fyLabel(parseInt(selectedFY))}.`}
@@ -644,26 +576,22 @@ export default function TaxPage() {
             title="Total STCG"
             value={summary.stcgTotal}
             subtitle="Short-Term Capital Gains"
-            icon={
-              <Icons.TrendingUp className="text-muted-foreground h-4 w-4" />
-            }
+            icon={<Icons.TrendingUp className="text-muted-foreground h-4 w-4" />}
             accent={
               stcgTotal >= 0
-                ? "border-blue-500/10 bg-blue-500/5"
-                : "border-destructive/10 bg-destructive/5"
+                ? "border-gain-subtle-border bg-gain-subtle"
+                : "border-loss-subtle-border bg-loss-subtle"
             }
           />
           <MetricCard
             title="Total LTCG"
             value={summary.ltcgTotal}
             subtitle="Long-Term Capital Gains"
-            icon={
-              <Icons.TrendingUp className="text-muted-foreground h-4 w-4" />
-            }
+            icon={<Icons.TrendingUp className="text-muted-foreground h-4 w-4" />}
             accent={
               ltcgTotal >= 0
-                ? "border-green-500/10 bg-green-500/5"
-                : "border-destructive/10 bg-destructive/5"
+                ? "border-gain-subtle-border bg-gain-subtle"
+                : "border-loss-subtle-border bg-loss-subtle"
             }
           />
           <MetricCard
@@ -671,11 +599,7 @@ export default function TaxPage() {
             value={summary.estimatedStcgTax}
             subtitle="Estimated tax on STCG"
             icon={<Icons.Receipt className="text-muted-foreground h-4 w-4" />}
-            accent={
-              estStcgTax > 0
-                ? "border-orange-500/10 bg-orange-500/5"
-                : undefined
-            }
+            accent={estStcgTax > 0 ? "border-warning-subtle-border bg-warning-subtle" : undefined}
           />
           <MetricCard
             title="Est. LTCG Tax"
@@ -684,24 +608,20 @@ export default function TaxPage() {
               parseFloat(summary.estimatedTotalTax) || 0,
             ).toLocaleString("en-IN")}`}
             icon={<Icons.Receipt className="text-muted-foreground h-4 w-4" />}
-            accent={
-              estLtcgTax > 0
-                ? "border-orange-500/10 bg-orange-500/5"
-                : undefined
-            }
+            accent={estLtcgTax > 0 ? "border-warning-subtle-border bg-warning-subtle" : undefined}
           />
         </div>
 
         {summary.warnings.length > 0 && (
-          <Card className="border-orange-500/20 bg-orange-500/5">
+          <Card className="border-warning-subtle-border bg-warning-subtle">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                <Icons.AlertTriangle className="h-4 w-4 text-orange-500" />
+                <Icons.AlertTriangle className="text-warning h-4 w-4" />
                 Check before filing
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ul className="list-disc space-y-1 pl-5 text-sm">
+              <ul className="list-disc space-y-1 ps-5 text-sm">
                 {summary.warnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
@@ -726,10 +646,9 @@ export default function TaxPage() {
         <DisposalTable calculations={summary.calculations} />
 
         <p className="text-muted-foreground text-xs">
-          * Estimates apply loss set-off (Section 70) and the Section 112A
-          exemption, and add 4% cess. Slab-rate gains, surcharge and indexation
-          are not included. Per-row tax is before set-off. Consult a chartered
-          accountant before filing your ITR.
+          * Estimates apply loss set-off (Section 70) and the Section 112A exemption, and add 4%
+          cess. Slab-rate gains, surcharge and indexation are not included. Per-row tax is before
+          set-off. Consult a chartered accountant before filing your ITR.
         </p>
       </div>
     </>

@@ -1,8 +1,4 @@
-import {
-  importActivitySchema,
-  importMappingSchema,
-  parseConfigSchema,
-} from "@/lib/schemas";
+import { importActivitySchema, importMappingSchema, parseConfigSchema } from "@/lib/schemas";
 import * as z from "zod";
 import type { LoanSetup } from "@/adapters/shared/alternative-assets";
 import {
@@ -196,9 +192,7 @@ const OVERRIDE_PADDING =
  * as the backend and the portfolio engine read it.
  */
 function typeOverride(activity: TypedActivity): string | undefined {
-  return (
-    activity.activityTypeOverride?.replace(OVERRIDE_PADDING, "") || undefined
-  );
+  return activity.activityTypeOverride?.replace(OVERRIDE_PADDING, "") || undefined;
 }
 
 /**
@@ -225,10 +219,7 @@ export function getActivityDisplayName(activity: Activity): string {
   }
   // Use effective type (respects user override)
   const effectiveType = getEffectiveType(activity);
-  return (
-    (ACTIVITY_TYPE_DISPLAY_NAMES as Record<string, string>)[effectiveType] ||
-    effectiveType
-  );
+  return (ACTIVITY_TYPE_DISPLAY_NAMES as Record<string, string>)[effectiveType] || effectiveType;
 }
 
 export interface ActivityDetails {
@@ -579,12 +570,7 @@ export interface ParsedCsvResult {
   rowCount: number;
 }
 
-export type StatementType =
-  | "CAMS_CAS"
-  | "KFINTECH_CAS"
-  | "CDSL_CAS"
-  | "NSDL_CAS"
-  | "UNKNOWN";
+export type StatementType = "CAMS_CAS" | "KFINTECH_CAS" | "CDSL_CAS" | "NSDL_CAS" | "UNKNOWN";
 
 export interface ParsedPdfResult {
   parsed: ParsedCsvResult;
@@ -711,9 +697,7 @@ export interface ImportActivitiesSummary {
   errorMessage?: string;
 }
 
-export type ValidationResult =
-  | { status: "success" }
-  | { status: "error"; errors: string[] };
+export type ValidationResult = { status: "success" } | { status: "error"; errors: string[] };
 
 // Holding types based on Rust HoldingView model
 
@@ -1018,19 +1002,9 @@ export interface SettingsContextType {
   setAccountsGrouped: (value: boolean) => void;
 }
 
-export type GoalType =
-  | "retirement"
-  | "education"
-  | "wedding"
-  | "home"
-  | "car"
-  | "custom_save_up";
+export type GoalType = "retirement" | "education" | "wedding" | "home" | "car" | "custom_save_up";
 export type GoalLifecycle = "active" | "achieved" | "archived";
-export type GoalHealth =
-  | "on_track"
-  | "at_risk"
-  | "off_track"
-  | "not_applicable";
+export type GoalHealth = "on_track" | "at_risk" | "off_track" | "not_applicable";
 export type PlanKind = "retirement" | "save_up";
 export type PlannerMode = "fire" | "traditional";
 
@@ -1148,16 +1122,7 @@ export interface DateRange {
   to: Date | undefined;
 }
 
-export type TimePeriod =
-  | "1D"
-  | "1W"
-  | "1M"
-  | "3M"
-  | "6M"
-  | "YTD"
-  | "1Y"
-  | "5Y"
-  | "ALL";
+export type TimePeriod = "1D" | "1W" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "5Y" | "ALL";
 
 export type ValuationStatus = "complete" | "partialUnpriced" | "unavailable";
 
@@ -1324,10 +1289,7 @@ export interface ContributionLimit {
   updatedAt?: string;
 }
 
-export type NewContributionLimit = Omit<
-  ContributionLimit,
-  "id" | "createdAt" | "updatedAt"
->;
+export type NewContributionLimit = Omit<ContributionLimit, "id" | "createdAt" | "updatedAt">;
 
 export interface AccountDeposit {
   amount: number;
@@ -1374,23 +1336,11 @@ export interface PerformancePeriod {
   endDate?: string | null;
 }
 
-export type ReturnMethod =
-  | "timeWeighted"
-  | "valueReturn"
-  | "symbolPriceBased"
-  | "notApplicable";
+export type ReturnMethod = "timeWeighted" | "valueReturn" | "symbolPriceBased" | "notApplicable";
 
-export type BasisStatus =
-  | "complete"
-  | "partialUnknown"
-  | "unknown"
-  | "notApplicable";
+export type BasisStatus = "complete" | "partialUnknown" | "unknown" | "notApplicable";
 
-export type PerformanceSummaryBasis =
-  | "marketValue"
-  | "bookBasis"
-  | "mixed"
-  | "notApplicable";
+export type PerformanceSummaryBasis = "marketValue" | "bookBasis" | "mixed" | "notApplicable";
 
 export type PerformanceSummaryStatus = "complete" | "unavailable";
 
@@ -1573,12 +1523,7 @@ export interface Platform {
 
 export type ImportRunType = "SYNC" | "IMPORT";
 export type ImportRunMode = "INITIAL" | "INCREMENTAL" | "BACKFILL" | "REPAIR";
-export type ImportRunStatus =
-  | "RUNNING"
-  | "APPLIED"
-  | "NEEDS_REVIEW"
-  | "FAILED"
-  | "CANCELLED";
+export type ImportRunStatus = "RUNNING" | "APPLIED" | "NEEDS_REVIEW" | "FAILED" | "CANCELLED";
 export type ReviewMode = "NEVER" | "ALWAYS" | "IF_WARNINGS";
 
 export interface ImportRunSummary {
@@ -2798,11 +2743,7 @@ export interface SaveUpProjectionPointDTO extends SaveUpTrajectoryPointDTO {
 export type TargetScopeType = "all" | "portfolio" | "account";
 export type TriggerType = "manual" | "threshold";
 export type RebalanceGoal = "nearest_band" | "exact_target";
-export type DriftStatus =
-  | "in_band"
-  | "underweight"
-  | "overweight"
-  | "not_targeted";
+export type DriftStatus = "in_band" | "underweight" | "overweight" | "not_targeted";
 export type RebalanceTo = "nearest_band" | "exact_target";
 
 export type BandType = "absolute" | "hybrid";
@@ -2948,10 +2889,7 @@ export type WorksheetMode = "invest_cash" | "rebalance";
 export type AllocationRule = "current_holding_proportions";
 export type WorksheetDirection = "increase" | "reduce";
 export type WorksheetInputMode = "amount" | "quantity";
-export type UnresolvedReason =
-  | "no_recorded_security"
-  | "no_eligible_security"
-  | "no_usable_price";
+export type UnresolvedReason = "no_recorded_security" | "no_eligible_security" | "no_usable_price";
 
 export interface UnresolvedCategoryAmount {
   categoryId: string;

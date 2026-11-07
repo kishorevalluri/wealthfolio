@@ -314,6 +314,21 @@
       "bond": "Bond",
       "option": "Option",
       "metal": "Metal (Commodity)"
+    },
+    "indian_tax_section": "Indian tax",
+    "indian_tax_type": "Indian tax type",
+    "indian_tax_type_auto": "Automatic",
+    "indian_tax_type_hint": "How gains on this asset are taxed in India. Automatic guesses from the asset type and treats every fund as an equity fund, so set it for debt, gold and international funds.",
+    "fmv_2018": "Price on 31 Jan 2018",
+    "fmv_2018_hint": "Highest price (or NAV for funds) on 31 Jan 2018 per unit. Used to grandfather units bought before 1 Feb 2018.",
+    "indianTaxTypes": {
+      "equity_listed": "Listed shares",
+      "equity_mf": "Equity fund or ETF",
+      "reit_invit": "REIT or InvIT",
+      "debt_mf": "Debt, gold or other non-equity fund",
+      "unlisted_debenture_post_2024": "Unlisted bond or debenture",
+      "gold_sgb": "Gold or Sovereign Gold Bond",
+      "other_capital_asset": "Other capital asset"
     }
   },
   "assetForm": {

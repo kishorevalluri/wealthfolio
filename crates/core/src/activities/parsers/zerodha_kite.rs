@@ -23,7 +23,8 @@ pub fn parse_zerodha_tradebook(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     let headers = zerodha_tradebook_headers();
     let mut rows: Vec<Vec<String>> = Vec::new();
 
-    let date_regex = regex::Regex::new(r"^\b(\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})\b").unwrap();
+    let date_regex = regex::Regex::new(r"^\b(\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})\b")
+        .expect("hard-coded regex is valid");
 
     for line in text.lines() {
         let trimmed = line.trim();

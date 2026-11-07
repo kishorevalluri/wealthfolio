@@ -70,22 +70,22 @@ pub enum IndianTaxSection {
 
 /// 23 Jul 2024: Finance (No. 2) Act 2024 rates and holding periods take effect.
 fn budget_2024_date() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2024, 7, 23).unwrap()
+    NaiveDate::from_ymd_opt(2024, 7, 23).expect("hard-coded date is valid")
 }
 
 /// 31 Jan 2018: Section 55(2)(ac) grandfathering cut-off.
 fn grandfathering_cutoff() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2018, 1, 31).unwrap()
+    NaiveDate::from_ymd_opt(2018, 1, 31).expect("hard-coded date is valid")
 }
 
 /// 1 Apr 2018: Section 112A replaces the Section 10(38) exemption.
 fn sec_112a_start() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2018, 4, 1).unwrap()
+    NaiveDate::from_ymd_opt(2018, 4, 1).expect("hard-coded date is valid")
 }
 
 /// 1 Apr 2023: Section 50AA starts applying to non-equity mutual funds.
 fn sec_50aa_mf_start() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2023, 4, 1).unwrap()
+    NaiveDate::from_ymd_opt(2023, 4, 1).expect("hard-coded date is valid")
 }
 
 /// Financial year (start year) that contains `date`: April to March.
@@ -426,6 +426,7 @@ pub fn calculate_indian_capital_gains(
     let mut nets: HashMap<Bucket, Decimal> = HashMap::new();
     let mut missing_open_dates = 0usize;
     let mut non_fifo = false;
+    let mut missing_fmv: std::collections::BTreeSet<String> = Default::default();
 
     for d in disposals {
         let Some(disp_date) = parse_date(&d.disposal_date) else {
@@ -460,6 +461,17 @@ pub fn calculate_indian_capital_gains(
         let info = asset_info.get(&d.asset_id);
         let holding_period = determine_holding_period_category(acq_date, disp_date, classification);
         let tax_section = determine_tax_section(acq_date, disp_date, classification);
+
+        if tax_section == IndianTaxSection::Sec112a
+            && acq_date <= grandfathering_cutoff()
+            && fmv_per_unit_2018.is_none()
+        {
+            missing_fmv.insert(
+                info.map(|i| i.name.clone())
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| d.asset_id.clone()),
+            );
+        }
 
         let deemed_cost = if tax_section == IndianTaxSection::Sec112a {
             calculate_grandfathered_cost_basis(
@@ -599,6 +611,14 @@ pub fn calculate_indian_capital_gains(
         summary.warnings.push(format!(
             "{} sale(s) have no purchase date and are treated as short-term.",
             missing_open_dates
+        ));
+    }
+    if !missing_fmv.is_empty() {
+        summary.warnings.push(format!(
+            "No 31 Jan 2018 price is set for {}. These were bought before Feb 2018, so \
+             grandfathering is skipped and the gain may be overstated. Set the price on \
+             each asset's page.",
+            missing_fmv.into_iter().collect::<Vec<_>>().join(", ")
         ));
     }
     if summary.ltcg_112a_pre_budget != Decimal::ZERO
@@ -863,6 +883,39 @@ mod tests {
         assert_eq!(row.deemed_cost, dec!(150000));
         assert_eq!(row.gross_gain, dec!(50000));
         assert_eq!(row.tax_section, IndianTaxSection::Sec112a);
+    }
+
+    #[test]
+    fn missing_2018_price_on_old_holding_raises_a_warning() {
+        let summary = run(
+            &[
+                sale(
+                    "OLD",
+                    EquityListed,
+                    date(2017, 6, 15),
+                    date(2024, 8, 10),
+                    dec!(1000),
+                    dec!(2000),
+                ),
+                // Bought after the cut-off: no FMV needed.
+                sale(
+                    "NEW",
+                    EquityListed,
+                    date(2019, 6, 15),
+                    date(2024, 8, 10),
+                    dec!(1000),
+                    dec!(2000),
+                ),
+            ],
+            2024,
+        );
+        let w: Vec<_> = summary
+            .warnings
+            .iter()
+            .filter(|w| w.contains("31 Jan 2018"))
+            .collect();
+        assert_eq!(w.len(), 1);
+        assert!(w[0].contains("OLD") && !w[0].contains("NEW"));
     }
 
     // ── Worked years ──

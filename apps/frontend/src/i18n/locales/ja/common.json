@@ -103,7 +103,8 @@
     "label_holdings": "保有銘柄を表示",
     "label_activities": "取引を表示",
     "label_goals": "目標",
-    "label_assistant": "AIアシスタント"
+    "label_assistant": "AIアシスタント",
+    "label_tax": "税金とITR"
   },
   "layout": {
     "search": "検索...",
@@ -686,5 +687,6 @@
     "accountNumberMax": "口座番号は64文字以内で入力してください。",
     "accountCurrency": "通貨を選択してください。",
     "creditCardTracking": "クレジットカード口座では保有資産追跡モードを使用できません。"
-  }
+  },
+  "tax": "税金とITR"
 }

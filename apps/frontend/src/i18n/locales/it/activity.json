@@ -1245,7 +1245,9 @@
       "editDialogDescription": "Modifica i dettagli dell'asset risolto. Le modifiche si applicano solo a questa importazione.",
       "createDialogDescription": "Crea un nuovo asset e collega immediatamente queste righe ad esso.",
       "useEditedAsset": "Usa asset modificato",
-      "createAsset": "Crea asset"
+      "createAsset": "Crea asset",
+      "skip": "Salta",
+      "skipAsset": "Escludi il titolo e le sue righe dall'importazione"
     },
     "holdings": {
       "columns": "Colonne",
