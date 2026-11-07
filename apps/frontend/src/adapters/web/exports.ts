@@ -123,3 +123,40 @@ export const exportIndianScheduleCg = async (
 
   return { status: "saved", filename };
 };
+
+/** Downloads one part (0-based) of the ClearTax capital gains workbook. */
+export const exportIndianClearTax = async (
+  filter?: unknown,
+  financialYear?: number,
+  part = 0,
+): Promise<DataExportResult> => {
+  const response = await profileFetch(`${API_PREFIX}/tax/indian/cleartax/export/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ filter: filter ?? null, financialYear: financialYear ?? null, part }),
+  });
+
+  if (response.status === 401) {
+    notifyUnauthorized();
+  }
+  if (response.status === 204) {
+    return { status: "empty" };
+  }
+  if (!response.ok) {
+    let message = response.statusText;
+    try {
+      const error = await response.json();
+      message = (error?.message ?? message) as string;
+    } catch {
+      // Keep HTTP status text
+    }
+    throw new Error(message);
+  }
+
+  const filename =
+    filenameFromContentDisposition(response.headers.get("Content-Disposition")) ??
+    `cleartax_capital_gains_${financialYear ?? "current"}.xlsx`;
+  downloadBlob(await response.blob(), filename);
+  return { status: "saved", filename };
+};

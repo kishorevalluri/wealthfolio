@@ -1,4 +1,4 @@
-import { exportIndianScheduleCg, getIndianTaxSummary } from "@/adapters";
+import { exportIndianClearTax, exportIndianScheduleCg, getIndianTaxSummary } from "@/adapters";
 import { AccountScopeSelector } from "@/components/account-filter-selector";
 import { useAccountScopeStore } from "@/lib/account-scope-store";
 import { QueryKeys } from "@/lib/query-keys";
@@ -425,6 +425,7 @@ export default function TaxPage() {
   const currentFY = useMemo(() => getCurrentFY(), []);
   const [selectedFY, setSelectedFY] = useState(String(currentFY));
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingClearTax, setIsExportingClearTax] = useState(false);
 
   const accountFilter = useAccountScopeStore((state) => state.scope);
   const setAccountScope = useAccountScopeStore((state) => state.setScope);
@@ -470,6 +471,60 @@ export default function TaxPage() {
     }
   };
 
+  // ClearTax takes at most 5,000 rows per file, so a big year comes in parts.
+  const handleExportClearTax = async () => {
+    const parts = Math.max(1, summary?.cleartaxFiles ?? 1);
+    const fy = parseInt(selectedFY);
+    const saved: string[] = [];
+    try {
+      setIsExportingClearTax(true);
+      for (let part = 0; part < parts; part++) {
+        const result = await exportIndianClearTax(accountFilter, fy, part);
+        if (result.status === "empty") {
+          toast({
+            title: "Nothing for ClearTax",
+            description: "No share or mutual fund sales in this financial year.",
+          });
+          return;
+        }
+        if (result.status !== "saved") return;
+        if (result.filename) saved.push(result.filename);
+      }
+      toast({
+        title: "ClearTax file exported",
+        description:
+          parts > 1
+            ? `Saved ${saved.length} files. Upload each one to ClearTax.`
+            : `Saved ${saved[0] ?? "the ClearTax workbook"}. Upload it under Capital Gains in ClearTax.`,
+        variant: "success",
+      });
+    } catch (err) {
+      toast({
+        title: "Export Failed",
+        description: err instanceof Error ? err.message : "Failed to export the ClearTax file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingClearTax(false);
+    }
+  };
+
+  const clearTaxButton = (
+    <Button
+      size="sm"
+      onClick={handleExportClearTax}
+      disabled={isExportingClearTax || isLoading || !summary?.cleartaxFiles}
+      className="gap-1.5 text-xs font-medium"
+    >
+      {isExportingClearTax ? (
+        <Icons.Loader className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Icons.Download className="h-3.5 w-3.5" />
+      )}
+      <span>Export for ClearTax</span>
+    </Button>
+  );
+
   const exportButton = (
     <Button
       variant="outline"
@@ -483,13 +538,14 @@ export default function TaxPage() {
       ) : (
         <Icons.Download className="h-3.5 w-3.5" />
       )}
-      <span>Export Schedule CG</span>
+      <span>Schedule CG (CSV)</span>
     </Button>
   );
 
   const filters = (
     <>
       <div className="pointer-events-auto fixed end-2 top-4 z-20 hidden items-center gap-2 md:flex lg:end-4">
+        {clearTaxButton}
         {exportButton}
         <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
         <AnimatedToggleGroup
@@ -509,6 +565,7 @@ export default function TaxPage() {
           onValueChange={(v) => v && setSelectedFY(v)}
         />
         <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
+        {clearTaxButton}
         {exportButton}
       </div>
     </>

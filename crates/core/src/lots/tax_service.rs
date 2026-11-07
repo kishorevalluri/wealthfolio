@@ -209,6 +209,15 @@ pub async fn compute_indian_tax_summary(
         ));
     }
 
+    let excluded = super::cleartax_excluded_count(&summary);
+    if excluded > 0 {
+        summary.warnings.push(format!(
+            "{excluded} sale(s) of gold, bonds or other assets are not in the ClearTax file. \
+             Enter them in ClearTax by hand."
+        ));
+    }
+    summary.cleartax_files = super::cleartax_file_count(&summary);
+
     Ok(summary)
 }
 

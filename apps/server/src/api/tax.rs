@@ -10,7 +10,10 @@ use chrono::Datelike;
 use wealthfolio_core::{
     accounts::AccountServiceTrait,
     exports::{format_records, ExportFileFormat},
-    lots::{compute_indian_tax_summary, to_schedule_cg_rows, IndianTaxYearSummary},
+    lots::{
+        build_cleartax_workbook, cleartax_file_name, compute_indian_tax_summary,
+        to_schedule_cg_rows, IndianTaxYearSummary,
+    },
     portfolios::AccountScope,
 };
 
@@ -189,6 +192,55 @@ async fn export_schedule_cg_post(
         .into_response())
 }
 
+#[derive(serde::Deserialize)]
+pub struct IndianClearTaxBody {
+    pub filter: Option<AccountScope>,
+    #[serde(rename = "financialYear")]
+    pub financial_year: Option<i32>,
+    /// 0-based part when the year needs more than one 5,000-row file.
+    pub part: Option<usize>,
+}
+
+/// POST /tax/indian/cleartax/export/query
+async fn export_cleartax_post(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+    Json(body): Json<IndianClearTaxBody>,
+) -> ApiResult<axum::response::Response> {
+    use axum::http::{header, StatusCode};
+    use axum::response::IntoResponse;
+
+    let account_ids = resolve_tax_accounts(&state, body.filter.as_ref(), None)?;
+    let fy = body.financial_year.unwrap_or_else(default_financial_year);
+    let summary = compute_indian_tax_summary(
+        state.lots_repository.as_ref(),
+        state.asset_service.as_ref(),
+        &account_ids,
+        fy,
+    )
+    .await?;
+
+    let part = body.part.unwrap_or(0);
+    let Some(content) = build_cleartax_workbook(&summary, part)? else {
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    };
+    let filename = cleartax_file_name(fy, part, summary.cleartax_files);
+
+    Ok((
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
+            ),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}\"", filename),
+            ),
+        ],
+        content,
+    )
+        .into_response())
+}
+
 pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new()
         .route("/tax/indian/summary", get(get_indian_tax_summary_get))
@@ -200,5 +252,9 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
         .route(
             "/tax/indian/schedule-cg/export/query",
             post(export_schedule_cg_post),
+        )
+        .route(
+            "/tax/indian/cleartax/export/query",
+            post(export_cleartax_post),
         )
 }

@@ -344,6 +344,8 @@ pub struct IndianTaxYearSummary {
     pub estimated_total_tax: Decimal,
     /// Things the person should check before filing
     pub warnings: Vec<String>,
+    /// ClearTax workbooks the year needs (5,000 rows per sheet per file)
+    pub cleartax_files: usize,
     pub calculations: Vec<IndianCapitalGainCalculation>,
 }
 
@@ -1226,6 +1228,7 @@ mod tests {
             "estimatedTotalTax",
             "sec112aLtcgGross",
             "warnings",
+            "cleartaxFiles",
         ] {
             assert!(v.get(key).is_some(), "missing {key}");
         }

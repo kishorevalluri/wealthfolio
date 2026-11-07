@@ -411,6 +411,7 @@ pub fn run() {
             commands::portfolio::get_income_summary,
             commands::portfolio::get_indian_tax_summary,
             commands::portfolio::export_indian_schedule_cg,
+            commands::portfolio::export_indian_cleartax,
             commands::portfolio::get_historical_valuations,
             commands::portfolio::get_latest_valuations,
             commands::portfolio::get_current_valuation,
