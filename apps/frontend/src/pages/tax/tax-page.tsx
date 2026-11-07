@@ -243,7 +243,7 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
     <Card className="border-warning-subtle-border bg-warning-subtle">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Icons.AlertTriangle className="h-4 w-4 text-warning" />
+          <Icons.AlertTriangle className="text-warning h-4 w-4" />
           Carry-Forward Capital Losses
         </CardTitle>
       </CardHeader>
@@ -489,7 +489,7 @@ export default function TaxPage() {
 
   const filters = (
     <>
-      <div className="pointer-events-auto fixed top-4 end-2 z-20 hidden items-center gap-2 md:flex lg:end-4">
+      <div className="pointer-events-auto fixed end-2 top-4 z-20 hidden items-center gap-2 md:flex lg:end-4">
         {exportButton}
         <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
         <AnimatedToggleGroup
@@ -616,7 +616,7 @@ export default function TaxPage() {
           <Card className="border-warning-subtle-border bg-warning-subtle">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                <Icons.AlertTriangle className="h-4 w-4 text-warning" />
+                <Icons.AlertTriangle className="text-warning h-4 w-4" />
                 Check before filing
               </CardTitle>
             </CardHeader>

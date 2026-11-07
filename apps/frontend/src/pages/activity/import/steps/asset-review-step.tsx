@@ -161,7 +161,7 @@ function NeedsFixingRow({
           size="sm"
           variant="ghost"
           onClick={onSkip}
-          className="text-muted-foreground h-7 gap-1 px-2 text-2xs hover:bg-destructive-subtle hover:text-destructive-subtle-foreground"
+          className="text-muted-foreground text-2xs hover:bg-destructive-subtle hover:text-destructive-subtle-foreground h-7 gap-1 px-2"
           title={t("activity:import.assets.skipAsset")}
         >
           <Icons.X className="h-3 w-3 shrink-0" />
@@ -312,7 +312,7 @@ function AutoResolvedRow({
           size="sm"
           variant="ghost"
           onClick={onSkip}
-          className="text-muted-foreground h-7 gap-1 px-2 text-2xs hover:bg-destructive-subtle hover:text-destructive-subtle-foreground"
+          className="text-muted-foreground text-2xs hover:bg-destructive-subtle hover:text-destructive-subtle-foreground h-7 gap-1 px-2"
           title={t("activity:import.assets.skipAsset")}
         >
           <Icons.X className="h-3 w-3 shrink-0" />
@@ -436,7 +436,7 @@ function ReadyAssetRow({
           size="sm"
           variant="ghost"
           onClick={onSkip}
-          className="text-muted-foreground h-7 gap-1 px-2 text-2xs hover:bg-destructive-subtle hover:text-destructive-subtle-foreground"
+          className="text-muted-foreground text-2xs hover:bg-destructive-subtle hover:text-destructive-subtle-foreground h-7 gap-1 px-2"
           title={t("activity:import.assets.skipAsset")}
         >
           <Icons.X className="h-3 w-3 shrink-0" />

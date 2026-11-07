@@ -52,8 +52,8 @@ export function PdfPasswordDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-warning-subtle">
-                <Icons.Lock className="h-4 w-4 text-warning-subtle-foreground" />
+              <div className="bg-warning-subtle flex h-9 w-9 items-center justify-center rounded-full">
+                <Icons.Lock className="text-warning-subtle-foreground h-4 w-4" />
               </div>
               <DialogTitle>{t("activity:import.upload.pdfPasswordTitle")}</DialogTitle>
             </div>
@@ -80,7 +80,7 @@ export function PdfPasswordDialog({
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="text-muted-foreground hover:text-foreground absolute top-1/2 end-2 -translate-y-1/2 p-1 text-xs"
+                className="text-muted-foreground hover:text-foreground absolute end-2 top-1/2 -translate-y-1/2 p-1 text-xs"
               >
                 {showPassword ? (
                   <Icons.EyeOff className="h-4 w-4" />
