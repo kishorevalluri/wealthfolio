@@ -55,6 +55,7 @@ hex = "0.4"
 chrono-tz = "0.10"
 url = "2"
 lopdf = "0.45.0"
+rust_xlsxwriter = { version = "0.102.0", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

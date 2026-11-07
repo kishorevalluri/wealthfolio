@@ -26,7 +26,10 @@ use wealthfolio_core::{
     health::HealthServiceTrait,
     holdings::{Holding, HoldingListItem},
     income::IncomeSummary,
-    lots::{compute_indian_tax_summary, to_schedule_cg_rows, AssetLotView, IndianTaxYearSummary},
+    lots::{
+        build_cleartax_workbook, cleartax_file_name, compute_indian_tax_summary,
+        to_schedule_cg_rows, AssetLotView, IndianTaxYearSummary,
+    },
     performance::{
         calculate_performance_summary_batch_for_accounts, empty_performance_metrics,
         performance_account_ids_from_map, performance_account_tracking_modes_from_map,
@@ -1760,13 +1763,11 @@ pub async fn get_indian_tax_summary(
     .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn export_indian_schedule_cg(
-    app_handle: AppHandle,
-    state: ProfileAccess,
+async fn indian_tax_summary_for_export(
+    state: &ProfileAccess,
     filter: Option<AccountScopeInput>,
     financial_year: Option<i32>,
-) -> Result<DataExportResult, String> {
+) -> Result<Option<IndianTaxYearSummary>, String> {
     let context = state.context()?;
     let account_ids: Vec<String> = if let Some(input) = filter {
         let af = input.into_account_filter()?;
@@ -1783,7 +1784,7 @@ pub async fn export_indian_schedule_cg(
     };
 
     if account_ids.is_empty() {
-        return Ok(DataExportResult::empty());
+        return Ok(None);
     }
 
     let fy = financial_year.unwrap_or_else(|| {
@@ -1795,42 +1796,86 @@ pub async fn export_indian_schedule_cg(
         }
     });
 
-    let summary = compute_indian_tax_summary(
+    compute_indian_tax_summary(
         context.lots_repository.as_ref(),
         context.asset_service().as_ref(),
         &account_ids,
         fy,
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map(Some)
+    .map_err(|e| e.to_string())
+}
 
-    let rows = to_schedule_cg_rows(&summary);
-    let Some(content) = format_records(&rows, ExportFileFormat::Csv).map_err(|e| e.to_string())?
-    else {
-        return Ok(DataExportResult::empty());
-    };
-
-    let filename = format!("schedule_cg_fy{}_{}.csv", fy, fy + 1);
-
+/// Saves export content with the platform's flow: a save dialog on desktop,
+/// a pending file for the frontend's picker on mobile.
+fn save_indian_tax_export(
+    app_handle: &AppHandle,
+    state: &ProfileAccess,
+    filename: String,
+    content: &[u8],
+) -> Result<DataExportResult, String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {
-        let _ = &app_handle;
+        let _ = app_handle;
         let pending_export = crate::commands::utilities::write_pending_export_content(
             std::path::Path::new(state.app_data_dir()),
             &filename,
-            &content,
+            content,
         )?;
         Ok(DataExportResult::pending(pending_export))
     }
 
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
-        if crate::commands::utilities::save_content_with_dialog(&app_handle, &filename, &content)? {
+        let _ = state;
+        if crate::commands::utilities::save_content_with_dialog(app_handle, &filename, content)? {
             Ok(DataExportResult::saved(filename))
         } else {
             Ok(DataExportResult::canceled())
         }
     }
+}
+
+#[tauri::command]
+pub async fn export_indian_schedule_cg(
+    app_handle: AppHandle,
+    state: ProfileAccess,
+    filter: Option<AccountScopeInput>,
+    financial_year: Option<i32>,
+) -> Result<DataExportResult, String> {
+    let Some(summary) = indian_tax_summary_for_export(&state, filter, financial_year).await? else {
+        return Ok(DataExportResult::empty());
+    };
+    let fy = summary.fy_start_year;
+    let rows = to_schedule_cg_rows(&summary);
+    let Some(content) = format_records(&rows, ExportFileFormat::Csv).map_err(|e| e.to_string())?
+    else {
+        return Ok(DataExportResult::empty());
+    };
+    let filename = format!("schedule_cg_fy{}_{}.csv", fy, fy + 1);
+    save_indian_tax_export(&app_handle, &state, filename, &content)
+}
+
+/// Saves part `part` (0-based, default 0) of the ClearTax capital gains
+/// workbook for the financial year.
+#[tauri::command]
+pub async fn export_indian_cleartax(
+    app_handle: AppHandle,
+    state: ProfileAccess,
+    filter: Option<AccountScopeInput>,
+    financial_year: Option<i32>,
+    part: Option<usize>,
+) -> Result<DataExportResult, String> {
+    let Some(summary) = indian_tax_summary_for_export(&state, filter, financial_year).await? else {
+        return Ok(DataExportResult::empty());
+    };
+    let part = part.unwrap_or(0);
+    let Some(content) = build_cleartax_workbook(&summary, part).map_err(|e| e.to_string())? else {
+        return Ok(DataExportResult::empty());
+    };
+    let filename = cleartax_file_name(summary.fy_start_year, part, summary.cleartax_files);
+    save_indian_tax_export(&app_handle, &state, filename, &content)
 }
 
 #[cfg(test)]

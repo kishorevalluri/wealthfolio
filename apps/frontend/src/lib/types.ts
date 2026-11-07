@@ -3164,5 +3164,7 @@ export interface IndianTaxYearSummary {
   healthEducationCess: string;
   estimatedTotalTax: string;
   warnings: string[];
+  /** ClearTax workbooks the year needs (5,000 rows per sheet per file). */
+  cleartaxFiles: number;
   calculations: IndianCapitalGainCalculation[];
 }

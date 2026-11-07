@@ -56,3 +56,26 @@ export const exportIndianScheduleCg = async (
     filename: result.filename,
   };
 };
+
+/** Saves one part (0-based) of the ClearTax capital gains workbook. */
+export const exportIndianClearTax = async (
+  filter?: unknown,
+  financialYear?: number,
+  part = 0,
+): Promise<DataExportResult> => {
+  const result = await invoke<BackendDataExportResult>("export_indian_cleartax", {
+    filter,
+    financialYear,
+    part,
+  });
+
+  if (result.status === "pending") {
+    if (!result.relativePath || !result.filename) {
+      throw new Error("Export did not return a pending file path");
+    }
+    const saved = await saveAppDataFileViaPicker(result.relativePath, result.filename);
+    return saved ? { status: "saved", filename: result.filename } : { status: "canceled" };
+  }
+
+  return { status: result.status, filename: result.filename };
+};
