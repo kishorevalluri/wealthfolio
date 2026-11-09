@@ -28,6 +28,7 @@ import { useQuery } from "@tanstack/react-query";
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DualRegimeOptimizer } from "./components/dual-regime-optimizer";
+import { parseSpecialRateGains } from "./indian-income-tax";
 
 // ── Financial Year Selector ────────────────────────────────────────────────────
 
@@ -617,7 +618,7 @@ export default function TaxPage() {
           />
 
           {/* Dual-Regime Optimizer */}
-          <DualRegimeOptimizer stcgSlabTotal={0} />
+          <DualRegimeOptimizer fyStartYear={parseInt(selectedFY)} stcgSlabTotal={0} />
         </div>
       </>
     );
@@ -697,16 +698,21 @@ export default function TaxPage() {
         <CarryForwardCard summary={summary} />
 
         {/* Dual-Regime Optimizer */}
-        <DualRegimeOptimizer stcgSlabTotal={stcgSlabNet} />
+        <DualRegimeOptimizer
+          fyStartYear={summary.fyStartYear}
+          stcgSlabTotal={stcgSlabNet}
+          specialRateGains={parseSpecialRateGains(summary.specialRateGains)}
+        />
 
         {/* Disposal-level table */}
         <DisposalTable calculations={summary.calculations} />
 
         <p className="text-muted-foreground text-xs">
           * Estimates apply loss set-off (Section 70) and the Section 112A exemption, and add 4%
-          cess. Section 112 sales before 23 Jul 2024 use indexed cost. Slab-rate gains and surcharge
-          are not included. Per-row tax is before set-off. Consult a chartered accountant before
-          filing your ITR.
+          cess. Section 112 sales before 23 Jul 2024 use indexed cost. Slab-rate gains, surcharge
+          and the basic exemption adjustment depend on your other income, so they are worked out in
+          the regime comparison above. Per-row tax is before set-off. Consult a chartered accountant
+          before filing your ITR.
         </p>
       </div>
     </>

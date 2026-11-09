@@ -3142,6 +3142,12 @@ export interface IndianCapitalGainCalculation {
   transferExpenses?: string;
 }
 
+export interface IndianSpecialRateGain {
+  section: IndianTaxSection;
+  rate: string;
+  amount: string;
+}
+
 export interface IndianTaxYearSummary {
   fyStartYear: number;
   stcg111aPreBudget: string;
@@ -3163,6 +3169,8 @@ export interface IndianTaxYearSummary {
   estimatedLtcgTax: string;
   healthEducationCess: string;
   estimatedTotalTax: string;
+  /** Special-rate gains after set-off and exemption, by rate (for surcharge). */
+  specialRateGains?: IndianSpecialRateGain[];
   warnings: string[];
   /** ClearTax workbooks the year needs (5,000 rows per sheet per file). */
   cleartaxFiles: number;

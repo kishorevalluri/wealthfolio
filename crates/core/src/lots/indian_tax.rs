@@ -6,8 +6,9 @@
 //! at the special rates in force on each sale date.
 //!
 //! The estimate covers special-rate gains only. Slab-rate STCG is reported as
-//! an amount to add to the person's income, and surcharge is left out because
-//! it depends on total income, which this app does not know.
+//! an amount to add to the person's income. Surcharge, rebate and the basic
+//! exemption adjustment depend on total income, so they are worked out on the
+//! tax page from `special_rate_gains` and the income the person enters.
 
 use chrono::{Months, NaiveDate};
 use rust_decimal::Decimal;
@@ -341,6 +342,17 @@ pub struct IndianCapitalGainCalculation {
     pub transfer_expenses: Decimal,
 }
 
+/// Gains taxed at one special rate, after loss set-off and the Section 112A
+/// exemption. Used for surcharge and the basic exemption adjustment, which
+/// depend on the person's other income.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndianSpecialRateGain {
+    pub section: IndianTaxSection,
+    pub rate: Decimal,
+    pub amount: Decimal,
+}
+
 /// Compact asset info used by the Indian tax calculator for export fields.
 pub struct IndianTaxAssetInfo {
     pub name: String,
@@ -395,6 +407,9 @@ pub struct IndianTaxYearSummary {
     pub health_education_cess: Decimal,
     /// Estimated STCG + LTCG tax + cess. Excludes slab-rate gains and surcharge.
     pub estimated_total_tax: Decimal,
+    /// Special-rate gains by section and rate, after set-off and exemption.
+    /// Only rates with a positive amount are listed.
+    pub special_rate_gains: Vec<IndianSpecialRateGain>,
     /// Things the person should check before filing
     pub warnings: Vec<String>,
     /// ClearTax workbooks the year needs (5,000 rows per sheet per file)
@@ -676,6 +691,40 @@ pub fn calculate_indian_capital_gains(
         + get(&nets, Bucket::Ltcg112Pre) * Decimal::new(20, 2)
         + get(&nets, Bucket::Ltcg112PreProviso) * Decimal::new(10, 2)
         + get(&nets, Bucket::Ltcg112Post) * Decimal::new(125, 3);
+    use IndianTaxSection::{Sec111a, Sec112, Sec112a};
+    summary.special_rate_gains = [
+        (
+            Sec111a,
+            Decimal::new(15, 2),
+            get(&nets, Bucket::Stcg111aPre),
+        ),
+        (
+            Sec111a,
+            Decimal::new(20, 2),
+            get(&nets, Bucket::Stcg111aPost),
+        ),
+        (Sec112a, Decimal::new(10, 2), ltcg_112a_pre),
+        (Sec112a, Decimal::new(125, 3), ltcg_112a_post),
+        (Sec112, Decimal::new(20, 2), get(&nets, Bucket::Ltcg112Pre)),
+        (
+            Sec112,
+            Decimal::new(10, 2),
+            get(&nets, Bucket::Ltcg112PreProviso),
+        ),
+        (
+            Sec112,
+            Decimal::new(125, 3),
+            get(&nets, Bucket::Ltcg112Post),
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, _, amount)| *amount > Decimal::ZERO)
+    .map(|(section, rate, amount)| IndianSpecialRateGain {
+        section,
+        rate,
+        amount,
+    })
+    .collect();
     let special_tax = summary.estimated_stcg_tax + summary.estimated_ltcg_tax;
     summary.health_education_cess = special_tax * Decimal::new(4, 2);
     summary.estimated_total_tax = special_tax + summary.health_education_cess;
@@ -1407,5 +1456,46 @@ mod tests {
         assert_eq!(calc.deemed_cost, dec!(100000));
         assert_eq!(calc.applicable_tax_rate, dec!(0.10));
         assert_eq!(summary.estimated_ltcg_tax, dec!(10000));
+    }
+
+    #[test]
+    fn special_rate_gains_are_listed_after_set_off_and_exemption() {
+        use IndianAssetTaxClassification::*;
+        let summary = run(
+            &[
+                sale(
+                    "a",
+                    EquityListed,
+                    date(2023, 1, 1),
+                    date(2024, 9, 1),
+                    dec!(100000),
+                    dec!(300000),
+                ),
+                sale(
+                    "b",
+                    EquityListed,
+                    date(2024, 6, 1),
+                    date(2024, 9, 1),
+                    dec!(100000),
+                    dec!(150000),
+                ),
+            ],
+            2024,
+        );
+        assert_eq!(
+            summary.special_rate_gains,
+            vec![
+                IndianSpecialRateGain {
+                    section: IndianTaxSection::Sec111a,
+                    rate: dec!(0.20),
+                    amount: dec!(50000),
+                },
+                IndianSpecialRateGain {
+                    section: IndianTaxSection::Sec112a,
+                    rate: dec!(0.125),
+                    amount: dec!(75000),
+                },
+            ]
+        );
     }
 }
