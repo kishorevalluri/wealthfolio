@@ -8,7 +8,10 @@
 //! - Cleans verbose corporate action noise from security names.
 //! - Extracts valid ISIN holding balances and monthly buy/sell transactions.
 
+use std::str::FromStr;
+
 use regex::Regex;
+use rust_decimal::Decimal;
 
 /// Checks if a string contains any Devanagari characters (Hindi text).
 pub fn is_hindi_text(s: &str) -> bool {
@@ -111,34 +114,336 @@ pub fn clean_security_description(desc: &str) -> String {
     words.join(" ")
 }
 
-/// Parse CDSL e-CAS text into tabular headers and rows.
+/// Column order of the parser output. The `system_cdsl_cas` template maps
+/// these by name.
+pub const CDSL_HEADERS: [&str; 11] = [
+    "Date",
+    "Transaction Description",
+    "Security Description",
+    "ISIN",
+    "Quantity",
+    "Rate",
+    "Amount",
+    "BO ID",
+    "Fee",
+    "Avg Cost",
+    "Particulars",
+];
+
+/// `Transaction Description` of a holding row; the import wizard uses it to
+/// split holdings from transactions.
+pub const HOLDING_BALANCE: &str = "HOLDING BALANCE";
+
+/// Labels written to `Transaction Description`. The template maps the first
+/// five to activity types. The rest are left for the user to map or skip in
+/// the review step, because the statement doesn't say what they mean for cost
+/// (a bonus, split or merger, or an unknown credit or debit).
+pub const LABEL_BUY: &str = "BUY";
+pub const LABEL_SELL: &str = "SELL";
+pub const LABEL_TRANSFER_IN: &str = "TRANSFER IN";
+pub const LABEL_TRANSFER_OUT: &str = "TRANSFER OUT";
+pub const LABEL_DIVIDEND: &str = "DIVIDEND";
+pub const LABEL_CORPORATE_ACTION_CREDIT: &str = "CORPORATE ACTION CREDIT";
+pub const LABEL_CORPORATE_ACTION_DEBIT: &str = "CORPORATE ACTION DEBIT";
+pub const LABEL_DEMAT_CREDIT: &str = "DEMAT CREDIT";
+pub const LABEL_DEMAT_DEBIT: &str = "DEMAT DEBIT";
+pub const LABEL_MF_OTHER: &str = "MF TRANSACTION";
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|n| haystack.contains(n))
+}
+
+/// Label for a demat transaction from its particulars and direction.
+/// `None` means the row doesn't change ownership (pledges, freezes) and is
+/// left out.
+pub fn demat_label(particulars: &str, credit: bool) -> Option<&'static str> {
+    let u = particulars.to_uppercase();
+    let pick = |cr: &'static str, dr: &'static str| Some(if credit { cr } else { dr });
+
+    if contains_any(
+        &u,
+        &["PLEDGE", "LOCK-IN", "LOCKIN", "FREEZE", "MRGN", "MARGIN"],
+    ) && !contains_any(&u, &["INVOC", "INVOK"])
+    {
+        return None;
+    }
+    if u.starts_with("CA-")
+        || u.starts_with("CA ")
+        || contains_any(
+            &u,
+            &[
+                "BONUS",
+                "SPLIT",
+                "SUB-DIV",
+                "SUBDIV",
+                "CORPORATE ACTION",
+                "MERGER",
+                "AMALGAMATION",
+                "DEMERGER",
+                "CONVERSION",
+                "RIGHTS",
+                "BUYBACK",
+                "BUY BACK",
+                "CONSOLIDATION",
+                "REDEMPTION",
+                "EXTINGUISH",
+            ],
+        )
+    {
+        return pick(LABEL_CORPORATE_ACTION_CREDIT, LABEL_CORPORATE_ACTION_DEBIT);
+    }
+    if credit && contains_any(&u, &["IPO", "ALLOT", "INITIAL PUBLIC"]) {
+        return Some(LABEL_BUY);
+    }
+    if contains_any(
+        &u,
+        &[
+            "PAYOUT",
+            "PAY-OUT",
+            "PAY OUT",
+            "PAYIN",
+            "PAY-IN",
+            "PAY IN",
+            "EP-DR",
+            "EARLY PAY",
+        ],
+    ) {
+        return pick(LABEL_BUY, LABEL_SELL);
+    }
+    if contains_any(
+        &u,
+        &[
+            "INTER DEPOSITORY",
+            "INTER-DEPOSITORY",
+            "INTDEP",
+            "IDT",
+            "OFF MARKET",
+            "OFF-MARKET",
+            "OFFMARKET",
+            "OFF MKT",
+            "TRANSFER",
+            "TRF",
+            "GIFT",
+            "TRANSMISSION",
+            "DEMAT",
+            "REMAT",
+        ],
+    ) {
+        return pick(LABEL_TRANSFER_IN, LABEL_TRANSFER_OUT);
+    }
+    if contains_any(&u, &["BUY", "SELL", "SALE", "SETT"]) {
+        return pick(LABEL_BUY, LABEL_SELL);
+    }
+    pick(LABEL_DEMAT_CREDIT, LABEL_DEMAT_DEBIT)
+}
+
+/// Label for a mutual fund transaction. `None` for rows that aren't one,
+/// such as a stamp duty line.
+pub fn mf_label(description: &str, units_negative: bool) -> Option<&'static str> {
+    let u = description.to_uppercase();
+    if u.contains("STAMP DUTY") && !u.contains("PURCHASE") {
+        return None;
+    }
+    let label = if contains_any(
+        &u,
+        &[
+            "REDEMPTION",
+            "REDEEM",
+            "SWITCH OUT",
+            "SWITCH-OUT",
+            "SWITCHOUT",
+            "SWP",
+            "SYSTEMATIC WITHDRAWAL",
+            "STP OUT",
+            "STP-OUT",
+            "TRANSFER OUT",
+            "SELL",
+            "SALE",
+        ],
+    ) {
+        Some(LABEL_SELL)
+    } else if u.contains("REINVEST") {
+        Some(LABEL_BUY)
+    } else if contains_any(&u, &["IDCW", "DIVIDEND"]) {
+        Some(LABEL_DIVIDEND)
+    } else if contains_any(
+        &u,
+        &[
+            "PURCHASE",
+            "SIP",
+            "SYSTEMATIC INVESTMENT",
+            "SWITCH IN",
+            "SWITCH-IN",
+            "SWITCHIN",
+            "STP IN",
+            "STP-IN",
+            "NFO",
+            "BUY",
+            "ALLOTMENT",
+            "SUBSCRIPTION",
+            "TRANSFER IN",
+        ],
+    ) {
+        Some(LABEL_BUY)
+    } else {
+        None
+    };
+    match label {
+        Some(LABEL_BUY) | None if units_negative => Some(LABEL_SELL),
+        other => other,
+    }
+}
+
+/// A table cell: `Some(None)` for an empty `--`, `Some(Some(n))` for a
+/// number, `None` when the text isn't a number. Handles Indian digit
+/// grouping (`1,28,004.07`), a bare leading point (`.25`) and `(123)`
+/// negatives.
+fn number_cell(text: &str) -> Option<Option<Decimal>> {
+    let t = text.trim();
+    if t.chars().all(|c| c == '-') && t.len() >= 2 {
+        return Some(None);
+    }
+    let (negative, body) = match t.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+        Some(inner) => (true, inner),
+        None => (false, t),
+    };
+    let mut cleaned = body.replace(',', "");
+    if cleaned.is_empty() {
+        return None;
+    }
+    if let Some(rest) = cleaned.strip_prefix('.') {
+        cleaned = format!("0.{rest}");
+    } else if let Some(rest) = cleaned.strip_prefix("-.") {
+        cleaned = format!("-0.{rest}");
+    }
+    let value = Decimal::from_str(&cleaned).ok()?;
+    Some(Some(if negative { -value } else { value }))
+}
+
+fn number(text: &str) -> Option<Decimal> {
+    number_cell(text).flatten()
+}
+
+fn fmt(d: Decimal) -> String {
+    d.normalize().to_string()
+}
+
+fn fmt_opt(d: Option<Decimal>) -> String {
+    d.map(fmt).unwrap_or_default()
+}
+
+/// Opening, credit, debit, closing and stamp duty of one demat row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DematCells {
+    opening: Option<Decimal>,
+    credit: Option<Decimal>,
+    debit: Option<Decimal>,
+    closing: Option<Decimal>,
+    stamp: Option<Decimal>,
+}
+
+impl DematCells {
+    fn balances(&self) -> bool {
+        match (self.opening, self.closing) {
+            (Some(op), Some(cl)) => {
+                op + self.credit.unwrap_or_default() - self.debit.unwrap_or_default() == cl
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Reads the cells after a demat transaction date. CDSL prints Op. Bal,
+/// Credit, Debit, Cl. Bal and Stamp Duty, but leaves out Op. Bal on the
+/// second and later rows of a security, where it equals the last closing
+/// balance. With four cells, the reading that balances wins.
+fn demat_cells(values: &[Option<Decimal>], last_closing: Option<Decimal>) -> Option<DematCells> {
+    let carried = |v: &[Option<Decimal>]| DematCells {
+        opening: last_closing,
+        credit: v[0],
+        debit: v[1],
+        closing: v[2],
+        stamp: v.get(3).copied().flatten(),
+    };
+    match values.len() {
+        n if n >= 5 => Some(DematCells {
+            opening: values[0],
+            credit: values[1],
+            debit: values[2],
+            closing: values[3],
+            stamp: values[4],
+        }),
+        4 => {
+            let with_opening = DematCells {
+                opening: values[0],
+                credit: values[1],
+                debit: values[2],
+                closing: values[3],
+                stamp: None,
+            };
+            let carried = carried(values);
+            if with_opening.balances() && !carried.balances() {
+                Some(with_opening)
+            } else {
+                Some(carried)
+            }
+        }
+        3 => Some(carried(values)),
+        _ => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn txn_row(
+    date: &str,
+    label: &str,
+    security: &str,
+    isin: &str,
+    quantity: String,
+    rate: String,
+    amount: String,
+    boid: &str,
+    fee: String,
+    particulars: &str,
+) -> Vec<String> {
+    vec![
+        date.to_string(),
+        label.to_string(),
+        security.to_string(),
+        isin.to_string(),
+        quantity,
+        rate,
+        amount,
+        boid.to_string(),
+        fee,
+        String::new(),
+        particulars.to_string(),
+    ]
+}
+
+/// Parse CDSL e-CAS text into tabular headers and rows (see [`CDSL_HEADERS`]).
 ///
-/// Output columns matching `system_cdsl_cas`:
-/// - `Date`
-/// - `Transaction Description`
-/// - `Security Description`
-/// - `ISIN`
-/// - `Quantity`
-/// - `Rate`
-/// - `Amount`
-/// - `BO ID`
+/// - Holdings (demat and mutual fund) become `HOLDING BALANCE` rows dated on
+///   the statement date. `Rate` is the market price or NAV; `Avg Cost` is set
+///   for mutual funds only, from the cumulative amount invested, since CDSL
+///   gives no cost for demat holdings.
+/// - Demat transactions give quantities only: the quantity comes from the
+///   Credit or Debit column, and the price is left for a broker trade list.
+/// - Mutual fund transactions carry amount, NAV, price, units and stamp duty
+///   (written to `Fee`, as it is part of the purchase cost).
+/// - NPS rows are left out, as they have no ISIN.
 pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
-    let headers = vec![
-        "Date".to_string(),
-        "Transaction Description".to_string(),
-        "Security Description".to_string(),
-        "ISIN".to_string(),
-        "Quantity".to_string(),
-        "Rate".to_string(),
-        "Amount".to_string(),
-        "BO ID".to_string(),
-    ];
+    let headers = CDSL_HEADERS.iter().map(|h| h.to_string()).collect();
 
     let mut txn_rows: Vec<Vec<String>> = Vec::new();
     let mut holdings_rows: Vec<Vec<String>> = Vec::new();
     let mut current_boid = String::new();
     let mut statement_date = String::new();
     let mut in_transaction_section = false;
+    // Security of the transaction rows being read, and its last closing balance.
+    let mut txn_isin = String::new();
+    let mut txn_security = String::new();
+    let mut last_closing: Option<Decimal> = None;
 
     let isin_regex = Regex::new(r"\b(IN[A-Z0-9]{10})\b").expect("hard-coded regex is valid");
     let date_regex =
@@ -147,13 +452,15 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     let boid_regex = Regex::new(r"\b(\d{16})\b").expect("hard-coded regex is valid");
     let mf_code_prefix_regex =
         Regex::new(r"^[A-Z0-9]{2,8}\s*-\s*").expect("hard-coded regex is valid");
+    // A scheme line in the MF transaction table: "STDG - Axis Short Term Fund".
+    let mf_scheme_line_regex =
+        Regex::new(r"^[A-Z0-9]{2,8}\s+-\s+\S").expect("hard-coded regex is valid");
 
     let lines: Vec<&str> = text
         .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty())
         .collect();
-
     // 0. Pre-scan Mutual Fund Folios section if present:
     // e.g.
     // Scheme Name : NIPPON INDIA SMALL CAP FUND - DIRECT GROWTH PLAN GROWTH OPTION
@@ -223,9 +530,13 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
         // Detect section headers: "HOLDING STATEMENT" vs "STATEMENT OF TRANSACTIONS"
         if lower.contains("statement of transactions") || lower.contains("transaction statement") {
             in_transaction_section = true;
+            txn_isin.clear();
+            txn_security.clear();
+            last_closing = None;
         } else if lower.contains("holding statement")
             || lower.contains("statement of holdings")
             || lower.contains("holding as on")
+            || lower.contains("units held as on")
         {
             in_transaction_section = false;
         }
@@ -242,12 +553,19 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
         }
 
         // 2. Detect statement date (e.g. "HOLDING STATEMENT AS ON 31-08-2026")
+        // The end of "FOR THE PERIOD FROM 01-08-2026 TO 31-08-2026" is the
+        // same date, so it is used when it comes first.
         if (lower.contains("statement as on")
+            || lower.contains("held as on")
             || lower.contains("as on date")
             || lower.contains("statement date"))
             && statement_date.is_empty()
         {
             if let Some(m) = date_match_re.find(line) {
+                statement_date = m.as_str().to_string();
+            }
+        } else if lower.contains("for the period from") && statement_date.is_empty() {
+            if let Some(m) = date_match_re.find_iter(line).last() {
                 statement_date = m.as_str().to_string();
             }
         }
@@ -328,6 +646,7 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                 let mut found_qty = None;
                 let mut found_rate = None;
                 let mut found_val = None;
+                let mut found_avg_cost = None;
 
                 let mut num_cands = Vec::new();
                 for num_offset in offset..=offset + 10 {
@@ -363,6 +682,14 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                             // MF Table: Cand 0 = Units, Cand 1 = NAV, Cand 3 = Value
                             found_rate = Some(num_cands[1].1.clone());
                             found_val = Some(num_cands[3].1.clone());
+                            // Cand 2 = cumulative amount invested.
+                            found_avg_cost =
+                                match (number(&num_cands[2].1), number(&num_cands[0].1)) {
+                                    (Some(invested), Some(units)) if !units.is_zero() => {
+                                        Some(fmt((invested / units).round_dp(4)))
+                                    }
+                                    _ => None,
+                                };
                         } else {
                             // Demat Table: Cand 0 = Qty, Cand 2 = Market Price, Cand 3 = Value
                             found_rate = Some(num_cands[2].1.clone());
@@ -385,151 +712,192 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
 
                     holdings_rows.push(vec![
                         h_date,
-                        "HOLDING BALANCE".to_string(),
+                        HOLDING_BALANCE.to_string(),
                         sec_name,
                         isin.clone(),
                         qty,
                         found_rate.unwrap_or_default(),
                         found_val.unwrap_or_default(),
                         current_boid.clone(),
+                        String::new(),
+                        found_avg_cost.unwrap_or_default(),
+                        String::new(),
                     ]);
                 }
             }
         }
 
-        // 4. Detect Transaction row (starts with Date: e.g. "03-08-2026")
+        // 4. Transactions. Track the security the rows belong to.
+        {
+            if let Some(caps) = isin_regex.captures(line) {
+                let isin = caps.get(1).map_or("", |m| m.as_str()).to_string();
+                if isin != txn_isin {
+                    last_closing = None;
+                }
+                let inline = line
+                    .replace(&isin, "")
+                    .replace("ISIN:", "")
+                    .replace("ISIN :", "")
+                    .replace("ISIN", "");
+                let inline = inline.trim();
+                txn_security = if inline.len() > 3 && !is_summary_or_noise_line(inline) {
+                    clean_security_description(inline)
+                } else if let Some(name) = mf_scheme_map.get(&isin) {
+                    name.clone()
+                } else if i > 0 && mf_scheme_line_regex.is_match(lines[i - 1]) {
+                    let stripped = mf_code_prefix_regex.replace(lines[i - 1], "");
+                    clean_security_description(&stripped)
+                } else if line == isin
+                    && i + 1 < lines.len()
+                    && !date_regex.is_match(lines[i + 1])
+                    && number_cell(lines[i + 1]).is_none()
+                    && !is_summary_or_noise_line(lines[i + 1])
+                {
+                    // Demat table: the security follows a bare ISIN.
+                    clean_security_description(lines[i + 1])
+                } else {
+                    String::new()
+                };
+                txn_isin = isin;
+                if in_transaction_section {
+                    i += 1;
+                    continue;
+                }
+            }
+        }
+
         if let Some(date_match) = date_regex.find(line) {
             let date_str = date_match.as_str().to_string();
             let remainder = line[date_match.end()..].trim();
 
-            if !is_summary_or_noise_line(remainder) {
+            if remainder.is_empty() && in_transaction_section && !txn_isin.is_empty() {
+                let next = lines.get(i + 1).copied().unwrap_or("");
+                if number_cell(next).is_some() {
+                    // Demat row: particulars come before the date, cells after.
+                    let mut values = Vec::new();
+                    let mut j = i + 1;
+                    while j < lines.len() && values.len() < 5 {
+                        match number_cell(lines[j]) {
+                            Some(v) => values.push(v),
+                            None => break,
+                        }
+                        j += 1;
+                    }
+                    let particulars = if i > 0
+                        && !isin_regex.is_match(lines[i - 1])
+                        && number_cell(lines[i - 1]).is_none()
+                        && !is_summary_or_noise_line(lines[i - 1])
+                    {
+                        lines[i - 1]
+                    } else {
+                        ""
+                    };
+                    if let Some(cells) = demat_cells(&values, last_closing) {
+                        let moves = [(true, cells.credit), (false, cells.debit)];
+                        for (credit, qty) in moves {
+                            let Some(qty) = qty.filter(|q| !q.is_zero()) else {
+                                continue;
+                            };
+                            let Some(label) = demat_label(particulars, credit) else {
+                                continue;
+                            };
+                            txn_rows.push(txn_row(
+                                &date_str,
+                                label,
+                                &txn_security,
+                                &txn_isin,
+                                fmt(qty.abs()),
+                                String::new(),
+                                String::new(),
+                                &current_boid,
+                                fmt_opt(cells.stamp.filter(|s| !s.is_zero())),
+                                particulars,
+                            ));
+                        }
+                        last_closing = cells.closing.or(last_closing);
+                    }
+                    i = j;
+                    continue;
+                }
+
+                // Mutual fund row: description, then Amount, NAV, Price,
+                // Units, Stamp Duty (older layouts: Amount, NAV, Units).
+                if number_cell(next).is_none() && !is_summary_or_noise_line(next) {
+                    let mut values = Vec::new();
+                    let mut j = i + 2;
+                    while j < lines.len() && values.len() < 7 {
+                        match number_cell(lines[j]) {
+                            Some(v) => values.push(v),
+                            None => break,
+                        }
+                        j += 1;
+                    }
+                    let (amount, nav, price, units, stamp) = match values.len() {
+                        n if n >= 4 => (
+                            values[0],
+                            values[1],
+                            values[2],
+                            values[3],
+                            values.get(4).copied().flatten(),
+                        ),
+                        3 => (values[0], values[1], None, values[2], None),
+                        2 => (values[0], None, None, values[1], None),
+                        _ => (None, None, None, None, None),
+                    };
+                    let units_negative = units.is_some_and(|u| u.is_sign_negative())
+                        || amount.is_some_and(|a| a.is_sign_negative());
+                    if let Some(label) = mf_label(next, units_negative) {
+                        let has_units = units.is_some_and(|u| !u.is_zero());
+                        if has_units || label == LABEL_DIVIDEND {
+                            txn_rows.push(txn_row(
+                                &date_str,
+                                label,
+                                &txn_security,
+                                &txn_isin,
+                                units.map(|u| fmt(u.abs())).unwrap_or_default(),
+                                fmt_opt(price.filter(|p| !p.is_zero()).or(nav)),
+                                amount.map(|a| fmt(a.abs())).unwrap_or_default(),
+                                &current_boid,
+                                fmt_opt(stamp.filter(|s| !s.is_zero())),
+                                next,
+                            ));
+                        }
+                    }
+                    if !values.is_empty() {
+                        i = j;
+                        continue;
+                    }
+                }
+            } else if !remainder.is_empty() && !is_summary_or_noise_line(remainder) {
+                // Single-line row: "10-May-2024 BUY 10 2850.50 28505.00".
                 let tokens: Vec<&str> = remainder.split_whitespace().collect();
-                let mut matched_isin = String::new();
-                let mut sec_name = String::new();
-
-                for back in 1..=50 {
-                    if i >= back && isin_regex.is_match(lines[i - back]) {
-                        if let Some(c) = isin_regex.captures(lines[i - back]) {
-                            matched_isin = c.get(1).map_or("", |m| m.as_str()).to_string();
-                            let rest = lines[i - back]
-                                .replace(&matched_isin, "")
-                                .replace("ISIN:", "")
-                                .replace("ISIN", "");
-                            let s = rest.trim();
-                            if s.len() > 3 && !is_summary_or_noise_line(s) {
-                                sec_name = clean_security_description(s);
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                if sec_name.is_empty() {
-                    if let Some(mapped_name) = mf_scheme_map.get(&matched_isin) {
-                        sec_name = mapped_name.clone();
-                    }
-                }
-
-                if tokens.len() >= 2 {
-                    let mut num_indices = Vec::new();
-                    for (idx, t) in tokens.iter().enumerate() {
-                        let cleaned = t.replace([',', '(', ')'], "");
-                        if cleaned.parse::<f64>().is_ok() {
-                            num_indices.push(idx);
-                        }
-                    }
-
-                    if !num_indices.is_empty() {
-                        let first_num_idx = num_indices[0];
-                        let desc = tokens[..first_num_idx].join(" ");
-                        let mut qty = String::new();
-                        let mut rate = String::new();
-                        let mut amount = String::new();
-
-                        if num_indices.len() == 1 {
-                            qty = tokens[num_indices[0]].replace(',', "");
-                        } else if num_indices.len() == 2 {
-                            qty = tokens[num_indices[0]].replace(',', "");
-                            rate = tokens[num_indices[1]].replace(',', "");
-                        } else if num_indices.len() >= 3 {
-                            qty = tokens[num_indices[0]].replace(',', "");
-                            rate = tokens[num_indices[1]].replace(',', "");
-                            amount = tokens[num_indices[2]].replace(',', "");
-                        }
-
-                        let desc_lower = desc.to_lowercase();
-                        let is_transaction_word = desc_lower.contains("buy")
-                            || desc_lower.contains("sell")
-                            || desc_lower.contains("purchase")
-                            || desc_lower.contains("sale")
-                            || desc_lower.contains("sip")
-                            || desc_lower.contains("redemption")
-                            || desc_lower.contains("switch")
-                            || desc_lower.contains("ipo")
-                            || desc_lower.contains("transfer");
-
-                        if is_transaction_word && !desc.is_empty() && !qty.is_empty() {
-                            txn_rows.push(vec![
-                                date_str.clone(),
-                                desc,
-                                sec_name.clone(),
-                                matched_isin.clone(),
-                                qty,
-                                rate,
-                                amount,
-                                current_boid.clone(),
-                            ]);
-                        }
-                    }
-                } else if i + 1 < lines.len() {
-                    let desc_cand = lines[i + 1];
-                    let is_txn_desc = desc_cand.contains("Purchase")
-                        || desc_cand.contains("SIP")
-                        || desc_cand.contains("BUY")
-                        || desc_cand.contains("SALE")
-                        || desc_cand.contains("Redemption")
-                        || desc_cand.contains("Switch");
-
-                    if is_txn_desc && !is_summary_or_noise_line(desc_cand) {
-                        let mut amount = String::new();
-                        let mut nav = String::new();
-                        let mut units = String::new();
-
-                        let mut num_cands = Vec::new();
-                        for offset in 2..=8 {
-                            if i + offset < lines.len() {
-                                let cand = lines[i + offset].replace(',', "");
-                                if cand.parse::<f64>().is_ok() {
-                                    num_cands.push(cand);
-                                }
-                            }
-                        }
-
-                        if num_cands.len() >= 4 {
-                            amount = num_cands[0].clone();
-                            nav = num_cands[1].clone();
-                            units = num_cands[3].clone();
-                        } else if num_cands.len() == 3 {
-                            amount = num_cands[0].clone();
-                            nav = num_cands[1].clone();
-                            units = num_cands[2].clone();
-                        } else if num_cands.len() == 2 {
-                            amount = num_cands[0].clone();
-                            units = num_cands[1].clone();
-                        }
-
-                        if !amount.is_empty() || !units.is_empty() {
-                            txn_rows.push(vec![
-                                date_str,
-                                desc_cand.to_string(),
-                                sec_name,
-                                matched_isin,
-                                units,
-                                nav,
-                                amount,
-                                current_boid.clone(),
-                            ]);
-                        }
+                let first_num = tokens.iter().position(|t| number(t).is_some());
+                if let Some(first_num) = first_num.filter(|&n| n > 0) {
+                    let desc = tokens[..first_num].join(" ");
+                    let nums: Vec<Decimal> = tokens[first_num..]
+                        .iter()
+                        .filter_map(|t| number(t))
+                        .collect();
+                    let qty = nums.first().copied();
+                    let negative = qty.is_some_and(|q| q.is_sign_negative());
+                    if let (Some(label), Some(qty)) = (mf_label(&desc, negative), qty) {
+                        let (isin, security) = if txn_isin.is_empty() {
+                            (String::new(), String::new())
+                        } else {
+                            (txn_isin.clone(), txn_security.clone())
+                        };
+                        txn_rows.push(txn_row(
+                            &date_str,
+                            label,
+                            &security,
+                            &isin,
+                            fmt(qty.abs()),
+                            fmt_opt(nums.get(1).copied()),
+                            fmt_opt(nums.get(2).map(|a| a.abs())),
+                            &current_boid,
+                            String::new(),
+                            &desc,
+                        ));
                     }
                 }
             }
@@ -538,8 +906,7 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
         i += 1;
     }
 
-    // Default to combined rows (transactions first, then holdings)
-    // If only holdings exist, returns holdings rows.
+    // Transactions first, then holdings.
     let mut combined = txn_rows;
     combined.extend(holdings_rows);
 
@@ -616,14 +983,15 @@ ISIN: INE002A01018 RELIANCE INDUSTRIES LTD
 31-08-2026 तक के अनुसार सभी नवेश म कुल पोटफोलयो मूय ₹ 7110492.37
 "#;
         let (headers, rows) = parse_cdsl_cas(sample);
-        assert_eq!(headers.len(), 8);
+        assert_eq!(headers.len(), CDSL_HEADERS.len());
         // Hindi portfolio summary line must be excluded!
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0][0], "10-May-2024");
-        assert_eq!(rows[0][1], "BUY");
+        assert_eq!(rows[0][1], LABEL_BUY);
         assert_eq!(rows[0][3], "INE002A01018");
         assert_eq!(rows[1][0], "12-May-2024");
-        assert_eq!(rows[1][1], "SALE");
+        assert_eq!(rows[1][1], LABEL_SELL);
+        assert_eq!(rows[1][4], "5");
     }
 
     #[test]
@@ -659,5 +1027,245 @@ INF204K01K15
         assert_eq!(row[5], "210.6366");
         assert_eq!(row[6], "219669.33");
         assert_eq!(row[7], "1208160007465501");
+    }
+
+    /// Demat transaction table as text extraction lays it out: one cell per
+    /// line, particulars before the date, Op. Bal left out after the first row.
+    const DEMAT_TXNS: &str = "BO ID: 1208160000000001
+STATEMENT OF TRANSACTIONS FOR THE PERIOD FROM 01-08-2026 TO 31-08-2026
+ISIN
+Security
+TransactionParticulars
+Date
+Op. Bal
+Credit
+Debit
+Cl. Bal
+StampDuty(`)
+INF000000AA1
+EXAMPLE AMC LTD#EXAMPLE MF-EXAMPLE ETF GOLDBEES
+PAYOUT-CR CM00001 TM/CP00001 SETT0000000001
+12-08-2026
+585.000
+65.000
+--
+650.000
+0
+PAYOUT-CR CM00001 TM/CP00001 SETT0000000002
+14-08-2026
+50.000
+--
+700.000
+0
+INE000000AA2
+EXAMPLE INDUSTRIES LIMITED
+EP-DR CM00001 SETT0000000003
+20-08-2026
+100.000
+--
+40.000
+60.000
+0
+MRGN PLEDGE SETUP 1234
+21-08-2026
+--
+10.000
+50.000
+0
+BONUS CA-123456
+22-08-2026
+60.000
+--
+120.000
+0
+";
+
+    #[test]
+    fn demat_rows_take_quantity_from_credit_and_debit() {
+        let (headers, rows) = parse_cdsl_cas(DEMAT_TXNS);
+        assert_eq!(headers.len(), CDSL_HEADERS.len());
+        let summary: Vec<(&str, &str, &str, &str)> = rows
+            .iter()
+            .map(|r| (r[0].as_str(), r[1].as_str(), r[3].as_str(), r[4].as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                ("12-08-2026", LABEL_BUY, "INF000000AA1", "65"),
+                ("14-08-2026", LABEL_BUY, "INF000000AA1", "50"),
+                ("20-08-2026", LABEL_SELL, "INE000000AA2", "40"),
+                (
+                    "22-08-2026",
+                    LABEL_CORPORATE_ACTION_CREDIT,
+                    "INE000000AA2",
+                    "60"
+                ),
+            ]
+        );
+        assert_eq!(rows[0][2], "EXAMPLE ETF GOLDBEES");
+        assert_eq!(rows[2][2], "EXAMPLE INDUSTRIES LIMITED");
+        // No prices in a depository statement.
+        assert!(rows.iter().all(|r| r[5].is_empty() && r[6].is_empty()));
+        assert_eq!(rows[0][7], "1208160000000001");
+        assert_eq!(rows[0][10], "PAYOUT-CR CM00001 TM/CP00001 SETT0000000001");
+    }
+
+    #[test]
+    fn mf_rows_carry_price_units_and_stamp_duty_and_nps_is_skipped() {
+        let sample = "STATEMENT OF TRANSACTIONS FOR THE PERIOD FROM 01-08-2026 TO 31-08-2026
+Date
+Scheme Details
+Opening Balance
+5,900.1111
+03-Aug-2026
+EXAMPLE PENSION FUND SCHEME E- TIER I
+By Contribution forJuly,2026
+CR
+6,879.75
+76.0711
+90.4384
+Closing Balance
+5,990.5495
+STATEMENT OF TRANSACTIONS FOR THE PERIOD FROM 01-08-2026 TO 31-08-2026
+Example Mutual Fund
+STDG - Example Short Term Fund - Direct Growth
+ISIN : INF000000BB1
+UCC : MFEX0001
+Date
+Transaction Description
+Opening Balance
+5548.065
+03-08-2026
+Systematic Investment(NAVDt : 03/08/2026) (1/Perpetual)  25658431
+4999.75
+36.1677
+36.1677
+138.238
+.25
+0
+0
+10-08-2026
+Redemption
+(1,000.00)
+36.2000
+36.2000
+(27.624)
+0
+0
+0
+Closing Balance
+5658.679
+";
+        let (_, rows) = parse_cdsl_cas(sample);
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        let buy = &rows[0];
+        assert_eq!(buy[1], LABEL_BUY);
+        assert_eq!(buy[2], "Example Short Term Fund - Direct Growth");
+        assert_eq!(buy[3], "INF000000BB1");
+        assert_eq!(buy[4], "138.238");
+        assert_eq!(buy[5], "36.1677");
+        assert_eq!(buy[6], "4999.75");
+        assert_eq!(buy[8], "0.25");
+        let sell = &rows[1];
+        assert_eq!(sell[0], "10-08-2026");
+        assert_eq!(sell[1], LABEL_SELL);
+        assert_eq!(sell[4], "27.624");
+        assert_eq!(sell[6], "1000");
+        assert_eq!(sell[8], "");
+    }
+
+    #[test]
+    fn mf_holdings_after_a_transaction_section_are_read_with_avg_cost() {
+        let sample = "STATEMENT OF TRANSACTIONS FOR THE PERIOD FROM 01-08-2026 TO 31-08-2026
+No Transaction during the period
+MUTUAL FUND UNITS HELD AS ON 31-08-2026
+Scheme Name
+ISIN
+Folio No.
+ClosingBal(Units)
+NAV (`)
+CumulativeAmountInvested (inINR)
+Valuation (`)
+860 - Example HealthcareFund - Dir - Growth
+INF000000CC1
+6187921/97
+2476.236
+51.693
+52,499.99
+1,28,004.07
+75,504.08
+143.82
+";
+        let (_, rows) = parse_cdsl_cas(sample);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        let row = &rows[0];
+        assert_eq!(row[0], "31-08-2026");
+        assert_eq!(row[1], HOLDING_BALANCE);
+        assert_eq!(row[3], "INF000000CC1");
+        assert_eq!(row[4], "2476.236");
+        assert_eq!(row[5], "51.693");
+        assert_eq!(row[6], "128004.07");
+        // 52,499.99 / 2,476.236
+        assert_eq!(row[9], "21.2015");
+    }
+
+    #[test]
+    fn demat_labels() {
+        assert_eq!(demat_label("PAYOUT-CR CM1 SETT1", true), Some(LABEL_BUY));
+        assert_eq!(demat_label("EP-DR CM1 SETT1", false), Some(LABEL_SELL));
+        assert_eq!(demat_label("PAYIN-DR SETT1", false), Some(LABEL_SELL));
+        assert_eq!(demat_label("INTDEP-CR 1234", true), Some(LABEL_TRANSFER_IN));
+        assert_eq!(
+            demat_label("OFF MARKET TRANSFER", false),
+            Some(LABEL_TRANSFER_OUT)
+        );
+        assert_eq!(demat_label("IPO ALLOTMENT", true), Some(LABEL_BUY));
+        assert_eq!(
+            demat_label("SPLIT CA-1234", false),
+            Some(LABEL_CORPORATE_ACTION_DEBIT)
+        );
+        assert_eq!(demat_label("MARGIN PLEDGE", false), None);
+        assert_eq!(
+            demat_label("PLEDGE INVOCATION", false),
+            Some(LABEL_DEMAT_DEBIT)
+        );
+        assert_eq!(
+            demat_label("SOMETHING ELSE", true),
+            Some(LABEL_DEMAT_CREDIT)
+        );
+    }
+
+    #[test]
+    fn mf_labels() {
+        assert_eq!(
+            mf_label("SIP Purchase Instalment No -7", false),
+            Some(LABEL_BUY)
+        );
+        assert_eq!(
+            mf_label("Systematic Investment 123", false),
+            Some(LABEL_BUY)
+        );
+        assert_eq!(
+            mf_label("Switch Out - To Example Fund", false),
+            Some(LABEL_SELL)
+        );
+        assert_eq!(mf_label("IDCW Reinvestment", false), Some(LABEL_BUY));
+        assert_eq!(mf_label("IDCW Paid", false), Some(LABEL_DIVIDEND));
+        assert_eq!(mf_label("*** Stamp Duty ***", false), None);
+        assert_eq!(mf_label("Unknown", true), Some(LABEL_SELL));
+        assert_eq!(mf_label("Unknown", false), None);
+    }
+
+    #[test]
+    fn number_cells() {
+        assert_eq!(number_cell("--"), Some(None));
+        assert_eq!(
+            number_cell("1,28,004.07"),
+            Some(Some(Decimal::new(12800407, 2)))
+        );
+        assert_eq!(number_cell(".25"), Some(Some(Decimal::new(25, 2))));
+        assert_eq!(number_cell("(27.624)"), Some(Some(Decimal::new(-27624, 3))));
+        assert_eq!(number_cell("Closing Balance"), None);
+        assert_eq!(number_cell("-"), None);
     }
 }

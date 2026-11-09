@@ -267,6 +267,8 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
   });
 
   describe("CDSL e-CAS (Consolidated Account Statement)", () => {
+    // Mirrors migration 2026-11-09-000001_cdsl_cas_template_v2. The parser
+    // writes fixed labels, so the mapping only lists those.
     const cdslTemplate: ImportTemplateData = {
       id: "system_cdsl_cas",
       name: "CDSL e-CAS",
@@ -281,37 +283,15 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
         [ImportFormat.UNIT_PRICE]: "Rate",
         [ImportFormat.AMOUNT]: "Amount",
         [ImportFormat.ACCOUNT]: "BO ID",
+        [ImportFormat.FEE]: "Fee",
+        [ImportFormat.COMMENT]: "Particulars",
       },
       activityMappings: {
-        [ActivityType.BUY]: [
-          "PURCHASE",
-          "BUY",
-          "MARKET BUY",
-          "OFF-MARKET INWARD",
-          "OFF MARKET INWARD",
-          "IPO ALLOTMENT",
-          "IPO",
-          "BONUS",
-          "RIGHTS",
-          "CORPORATE ACTION INWARD",
-          "INTER-DEPOSITORY TRANSFER INWARD",
-          "INWARD TRANSFER",
-          "TRANSMISSION INWARD",
-        ],
-        [ActivityType.SELL]: [
-          "SALE",
-          "SELL",
-          "MARKET SELL",
-          "OFF-MARKET OUTWARD",
-          "OFF MARKET OUTWARD",
-          "REDEMPTION",
-          "CORPORATE ACTION OUTWARD",
-          "INTER-DEPOSITORY TRANSFER OUTWARD",
-          "OUTWARD TRANSFER",
-          "TRANSMISSION OUTWARD",
-        ],
-        [ActivityType.SPLIT]: ["STOCK SPLIT", "SUBDIVISION"],
-        [ActivityType.FEE]: ["CHARGES", "DEPOSITORY CHARGES"],
+        [ActivityType.BUY]: ["BUY"],
+        [ActivityType.SELL]: ["SELL"],
+        [ActivityType.TRANSFER_IN]: ["TRANSFER IN"],
+        [ActivityType.TRANSFER_OUT]: ["TRANSFER OUT"],
+        [ActivityType.DIVIDEND]: ["DIVIDEND"],
       },
       symbolMappings: {},
       accountMappings: {},
@@ -327,6 +307,9 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
       "Rate",
       "Amount",
       "BO ID",
+      "Fee",
+      "Avg Cost",
+      "Particulars",
     ];
 
     it("auto-detects CDSL e-CAS columns correctly via aliases", () => {
@@ -342,38 +325,26 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
       expect(mapping[ImportFormat.ACCOUNT]).toBe("BO ID");
     });
 
-    it("maps CDSL depository activity descriptions correctly", () => {
-      // Inward movements
-      expect(findMappedActivityType("PURCHASE", cdslTemplate.activityMappings)).toBe(
-        ActivityType.BUY,
-      );
-      expect(findMappedActivityType("OFF-MARKET INWARD", cdslTemplate.activityMappings)).toBe(
-        ActivityType.BUY,
-      );
-      expect(findMappedActivityType("IPO ALLOTMENT", cdslTemplate.activityMappings)).toBe(
-        ActivityType.BUY,
-      );
-      expect(findMappedActivityType("BONUS", cdslTemplate.activityMappings)).toBe(ActivityType.BUY);
-      expect(
-        findMappedActivityType("INTER-DEPOSITORY TRANSFER INWARD", cdslTemplate.activityMappings),
-      ).toBe(ActivityType.BUY);
+    it("maps the parser's labels", () => {
+      const m = cdslTemplate.activityMappings;
+      expect(findMappedActivityType("BUY", m)).toBe(ActivityType.BUY);
+      expect(findMappedActivityType("SELL", m)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("TRANSFER IN", m)).toBe(ActivityType.TRANSFER_IN);
+      expect(findMappedActivityType("TRANSFER OUT", m)).toBe(ActivityType.TRANSFER_OUT);
+      expect(findMappedActivityType("DIVIDEND", m)).toBe(ActivityType.DIVIDEND);
+    });
 
-      // Outward movements
-      expect(findMappedActivityType("SALE", cdslTemplate.activityMappings)).toBe(ActivityType.SELL);
-      expect(findMappedActivityType("OFF-MARKET OUTWARD", cdslTemplate.activityMappings)).toBe(
-        ActivityType.SELL,
-      );
-      expect(
-        findMappedActivityType("INTER-DEPOSITORY TRANSFER OUTWARD", cdslTemplate.activityMappings),
-      ).toBe(ActivityType.SELL);
-
-      // Corporate action split
-      expect(findMappedActivityType("STOCK SPLIT", cdslTemplate.activityMappings)).toBe(
-        ActivityType.SPLIT,
-      );
-      expect(findMappedActivityType("SUBDIVISION", cdslTemplate.activityMappings)).toBe(
-        ActivityType.SPLIT,
-      );
+    it("leaves corporate actions and unknown movements for the user to map", () => {
+      const m = cdslTemplate.activityMappings;
+      for (const label of [
+        "CORPORATE ACTION CREDIT",
+        "CORPORATE ACTION DEBIT",
+        "DEMAT CREDIT",
+        "DEMAT DEBIT",
+        "MF TRANSACTION",
+      ]) {
+        expect(findMappedActivityType(label, m)).toBeNull();
+      }
     });
   });
 
