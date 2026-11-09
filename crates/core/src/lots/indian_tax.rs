@@ -112,6 +112,60 @@ pub fn sec_112a_exemption_for_fy(fy_start_year: i32) -> Decimal {
     }
 }
 
+/// Cost Inflation Index (Section 48, Explanation (v)) by financial year
+/// start, from the 2001-02 base year.
+const COST_INFLATION_INDEX: [(i32, i64); 25] = [
+    (2001, 100),
+    (2002, 105),
+    (2003, 109),
+    (2004, 113),
+    (2005, 117),
+    (2006, 122),
+    (2007, 129),
+    (2008, 137),
+    (2009, 148),
+    (2010, 167),
+    (2011, 184),
+    (2012, 200),
+    (2013, 220),
+    (2014, 240),
+    (2015, 254),
+    (2016, 264),
+    (2017, 272),
+    (2018, 280),
+    (2019, 289),
+    (2020, 301),
+    (2021, 317),
+    (2022, 331),
+    (2023, 348),
+    (2024, 363),
+    (2025, 376),
+];
+
+/// Cost Inflation Index for a financial year. Years before 2001-02 use the
+/// base year, as cost is then taken from 1 Apr 2001 (Section 55(2)(b)).
+/// `None` for a year not yet notified.
+pub fn cost_inflation_index(fy_start_year: i32) -> Option<Decimal> {
+    let year = fy_start_year.max(2001);
+    COST_INFLATION_INDEX
+        .iter()
+        .find(|(fy, _)| *fy == year)
+        .map(|(_, cii)| Decimal::new(*cii, 0))
+}
+
+/// Indexed cost of acquisition: cost × CII(year of sale) / CII(year of
+/// purchase), rounded to the rupee-paisa. `None` when either index is
+/// unknown.
+pub fn indexed_cost(
+    cost: Decimal,
+    acquisition_date: NaiveDate,
+    disposal_date: NaiveDate,
+) -> Option<Decimal> {
+    let bought = cost_inflation_index(financial_year_of(acquisition_date))?;
+    let sold = cost_inflation_index(financial_year_of(disposal_date))?;
+    Some((cost * sold / bought).round_dp(2))
+}
+
 /// Special tax rate for a section on a sale date. `None` means slab rate or exempt.
 pub fn special_rate(section: IndianTaxSection, disposal_date: NaiveDate) -> Option<Decimal> {
     let post_budget = disposal_date >= budget_2024_date();
@@ -126,8 +180,7 @@ pub fn special_rate(section: IndianTaxSection, disposal_date: NaiveDate) -> Opti
         } else {
             Decimal::new(10, 2)
         }),
-        // Before 23 Jul 2024 this is 20% after indexation; indexation is not
-        // modelled, so pre-budget Section 112 estimates are an upper bound.
+        // Before 23 Jul 2024 this is 20% on the indexed gain.
         IndianTaxSection::Sec112 => Some(if post_budget {
             Decimal::new(125, 3)
         } else {
@@ -358,6 +411,9 @@ enum Bucket {
     Ltcg112aPre,
     Ltcg112aPost,
     Ltcg112Pre,
+    /// Listed securities other than units sold before 23 Jul 2024, where 10%
+    /// without indexation is lower than 20% with it (Section 112(1) proviso).
+    Ltcg112PreProviso,
     Ltcg112Post,
 }
 
@@ -366,10 +422,11 @@ const ST_ORDER: [Bucket; 3] = [Bucket::StcgSlab, Bucket::Stcg111aPost, Bucket::S
 
 /// Long-term gains, highest rate first; at equal rates Section 112 goes before
 /// 112A, because 112A gains may fall inside the exemption anyway.
-const LT_ORDER: [Bucket; 4] = [
+const LT_ORDER: [Bucket; 5] = [
     Bucket::Ltcg112Pre,
     Bucket::Ltcg112Post,
     Bucket::Ltcg112aPost,
+    Bucket::Ltcg112PreProviso,
     Bucket::Ltcg112aPre,
 ];
 
@@ -429,6 +486,7 @@ pub fn calculate_indian_capital_gains(
     let mut missing_open_dates = 0usize;
     let mut non_fifo = false;
     let mut missing_fmv: std::collections::BTreeSet<String> = Default::default();
+    let mut unindexed = false;
 
     for d in disposals {
         let Some(disp_date) = parse_date(&d.disposal_date) else {
@@ -485,8 +543,31 @@ pub fn calculate_indian_capital_gains(
         } else {
             cost_basis
         };
+        // Section 112 before 23 Jul 2024: 20% on the indexed gain. For a
+        // listed security that isn't a unit (here, SGBs), 10% on the gain
+        // without indexation applies when lower.
+        let mut deemed_cost = deemed_cost;
+        let mut rate = special_rate(tax_section, disp_date);
+        let mut bucket = bucket_for(tax_section, disp_date);
+        if tax_section == IndianTaxSection::Sec112 && disp_date < budget_2024_date() {
+            match indexed_cost(cost_basis, acq_date, disp_date) {
+                Some(indexed) => {
+                    let indexed_tax = (proceeds - indexed).max(Decimal::ZERO) * Decimal::new(20, 2);
+                    let plain_tax =
+                        (proceeds - cost_basis).max(Decimal::ZERO) * Decimal::new(10, 2);
+                    if classification == IndianAssetTaxClassification::GoldSgb
+                        && plain_tax < indexed_tax
+                    {
+                        rate = Some(Decimal::new(10, 2));
+                        bucket = Some(Bucket::Ltcg112PreProviso);
+                    } else {
+                        deemed_cost = indexed;
+                    }
+                }
+                None => unindexed = true,
+            }
+        }
         let gross_gain = proceeds - deemed_cost;
-        let rate = special_rate(tax_section, disp_date);
 
         match tax_section {
             IndianTaxSection::Sec111a => {
@@ -518,7 +599,7 @@ pub fn calculate_indian_capital_gains(
                 summary.exempt_ltcg_sec_10_38 += gross_gain;
             }
         }
-        if let Some(bucket) = bucket_for(tax_section, disp_date) {
+        if let Some(bucket) = bucket {
             *nets.entry(bucket).or_insert(Decimal::ZERO) += gross_gain;
         }
 
@@ -593,6 +674,7 @@ pub fn calculate_indian_capital_gains(
     summary.estimated_ltcg_tax = ltcg_112a_pre * Decimal::new(10, 2)
         + ltcg_112a_post * Decimal::new(125, 3)
         + get(&nets, Bucket::Ltcg112Pre) * Decimal::new(20, 2)
+        + get(&nets, Bucket::Ltcg112PreProviso) * Decimal::new(10, 2)
         + get(&nets, Bucket::Ltcg112Post) * Decimal::new(125, 3);
     let special_tax = summary.estimated_stcg_tax + summary.estimated_ltcg_tax;
     summary.health_education_cess = special_tax * Decimal::new(4, 2);
@@ -623,12 +705,11 @@ pub fn calculate_indian_capital_gains(
             missing_fmv.into_iter().collect::<Vec<_>>().join(", ")
         ));
     }
-    if summary.ltcg_112a_pre_budget != Decimal::ZERO
-        || get(&nets, Bucket::Ltcg112Pre) > Decimal::ZERO
-    {
+    if unindexed {
         summary.warnings.push(
-            "Section 112 gains on sales before 23 Jul 2024 are estimated at 20% without \
-             indexation, so the estimate may be high."
+            "Some Section 112 sales before 23 Jul 2024 fall in a year with no Cost \
+             Inflation Index here, so they are estimated at 20% without indexation and \
+             the estimate may be high."
                 .to_string(),
         );
     }
@@ -1244,5 +1325,87 @@ mod tests {
             serde_json::to_value(IndianAssetTaxClassification::DebtMf).unwrap(),
             "debt_mf"
         );
+    }
+
+    #[test]
+    fn cost_inflation_index_and_indexed_cost() {
+        assert_eq!(cost_inflation_index(2001), Some(dec!(100)));
+        assert_eq!(cost_inflation_index(1995), Some(dec!(100)));
+        assert_eq!(cost_inflation_index(2024), Some(dec!(363)));
+        assert_eq!(cost_inflation_index(2025), Some(dec!(376)));
+        assert_eq!(cost_inflation_index(2099), None);
+        // 1,00,000 × 363 / 254
+        assert_eq!(
+            indexed_cost(dec!(100000), date(2015, 6, 1), date(2024, 5, 1)),
+            Some(dec!(142913.39))
+        );
+    }
+
+    #[test]
+    fn pre_budget_section_112_is_taxed_on_the_indexed_gain() {
+        use IndianAssetTaxClassification::*;
+        // Debt fund bought before 1 Apr 2023, held over 36 months, sold before 23 Jul 2024.
+        let summary = run(
+            &[sale(
+                "debt",
+                DebtMf,
+                date(2019, 4, 10),
+                date(2024, 6, 1),
+                dec!(100000),
+                dec!(150000),
+            )],
+            2024,
+        );
+        let calc = &summary.calculations[0];
+        assert_eq!(calc.tax_section, IndianTaxSection::Sec112);
+        // 1,00,000 × 363 / 289
+        assert_eq!(calc.deemed_cost, dec!(125605.54));
+        assert_eq!(calc.gross_gain, dec!(24394.46));
+        assert_eq!(summary.ltcg_other_total, dec!(24394.46));
+        assert_eq!(summary.estimated_ltcg_tax, dec!(4878.892));
+        assert!(summary
+            .warnings
+            .iter()
+            .all(|w| !w.contains("Cost Inflation Index")));
+    }
+
+    #[test]
+    fn post_budget_section_112_has_no_indexation() {
+        use IndianAssetTaxClassification::*;
+        let summary = run(
+            &[sale(
+                "debt",
+                DebtMf,
+                date(2019, 4, 10),
+                date(2024, 8, 1),
+                dec!(100000),
+                dec!(150000),
+            )],
+            2024,
+        );
+        assert_eq!(summary.calculations[0].deemed_cost, dec!(100000));
+        assert_eq!(summary.estimated_ltcg_tax, dec!(6250));
+    }
+
+    #[test]
+    fn listed_sgb_uses_ten_percent_without_indexation_when_lower() {
+        use IndianAssetTaxClassification::*;
+        // Indexed: 2,00,000 - 1,37,500 = 62,500 at 20% = 12,500.
+        // Plain: 1,00,000 at 10% = 10,000, which is lower.
+        let summary = run(
+            &[sale(
+                "sgb",
+                GoldSgb,
+                date(2016, 8, 1),
+                date(2024, 6, 1),
+                dec!(100000),
+                dec!(200000),
+            )],
+            2024,
+        );
+        let calc = &summary.calculations[0];
+        assert_eq!(calc.deemed_cost, dec!(100000));
+        assert_eq!(calc.applicable_tax_rate, dec!(0.10));
+        assert_eq!(summary.estimated_ltcg_tax, dec!(10000));
     }
 }
