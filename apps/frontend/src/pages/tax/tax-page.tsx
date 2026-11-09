@@ -704,8 +704,9 @@ export default function TaxPage() {
 
         <p className="text-muted-foreground text-xs">
           * Estimates apply loss set-off (Section 70) and the Section 112A exemption, and add 4%
-          cess. Slab-rate gains, surcharge and indexation are not included. Per-row tax is before
-          set-off. Consult a chartered accountant before filing your ITR.
+          cess. Section 112 sales before 23 Jul 2024 use indexed cost. Slab-rate gains and surcharge
+          are not included. Per-row tax is before set-off. Consult a chartered accountant before
+          filing your ITR.
         </p>
       </div>
     </>
