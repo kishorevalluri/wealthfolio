@@ -22,92 +22,27 @@ import {
 } from "@wealthfolio/ui/components/ui/table";
 import { useState } from "react";
 
-// ── Slabs & Constants ────────────────────────────────────────────────────────
-
-const STANDARD_DEDUCTION_NEW = 75_000;
-const STANDARD_DEDUCTION_OLD = 50_000;
-
-// Old Regime (individuals under 60)
-// Up to 2.5L: 0%
-// 2.5L - 5L: 5%
-// 5L - 10L: 20%
-// > 10L: 30%
-function calculateOldRegimeTax(taxableIncome: number): number {
-  if (taxableIncome <= 0) return 0;
-  let tax = 0;
-  if (taxableIncome > 1_000_000) {
-    tax += (taxableIncome - 1_000_000) * 0.3;
-    tax += 500_000 * 0.2; // 5L to 10L
-    tax += 250_000 * 0.05; // 2.5L to 5L
-  } else if (taxableIncome > 500_000) {
-    tax += (taxableIncome - 500_000) * 0.2;
-    tax += 250_000 * 0.05;
-  } else if (taxableIncome > 250_000) {
-    tax += (taxableIncome - 250_000) * 0.05;
-  }
-
-  // Section 87A rebate for Old Regime: if taxable income <= 5,00,000, max rebate ₹12,500
-  if (taxableIncome <= 500_000) {
-    tax = Math.max(0, tax - 12_500);
-  }
-
-  return tax;
-}
-
-// New Regime (Budget 2024 / FY 2024-25 onwards)
-// Up to 3L: 0%
-// 3L - 7L: 5%
-// 7L - 10L: 10%
-// 10L - 12L: 15%
-// 12L - 15L: 20%
-// > 15L: 30%
-function calculateNewRegimeTax(taxableIncome: number): number {
-  if (taxableIncome <= 0) return 0;
-  let tax = 0;
-  if (taxableIncome > 1_500_000) {
-    tax += (taxableIncome - 1_500_000) * 0.3;
-    tax += 300_000 * 0.2; // 12L to 15L
-    tax += 200_000 * 0.15; // 10L to 12L
-    tax += 300_000 * 0.1; // 7L to 10L
-    tax += 400_000 * 0.05; // 3L to 7L
-  } else if (taxableIncome > 1_200_000) {
-    tax += (taxableIncome - 1_200_000) * 0.2;
-    tax += 200_000 * 0.15;
-    tax += 300_000 * 0.1;
-    tax += 400_000 * 0.05;
-  } else if (taxableIncome > 1_000_000) {
-    tax += (taxableIncome - 1_000_000) * 0.15;
-    tax += 300_000 * 0.1;
-    tax += 400_000 * 0.05;
-  } else if (taxableIncome > 700_000) {
-    tax += (taxableIncome - 700_000) * 0.1;
-    tax += 400_000 * 0.05;
-  } else if (taxableIncome > 300_000) {
-    tax += (taxableIncome - 300_000) * 0.05;
-  }
-
-  // Section 87A rebate for New Regime:
-  // Full rebate if taxable income <= 7,00,000 (tax liability becomes 0)
-  if (taxableIncome <= 700_000) {
-    tax = 0;
-  } else {
-    // Marginal relief under Section 87A for income slightly exceeding 7,00,000:
-    // Tax payable cannot exceed (Taxable Income - 7,00,000)
-    const excessOver7L = taxableIncome - 700_000;
-    if (tax > excessOver7L) {
-      tax = excessOver7L;
-    }
-  }
-
-  return tax;
-}
+import {
+  computeRegimeTax,
+  standardDeduction,
+  type RegimeTax,
+  type SpecialRateGain,
+} from "../indian-income-tax";
 
 export interface DualRegimeOptimizerProps {
-  /** Capital gains from portfolio to include in calculation */
+  /** Financial year start (2025 = FY 2025-26); picks the slabs. */
+  fyStartYear: number;
+  /** Slab-rate capital gains from the portfolio, after set-off */
   stcgSlabTotal?: number;
+  /** Special-rate capital gains from the portfolio, after set-off and exemption */
+  specialRateGains?: SpecialRateGain[];
 }
 
-export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerProps) {
+export function DualRegimeOptimizer({
+  fyStartYear,
+  stcgSlabTotal = 0,
+  specialRateGains = [],
+}: DualRegimeOptimizerProps) {
   const [grossSalary, setGrossSalary] = useState<string>("1500000");
   const [otherIncome, setOtherIncome] = useState<string>("0");
   const [includePortfolioSlabGains, setIncludePortfolioSlabGains] = useState<boolean>(true);
@@ -122,11 +57,18 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
 
   const [showDeductions, setShowDeductions] = useState<boolean>(false);
 
+  const STANDARD_DEDUCTION_OLD = standardDeduction(fyStartYear, "old");
+  const STANDARD_DEDUCTION_NEW = standardDeduction(fyStartYear, "new");
+  const fyLabel = `FY ${fyStartYear}-${String((fyStartYear + 1) % 100).padStart(2, "0")}`;
+
   // Parsed values
   const numSalary = Math.max(0, parseFloat(grossSalary) || 0);
   const numOther = Math.max(0, parseFloat(otherIncome) || 0);
   const additionalSlabGains = includePortfolioSlabGains ? Math.max(0, stcgSlabTotal) : 0;
-  const totalGrossIncome = numSalary + numOther + additionalSlabGains;
+  const portfolioSpecialGains = includePortfolioSlabGains ? specialRateGains : [];
+  const specialIncome = portfolioSpecialGains.reduce((sum, g) => sum + g.amount, 0);
+  const slabGrossIncome = numSalary + numOther + additionalSlabGains;
+  const totalGrossIncome = slabGrossIncome + specialIncome;
 
   // Deductions calculation (Old Regime)
   const capped80C = Math.min(150_000, Math.max(0, parseFloat(sec80C) || 0));
@@ -145,24 +87,32 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
     cappedHomeLoan +
     numOtherDeductions;
 
-  // Taxable income
-  const oldTaxableIncome = Math.max(0, totalGrossIncome - totalOldDeductions);
-  const newTaxableIncome = Math.max(0, totalGrossIncome - STANDARD_DEDUCTION_NEW);
+  // Deductions reduce slab income only, never special-rate gains.
+  const oldSlabIncome = Math.max(0, slabGrossIncome - totalOldDeductions);
+  const newSlabIncome = Math.max(0, slabGrossIncome - STANDARD_DEDUCTION_NEW);
 
-  // Tax before cess
-  const oldTaxBeforeCess = calculateOldRegimeTax(oldTaxableIncome);
-  const newTaxBeforeCess = calculateNewRegimeTax(newTaxableIncome);
+  const oldTax: RegimeTax = computeRegimeTax(
+    fyStartYear,
+    "old",
+    oldSlabIncome,
+    portfolioSpecialGains,
+  );
+  const newTax: RegimeTax = computeRegimeTax(
+    fyStartYear,
+    "new",
+    newSlabIncome,
+    portfolioSpecialGains,
+  );
 
-  // 4% Health & Education Cess
-  const oldCess = Math.round(oldTaxBeforeCess * 0.04);
-  const newCess = Math.round(newTaxBeforeCess * 0.04);
-
-  const oldTotalTax = oldTaxBeforeCess + oldCess;
-  const newTotalTax = newTaxBeforeCess + newCess;
+  const oldTaxableIncome = oldTax.totalIncome;
+  const newTaxableIncome = newTax.totalIncome;
+  const oldTotalTax = Math.round(oldTax.total);
+  const newTotalTax = Math.round(newTax.total);
 
   const difference = Math.abs(oldTotalTax - newTotalTax);
   const recommendedRegime = newTotalTax <= oldTotalTax ? "new" : "old";
   const isBreakEven = oldTotalTax === newTotalTax;
+  const hasPortfolioGains = stcgSlabTotal > 0 || specialRateGains.length > 0;
 
   return (
     <Card className="border-border">
@@ -171,11 +121,11 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
           <div>
             <CardTitle className="flex items-center gap-2 text-base font-semibold">
               <Icons.Receipt className="text-primary h-5 w-5" />
-              Dual-Regime Tax Optimizer (Budget 2024)
+              Dual-Regime Tax Optimizer ({fyLabel})
             </CardTitle>
             <CardDescription className="text-xs">
-              Interactive comparison of Old vs. New Tax Regime with ₹75,000 standard deduction,
-              revised slabs, and Section 87A rebate.
+              Old vs. new regime for {fyLabel}: slabs, standard deduction, Section 87A rebate,
+              surcharge with marginal relief, and your capital gains from this portfolio.
             </CardDescription>
           </div>
           <Badge
@@ -223,13 +173,17 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
             />
           </div>
 
-          {stcgSlabTotal > 0 && (
+          {hasPortfolioGains && (
             <div className="flex flex-col justify-end space-y-1.5">
               <div className="flex items-center justify-between rounded-md border p-2">
                 <div className="space-y-0.5">
-                  <span className="text-xs font-medium">Include Slab Gains</span>
+                  <span className="text-xs font-medium">Include Capital Gains</span>
                   <p className="text-muted-foreground text-2xs">
-                    +₹{Math.round(stcgSlabTotal).toLocaleString("en-IN")} from portfolio
+                    +₹
+                    {Math.round(
+                      stcgSlabTotal + specialRateGains.reduce((s, g) => s + g.amount, 0),
+                    ).toLocaleString("en-IN")}{" "}
+                    from portfolio
                   </p>
                 </div>
                 <Switch
@@ -254,7 +208,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
                   currency="INR"
                   isHidden={false}
                 />{" "}
-                (+ ₹50,000 std ded)
+                (+ ₹{STANDARD_DEDUCTION_OLD.toLocaleString("en-IN")} std ded)
               </p>
             </div>
             <Button
@@ -367,7 +321,7 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
               <TableRow>
                 <TableHead className="w-[35%]">Component</TableHead>
                 <TableHead className="text-end">Old Regime</TableHead>
-                <TableHead className="text-end">New Regime (Budget 2024)</TableHead>
+                <TableHead className="text-end">New Regime</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="text-xs">
@@ -413,25 +367,77 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell className="text-muted-foreground">
-                  Income Tax (after Sec 87A rebate)
+                <TableCell className="text-muted-foreground">Tax at Slab Rates</TableCell>
+                <TableCell className="text-end">
+                  <AmountDisplay value={oldTax.slabTax} currency="INR" isHidden={false} />
                 </TableCell>
                 <TableCell className="text-end">
-                  <AmountDisplay value={oldTaxBeforeCess} currency="INR" isHidden={false} />
-                </TableCell>
-                <TableCell className="text-end">
-                  <AmountDisplay value={newTaxBeforeCess} currency="INR" isHidden={false} />
+                  <AmountDisplay value={newTax.slabTax} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
+              <TableRow>
+                <TableCell className="text-muted-foreground">Section 87A Rebate</TableCell>
+                <TableCell className="text-end">
+                  − <AmountDisplay value={oldTax.rebate87a} currency="INR" isHidden={false} />
+                </TableCell>
+                <TableCell className="text-end">
+                  − <AmountDisplay value={newTax.rebate87a} currency="INR" isHidden={false} />
+                </TableCell>
+              </TableRow>
+              {specialIncome > 0 && (
+                <>
+                  <TableRow>
+                    <TableCell className="text-muted-foreground">
+                      Tax on Capital Gains at Special Rates
+                    </TableCell>
+                    <TableCell className="text-end">
+                      <AmountDisplay
+                        value={oldTax.specialRateTax}
+                        currency="INR"
+                        isHidden={false}
+                      />
+                    </TableCell>
+                    <TableCell className="text-end">
+                      <AmountDisplay
+                        value={newTax.specialRateTax}
+                        currency="INR"
+                        isHidden={false}
+                      />
+                    </TableCell>
+                  </TableRow>
+                </>
+              )}
+              <TableRow>
+                <TableCell className="text-muted-foreground">Surcharge</TableCell>
+                <TableCell className="text-end">
+                  <AmountDisplay value={oldTax.surcharge} currency="INR" isHidden={false} />
+                </TableCell>
+                <TableCell className="text-end">
+                  <AmountDisplay value={newTax.surcharge} currency="INR" isHidden={false} />
+                </TableCell>
+              </TableRow>
+              {(oldTax.marginalRelief > 0 || newTax.marginalRelief > 0) && (
+                <TableRow>
+                  <TableCell className="text-muted-foreground">Marginal Relief</TableCell>
+                  <TableCell className="text-end">
+                    −{" "}
+                    <AmountDisplay value={oldTax.marginalRelief} currency="INR" isHidden={false} />
+                  </TableCell>
+                  <TableCell className="text-end">
+                    −{" "}
+                    <AmountDisplay value={newTax.marginalRelief} currency="INR" isHidden={false} />
+                  </TableCell>
+                </TableRow>
+              )}
               <TableRow>
                 <TableCell className="text-muted-foreground">
                   Health & Education Cess (4%)
                 </TableCell>
                 <TableCell className="text-end">
-                  <AmountDisplay value={oldCess} currency="INR" isHidden={false} />
+                  <AmountDisplay value={oldTax.cess} currency="INR" isHidden={false} />
                 </TableCell>
                 <TableCell className="text-end">
-                  <AmountDisplay value={newCess} currency="INR" isHidden={false} />
+                  <AmountDisplay value={newTax.cess} currency="INR" isHidden={false} />
                 </TableCell>
               </TableRow>
               <TableRow className="bg-muted/30 border-t text-sm font-bold">
@@ -478,7 +484,8 @@ export function DualRegimeOptimizer({ stcgSlabTotal = 0 }: DualRegimeOptimizerPr
                 <>
                   The <strong>New Tax Regime</strong> saves you{" "}
                   <strong>₹{difference.toLocaleString("en-IN")}</strong> in tax. Its lower slab
-                  rates and enhanced ₹75,000 standard deduction outweigh your Old Regime exemptions.
+                  rates and ₹{STANDARD_DEDUCTION_NEW.toLocaleString("en-IN")} standard deduction
+                  outweigh your Old Regime exemptions.
                 </>
               ) : (
                 <>
