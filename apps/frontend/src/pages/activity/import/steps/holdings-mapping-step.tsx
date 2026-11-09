@@ -92,8 +92,20 @@ interface ColumnMappingItem {
 // Auto-detect helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function autoDetectHoldingsMapping(headers: string[]): Record<string, string> {
+export function autoDetectHoldingsMapping(headers: string[]): Record<string, string> {
   const mappings: Record<string, string> = {};
+
+  // A cost column wins over a price column: a statement can carry both (CDSL
+  // gives the market price as Rate and the cost as Avg Cost), and using the
+  // market price as cost would hide the gain.
+  const costHeader = headers.find((h) => {
+    const lower = h.toLowerCase().trim();
+    return lower.includes("avg") || lower.includes("average") || lower.includes("cost");
+  });
+  if (costHeader) mappings[HoldingsFormat.AVG_COST] = costHeader;
+  // An ISIN identifies the security exactly; a statement name often doesn't.
+  const isinHeader = headers.find((h) => h.toLowerCase().trim() === "isin");
+  if (isinHeader) mappings[HoldingsFormat.SYMBOL] = isinHeader;
 
   for (const header of headers) {
     const lower = header.toLowerCase().trim();
