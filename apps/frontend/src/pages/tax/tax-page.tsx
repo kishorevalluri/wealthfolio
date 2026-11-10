@@ -27,6 +27,8 @@ import { AmountDisplay, AnimatedToggleGroup, Progress } from "@wealthfolio/ui";
 import { useQuery } from "@tanstack/react-query";
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useAccounts } from "@/hooks/use-accounts";
+import type { Account } from "@/lib/types";
 import { DualRegimeOptimizer } from "./components/dual-regime-optimizer";
 import { parseSpecialRateGains } from "./indian-income-tax";
 
@@ -421,6 +423,25 @@ function TaxPageSkeleton() {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
+/**
+ * Holdings-mode accounts record quantity and average cost only, with no
+ * sales, so they never have capital gains here.
+ */
+function HoldingsModeNotice({ accounts }: { accounts: Account[] }) {
+  if (accounts.length === 0) return null;
+  return (
+    <div className="border-info-subtle-border bg-info-subtle text-info-subtle-foreground flex items-start gap-3 rounded-lg border p-3 text-xs">
+      <Icons.Info className="mt-0.5 h-4 w-4 shrink-0" />
+      <p>
+        Not included: {accounts.map((a) => a.name).join(", ")}.{" "}
+        {accounts.length === 1 ? "This account uses" : "These accounts use"} holdings mode, which
+        records holdings but not sales. To report capital gains, switch an account you sell from to
+        transactions mode and import its trades (broker tradebook or CDSL statement).
+      </p>
+    </div>
+  );
+}
+
 export default function TaxPage() {
   const { t } = useTranslation();
   const currentFY = useMemo(() => getCurrentFY(), []);
@@ -429,6 +450,11 @@ export default function TaxPage() {
   const [isExportingClearTax, setIsExportingClearTax] = useState(false);
 
   const accountFilter = useAccountScopeStore((state) => state.scope);
+  const { accounts } = useAccounts();
+  const holdingsAccounts = useMemo(
+    () => accounts.filter((a) => a.trackingMode === "HOLDINGS"),
+    [accounts],
+  );
   const setAccountScope = useAccountScopeStore((state) => state.setScope);
 
   const fyOptions = useMemo(() => buildFYOptions(currentFY), [currentFY]);
@@ -610,6 +636,7 @@ export default function TaxPage() {
       <>
         {filters}
         <div className="space-y-6">
+          <HoldingsModeNotice accounts={holdingsAccounts} />
           <EmptyPlaceholder
             className="mx-auto flex max-w-105 items-center justify-center pt-8 pb-4"
             icon={<Icons.FileText className="h-10 w-10" />}
@@ -628,6 +655,7 @@ export default function TaxPage() {
     <>
       {filters}
       <div className="space-y-6">
+        <HoldingsModeNotice accounts={holdingsAccounts} />
         {/* Summary cards */}
         <div className="grid gap-4 md:grid-cols-4">
           <MetricCard
