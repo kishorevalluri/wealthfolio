@@ -69,6 +69,11 @@ import {
 import { mergeDetectedParseConfig } from "../utils/import-flow-utils";
 import { badgeVariants } from "@wealthfolio/ui";
 
+/** PDF statements and Excel reports are parsed by the backend, not as CSV. */
+function isStatementFile(name: string): boolean {
+  return /\.(pdf|xlsx|xls|ods)$/i.test(name);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CSV Preview Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -621,7 +626,7 @@ export function UploadStep() {
       // Re-parse with the template's config to get fresh headers, then compute mappings
       // so auto-detected columns (e.g., ISIN) are merged with the saved template mappings.
       let headers = options?.overrideHeaders ?? state.headers;
-      if (state.file && !state.file.name.toLowerCase().endsWith(".pdf")) {
+      if (state.file && !isStatementFile(state.file.name)) {
         try {
           const result = await parseCsv(state.file, nextParseConfig);
           setParseError(null);
@@ -700,7 +705,7 @@ export function UploadStep() {
 
     dispatch(setParseConfig(baselineParseConfig));
     dispatch(setMapping(createEmptyHoldingsMapping(state.accountId || "")));
-    if (state.file && !state.file.name.toLowerCase().endsWith(".pdf")) {
+    if (state.file && !isStatementFile(state.file.name)) {
       parseCsv(state.file, baselineParseConfig)
         .then((result) => {
           setParseError(null);
@@ -743,7 +748,7 @@ export function UploadStep() {
       } else {
         dispatch(setParseConfig(baselineParseConfig));
         dispatch(setMapping(createEmptyHoldingsMapping(state.accountId || "")));
-        if (state.file && !state.file.name.toLowerCase().endsWith(".pdf")) {
+        if (state.file && !isStatementFile(state.file.name)) {
           parseCsv(state.file, baselineParseConfig)
             .then((result) => {
               setParseError(null);
@@ -819,7 +824,7 @@ export function UploadStep() {
     };
     dispatch(setParseConfig(updates));
 
-    if (fileRef.current && !fileRef.current.name.toLowerCase().endsWith(".pdf")) {
+    if (fileRef.current && !isStatementFile(fileRef.current.name)) {
       const newConfig = { ...parseConfigRef.current, ...updates };
       parseCsv(fileRef.current, newConfig)
         .then((result) => {
@@ -917,7 +922,7 @@ export function UploadStep() {
     (file: File | null) => {
       if (file) {
         dispatch(setFile(file));
-        if (file.name.toLowerCase().endsWith(".pdf")) {
+        if (isStatementFile(file.name)) {
           setPendingPdfFile(file);
           void handlePdfParse(file);
         } else {
@@ -947,7 +952,7 @@ export function UploadStep() {
     (updates: Partial<ParseConfig>) => {
       dispatch(setParseConfig(updates));
       if (state.file) {
-        if (state.file.name.toLowerCase().endsWith(".pdf")) {
+        if (isStatementFile(state.file.name)) {
           // PDFs use detected text tables
           return;
         }
@@ -1040,7 +1045,7 @@ export function UploadStep() {
               file={state.file}
               onFileChange={handleFileSelect}
               isLoading={isPending || isPdfParsing}
-              accept=".csv,.pdf"
+              accept=".csv,.pdf,.xlsx,.xls,.ods"
               isValid={!hasParseErrors}
               error={parseError}
             />
