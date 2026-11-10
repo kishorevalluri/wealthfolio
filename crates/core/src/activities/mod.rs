@@ -14,6 +14,7 @@ mod idempotency;
 mod import_run_model;
 pub mod parsers;
 mod pdf_parser;
+pub mod spreadsheet_parser;
 mod transfer_pairs;
 
 #[cfg(test)]

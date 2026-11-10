@@ -570,7 +570,13 @@ export interface ParsedCsvResult {
   rowCount: number;
 }
 
-export type StatementType = "CAMS_CAS" | "KFINTECH_CAS" | "CDSL_CAS" | "NSDL_CAS" | "UNKNOWN";
+export type StatementType =
+  | "CAMS_CAS"
+  | "KFINTECH_CAS"
+  | "CDSL_CAS"
+  | "NSDL_CAS"
+  | "UPSTOX_TRADEBOOK"
+  | "UNKNOWN";
 
 export interface ParsedPdfResult {
   parsed: ParsedCsvResult;

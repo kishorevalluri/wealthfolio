@@ -348,6 +348,19 @@ describe("Indian Broker & CAS Statement Import Mappings", () => {
     });
   });
 
+  describe("Upstox tradebook (.xlsx)", () => {
+    // Mirrors migration 2026-11-10-000001_upstox_tradebook_template.
+    const upstoxMappings = {
+      [ActivityType.BUY]: ["Buy"],
+      [ActivityType.SELL]: ["Sell"],
+    };
+
+    it("maps the Side column", () => {
+      expect(findMappedActivityType("Sell", upstoxMappings)).toBe(ActivityType.SELL);
+      expect(findMappedActivityType("Buy", upstoxMappings)).toBe(ActivityType.BUY);
+    });
+  });
+
   describe("NSDL e-CAS (Consolidated Account Statement)", () => {
     const nsdlTemplate: ImportTemplateData = {
       id: "system_nsdl_cas",

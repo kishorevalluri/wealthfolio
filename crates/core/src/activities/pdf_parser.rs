@@ -18,6 +18,8 @@ pub enum StatementType {
     KfintechCas,
     CdslCas,
     NsdlCas,
+    /// Upstox tradebook (.xlsx).
+    UpstoxTradebook,
     Unknown,
 }
 
@@ -27,6 +29,7 @@ impl StatementType {
             StatementType::CamsCas | StatementType::KfintechCas => Some("system_cams_cas"),
             StatementType::CdslCas => Some("system_cdsl_cas"),
             StatementType::NsdlCas => Some("system_nsdl_cas"),
+            StatementType::UpstoxTradebook => Some(super::spreadsheet_parser::UPSTOX_TEMPLATE_ID),
             StatementType::Unknown => None,
         }
     }
@@ -331,6 +334,10 @@ fn extract_text_from_document(doc: &Document) -> String {
 
 /// Parse a PDF document into a tabular format.
 pub fn parse_pdf(content: &[u8], password: Option<&str>) -> Result<ParsedPdfResult> {
+    // Broker reports also come as spreadsheets; they share this entry point.
+    if super::spreadsheet_parser::looks_like_spreadsheet(content) {
+        return super::spreadsheet_parser::parse_spreadsheet(content);
+    }
     let pwd = password.unwrap_or("").trim();
 
     // 1. Try loading with password first if provided
@@ -422,7 +429,9 @@ pub fn parse_pdf(content: &[u8], password: Option<&str>) -> Result<ParsedPdfResu
         }
         StatementType::CdslCas => crate::activities::parsers::parse_cdsl_cas(&full_text),
         StatementType::NsdlCas => crate::activities::parsers::parse_nsdl_cas(&full_text),
-        StatementType::Unknown => crate::activities::parsers::parse_generic_pdf_table(&full_text),
+        StatementType::UpstoxTradebook | StatementType::Unknown => {
+            crate::activities::parsers::parse_generic_pdf_table(&full_text)
+        }
     };
 
     let recommended_template_id = statement_type.default_template_id().map(|s| s.to_string());

@@ -875,7 +875,7 @@
       "processingFile": "Processing file...",
       "clickToUpload": "Click to upload",
       "orDrop": "or drop",
-      "csvOnly": "CSV or PDF statements",
+      "csvOnly": "CSV, Excel or PDF statements",
       "removeFile": "Remove File",
       "failedToParse": "Failed to parse file",
       "failedToReparse": "Failed to re-parse file",
