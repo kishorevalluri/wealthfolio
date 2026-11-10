@@ -1106,7 +1106,15 @@
       "willBeImportedTitle_other": "{{count}} von {{all}} Aktivitäten werden importiert",
       "activitiesCount_one": "{{count}} Aktivität",
       "activitiesCount_other": "{{count}} Aktivitäten",
-      "backend_failed": "Backend-Prüfung fehlgeschlagen. Vor dem Import erneut prüfen."
+      "backend_failed": "Backend-Prüfung fehlgeschlagen. Vor dem Import erneut prüfen.",
+      "balanceCheck": {
+        "matchTitle": "Bestände stimmen mit Ihrer Abrechnung zum {{date}} überein",
+        "matchDescription": "Nach diesem Import hält das Konto für alle {{count}} Wertpapiere, was die Abrechnung zeigt.",
+        "mismatchTitle": "Bestände, die von Ihrer Abrechnung zum {{date}} abweichen",
+        "mismatchDescription": "Nach diesem Import stimmen diese Mengen nicht mit der Abrechnung überein. Prüfen Sie, ob Trades Ihres Brokers fehlen oder Zeilen fälschlich als bereits importiert markiert sind.",
+        "statement": "Abrechnung",
+        "account": "Konto nach Import"
+      }
     },
     "status": {
       "valid": "Gültig",

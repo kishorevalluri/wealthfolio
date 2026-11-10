@@ -6,6 +6,7 @@ import type {
   ImportStep,
   ParseConfig,
 } from "./import-context";
+import type { StatementBalance } from "../utils/statement-balances";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Action Creators
@@ -36,8 +37,12 @@ export function setParseConfig(config: Partial<ParseConfig>): ImportAction {
 /**
  * Set parsed CSV data (headers and rows).
  */
-export function setParsedData(headers: string[], rows: string[][]): ImportAction {
-  return { type: "SET_PARSED_DATA", payload: { headers, rows } };
+export function setParsedData(
+  headers: string[],
+  rows: string[][],
+  statementBalances?: StatementBalance[],
+): ImportAction {
+  return { type: "SET_PARSED_DATA", payload: { headers, rows, statementBalances } };
 }
 
 /**

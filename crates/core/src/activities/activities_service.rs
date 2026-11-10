@@ -37,7 +37,7 @@ use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use log::debug;
 use rust_decimal::{Decimal, RoundingStrategy};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use crate::accounts::{account_types, Account, AccountServiceTrait};
@@ -91,6 +91,10 @@ use crate::utils::time_utils::{
 };
 use crate::Result;
 use log::warn;
+
+/// Days a depository statement's settled credit or debit can lag the broker
+/// trade behind it: T+1 settlement plus a weekend and market holidays.
+const DEPOSITORY_SETTLEMENT_DAYS: i64 = 5;
 
 /// Cache key: (symbol, exchange_mic, instrument_type) → provider quote currency
 type QuoteCcyCache = HashMap<(String, Option<String>, Option<String>), Option<String>>;
@@ -3319,6 +3323,94 @@ impl ActivityService {
         Ok(duplicates)
     }
 
+    /// Depository statements (CDSL CAS) list each settled buy or sell as one
+    /// quantity per security per day, with no price. When the trades behind it
+    /// are already in the account from a broker tradebook, the statement row
+    /// would count them twice. A priceless BUY or SELL row matches when the
+    /// priced trades of the same asset and type on one day in the
+    /// [`DEPOSITORY_SETTLEMENT_DAYS`] before it (settlement lags the trade)
+    /// add up to its quantity. Each stored trade backs at most one row.
+    /// Returns, by row position, the first matched trade and a warning.
+    fn find_depository_trade_matches<'a>(
+        &self,
+        rows: impl Iterator<Item = (usize, &'a ActivityImport, Option<&'a str>)>,
+        default_account_id: &str,
+    ) -> Result<HashMap<usize, (String, String)>> {
+        let mut matches = HashMap::new();
+        let mut stored_by_account: HashMap<String, Vec<Activity>> = HashMap::new();
+        // Stored trades already backing a row, by account and position.
+        let mut used: HashSet<(String, usize)> = HashSet::new();
+        for (position, row, asset_id) in rows {
+            let is_trade = matches!(
+                row.activity_type.as_str(),
+                ACTIVITY_TYPE_BUY | ACTIVITY_TYPE_SELL
+            );
+            let priceless = row.unit_price.is_none_or(|p| p.is_zero());
+            let Some(quantity) = row.quantity.map(|q| q.abs()).filter(|q| !q.is_zero()) else {
+                continue;
+            };
+            let Some(asset_id) = asset_id.filter(|id| !id.trim().is_empty()) else {
+                continue;
+            };
+            if !is_trade || !priceless {
+                continue;
+            }
+            let Some(date) = Self::parse_import_date_for_idempotency(&row.date) else {
+                continue;
+            };
+            let date = date.date_naive();
+            let account_id = row
+                .account_id
+                .as_deref()
+                .unwrap_or(default_account_id)
+                .to_string();
+            if !stored_by_account.contains_key(&account_id) {
+                let stored = self
+                    .activity_repository
+                    .get_activities_by_account_id(&account_id)?;
+                stored_by_account.insert(account_id.clone(), stored);
+            }
+            let stored = &stored_by_account[&account_id];
+
+            // Priced trades of this asset and type, by trade date.
+            let mut by_date: BTreeMap<NaiveDate, Vec<(usize, &Activity)>> = BTreeMap::new();
+            for (index, trade) in stored.iter().enumerate() {
+                let trade_date = trade.activity_date.date_naive();
+                if trade.asset_id.as_deref() == Some(asset_id)
+                    && trade.effective_type() == row.activity_type
+                    && trade.unit_price.is_some_and(|p| !p.is_zero())
+                    && !used.contains(&(account_id.clone(), index))
+                    && trade_date <= date
+                    && (date - trade_date).num_days() <= DEPOSITORY_SETTLEMENT_DAYS
+                {
+                    by_date.entry(trade_date).or_default().push((index, trade));
+                }
+            }
+            // Latest day first: settlement is usually the next working day.
+            for (trade_date, trades) in by_date.iter().rev() {
+                let total: Decimal = trades
+                    .iter()
+                    .filter_map(|(_, t)| t.quantity.map(|q| q.abs()))
+                    .sum();
+                if total != quantity {
+                    continue;
+                }
+                for (index, _) in trades {
+                    used.insert((account_id.clone(), *index));
+                }
+                let message = format!(
+                    "Already imported from your broker: {} trade{} on {}",
+                    trades.len(),
+                    if trades.len() == 1 { "" } else { "s" },
+                    trade_date.format("%Y-%m-%d")
+                );
+                matches.insert(position, (trades[0].1.id.clone(), message));
+                break;
+            }
+        }
+        Ok(matches)
+    }
+
     fn add_activity_warning(activity: &mut ActivityImport, key: &str, message: &str) {
         let warnings = activity.warnings.get_or_insert_with(HashMap::new);
         let entry = warnings.entry(key.to_string()).or_default();
@@ -5866,6 +5958,19 @@ impl ActivityService {
                 }),
             &existing,
         )?;
+        let depository_matches = self.find_depository_trade_matches(
+            activities_with_status
+                .iter()
+                .zip(&keys)
+                .enumerate()
+                .filter(|(idx, (_, key))| {
+                    key.as_ref().is_some_and(|key| !existing.contains_key(key))
+                        && !other_form_duplicates.contains_key(idx)
+                        && !batch_dup_sources.contains_key(idx)
+                })
+                .map(|(idx, (activity, _))| (idx, activity, activity.asset_id.as_deref())),
+            &account_id,
+        )?;
 
         for (idx, maybe_key) in keys.iter().enumerate() {
             let Some(key) = maybe_key else {
@@ -5883,6 +5988,13 @@ impl ActivityService {
                     "Duplicate activity already exists",
                 );
                 activity.duplicate_of_id = Some(existing_id.clone());
+                continue;
+            }
+
+            if let Some((trade_id, message)) = depository_matches.get(&idx) {
+                let activity = &mut activities_with_status[idx];
+                Self::add_activity_warning(activity, "_duplicate", message);
+                activity.duplicate_of_id = Some(trade_id.clone());
                 continue;
             }
 
@@ -7817,6 +7929,25 @@ impl ActivityServiceTrait for ActivityService {
                 }),
             &existing_duplicates,
         )?;
+        let depository_matches = self.find_depository_trade_matches(
+            source_slice
+                .iter()
+                .zip(new_activities.iter())
+                .enumerate()
+                .filter(|(position, (_, prepared))| {
+                    !policy_failed_positions.contains(position)
+                        && !other_form_duplicates.contains_key(position)
+                        && !batch_dup_sources.contains_key(position)
+                        && prepared
+                            .idempotency_key
+                            .as_ref()
+                            .is_none_or(|key| !existing_duplicates.contains_key(key))
+                })
+                .map(|(position, (activity, prepared))| {
+                    (position, activity, prepared.get_symbol_id())
+                }),
+            "",
+        )?;
 
         let mut duplicate_count = 0u32;
         let mut insertable_positions: Vec<usize> = Vec::with_capacity(new_activities.len());
@@ -7825,16 +7956,30 @@ impl ActivityServiceTrait for ActivityService {
             if policy_failed_positions.contains(&position) {
                 continue;
             }
+            let is_force_import = import_activities_indexed
+                .get(position)
+                .is_some_and(|(_, imp)| imp.force_import);
+
+            if let Some((trade_id, message)) = depository_matches.get(&position) {
+                if is_force_import {
+                    insertable_positions.push(position);
+                } else {
+                    if let Some((_, import_activity)) = import_activities_indexed.get_mut(position)
+                    {
+                        Self::add_activity_warning(import_activity, "_duplicate", message);
+                        import_activity.duplicate_of_id = Some(trade_id.clone());
+                    }
+                    duplicate_count += 1;
+                }
+                continue;
+            }
+
             // Clone to avoid holding a borrow on `activity` across the mutable
             // `activity.idempotency_key = None` needed for force-import.
             let Some(key) = activity.idempotency_key.clone() else {
                 insertable_positions.push(position);
                 continue;
             };
-
-            let is_force_import = import_activities_indexed
-                .get(position)
-                .is_some_and(|(_, imp)| imp.force_import);
 
             if let Some(existing_id) = existing_duplicates
                 .get(&key)

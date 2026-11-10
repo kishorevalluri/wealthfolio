@@ -19693,4 +19693,109 @@ pub(crate) mod tests {
         assert!(!bulk.errors.is_empty());
         assert_eq!(repository.get_activity("adj").unwrap().subtype, None);
     }
+
+    // A CDSL statement lists settled buys and sells per security per day,
+    // with no price. Trades already imported from the broker cover them.
+    fn ems_asset() -> Asset {
+        let mut asset = create_test_asset_with_instrument(
+            "qa-ems",
+            "543983",
+            Some("XBOM"),
+            Some(InstrumentType::Equity),
+            "INR",
+        );
+        asset.instrument_key = Some("EQUITY:543983@XBOM".to_string());
+        asset
+    }
+
+    fn broker_trade(activity_type: &str, date: &str, quantity: Decimal) -> ActivityImport {
+        let mut row = qa_import_row("qa-acc", activity_type, "INR");
+        row.date = date.to_string();
+        row.symbol = "543983".to_string();
+        row.asset_id = Some("qa-ems".to_string());
+        row.exchange_mic = Some("XBOM".to_string());
+        row.quote_ccy = Some("INR".to_string());
+        row.instrument_type = Some("EQUITY".to_string());
+        row.quantity = Some(quantity);
+        row.unit_price = Some(dec!(300));
+        row.amount = Some(quantity * dec!(300));
+        row
+    }
+
+    fn depository_row(activity_type: &str, date: &str, quantity: Decimal) -> ActivityImport {
+        let mut row = broker_trade(activity_type, date, quantity);
+        row.unit_price = None;
+        row.amount = None;
+        row.comment = Some("PAYOUT-CR CM1 SETT1".to_string());
+        row
+    }
+
+    #[tokio::test]
+    async fn depository_rows_match_trades_already_imported_from_the_broker() {
+        let (service, repository, _) = qa_import_service("INR", vec![ems_asset()]);
+        // Two fills on Friday settle as one credit on Monday; one sell.
+        let trades = vec![
+            broker_trade("BUY", "2026-08-07", dec!(30)),
+            broker_trade("BUY", "2026-08-07", dec!(20)),
+            broker_trade("SELL", "2026-08-12", dec!(10)),
+        ];
+        let first = service.import_activities(trades).await.unwrap();
+        assert_eq!(first.summary.imported, 3);
+
+        let statement = vec![
+            depository_row("BUY", "2026-08-10", dec!(50)),
+            depository_row("SELL", "2026-08-12", dec!(10)),
+            // No broker trade behind these: a different quantity, and a
+            // credit too long after the trade.
+            depository_row("BUY", "2026-08-11", dec!(5)),
+            depository_row("BUY", "2026-08-20", dec!(50)),
+        ];
+        let checked = service
+            .check_activities_import(statement.clone())
+            .await
+            .unwrap();
+        for row in &checked {
+            assert!(
+                row.errors.as_ref().is_none_or(|e| e.is_empty()),
+                "{:?}",
+                row.errors
+            );
+        }
+        assert!(checked[0].duplicate_of_id.is_some());
+        assert_eq!(
+            checked[0].warnings.as_ref().unwrap()["_duplicate"],
+            vec!["Already imported from your broker: 2 trades on 2026-08-07".to_string()]
+        );
+        assert!(checked[1].duplicate_of_id.is_some());
+        assert!(checked[2].duplicate_of_id.is_none());
+        assert!(checked[3].duplicate_of_id.is_none());
+
+        let result = service.import_activities(statement).await.unwrap();
+        assert_eq!(result.summary.imported, 2);
+        assert_eq!(result.summary.duplicates, 2);
+        assert_eq!(repository.get_activities().unwrap().len(), 5);
+    }
+
+    #[tokio::test]
+    async fn a_broker_trade_backs_only_one_depository_row() {
+        let (service, _, _) = qa_import_service("INR", vec![ems_asset()]);
+        service
+            .import_activities(vec![broker_trade("BUY", "2026-08-07", dec!(50))])
+            .await
+            .unwrap();
+        let checked = service
+            .check_activities_import(vec![
+                depository_row("BUY", "2026-08-10", dec!(50)),
+                depository_row("BUY", "2026-08-11", dec!(50)),
+            ])
+            .await
+            .unwrap();
+        assert!(checked[0].duplicate_of_id.is_some());
+        assert!(checked[1].duplicate_of_id.is_none());
+
+        let mut forced = depository_row("BUY", "2026-08-10", dec!(50));
+        forced.force_import = true;
+        let result = service.import_activities(vec![forced]).await.unwrap();
+        assert_eq!(result.summary.imported, 1);
+    }
 }

@@ -1093,7 +1093,15 @@
       "skipReason": "건너뜀",
       "willBeImportedTitle_other": "전체 {{all}}건 중 {{count}}건의 활동을 가져옵니다",
       "activitiesCount_other": "활동 {{count}}건",
-      "backend_failed": "서버 검증에 실패했습니다. 가져오기 전에 다시 검증하세요."
+      "backend_failed": "서버 검증에 실패했습니다. 가져오기 전에 다시 검증하세요.",
+      "balanceCheck": {
+        "matchTitle": "{{date}} 기준 명세서와 보유 수량이 일치합니다",
+        "matchDescription": "이번 가져오기 후 {{count}}개 종목 모두 계좌 보유 수량이 명세서와 같습니다.",
+        "mismatchTitle": "{{date}} 기준 명세서와 다른 보유 종목",
+        "mismatchDescription": "이번 가져오기 후에도 이 수량은 명세서와 맞지 않습니다. 아직 가져오지 않은 증권사 거래나 이미 가져온 것으로 잘못 표시된 행을 확인하세요.",
+        "statement": "명세서",
+        "account": "가져오기 후 계좌"
+      }
     },
     "status": {
       "valid": "유효함",

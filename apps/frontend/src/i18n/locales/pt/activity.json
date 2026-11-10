@@ -1138,7 +1138,15 @@
       "activitiesCount_one": "{{count}} atividade",
       "activitiesCount_other": "{{count}} atividades",
       "activitiesCount_many": "{{count}} atividades",
-      "backend_failed": "A validação do servidor falhou. Tente novamente antes de importar."
+      "backend_failed": "A validação do servidor falhou. Tente novamente antes de importar.",
+      "balanceCheck": {
+        "matchTitle": "As posições coincidem com o seu extrato em {{date}}",
+        "matchDescription": "Após esta importação, a conta detém o que o extrato mostra para todos os {{count}} títulos.",
+        "mismatchTitle": "Posições que diferem do seu extrato em {{date}}",
+        "mismatchDescription": "Após esta importação, estas quantidades não vão coincidir com o extrato. Procure operações da corretora ainda não importadas ou linhas marcadas como já importadas que não estão.",
+        "statement": "Extrato",
+        "account": "Conta após importar"
+      }
     },
     "status": {
       "valid": "Válida",
