@@ -1138,7 +1138,15 @@
       "activitiesCount_one": "{{count}} activité",
       "activitiesCount_other": "{{count}} activités",
       "activitiesCount_many": "{{count}} activités",
-      "backend_failed": "La validation a échoué. Réessayez avant l’importation."
+      "backend_failed": "La validation a échoué. Réessayez avant l’importation.",
+      "balanceCheck": {
+        "matchTitle": "Les positions correspondent à votre relevé au {{date}}",
+        "matchDescription": "Après cet import, le compte détient ce que montre le relevé pour les {{count}} titres.",
+        "mismatchTitle": "Positions différentes de votre relevé au {{date}}",
+        "mismatchDescription": "Après cet import, ces quantités ne correspondront pas au relevé. Cherchez des opérations de votre courtier non encore importées ou des lignes marquées à tort comme déjà importées.",
+        "statement": "Relevé",
+        "account": "Compte après import"
+      }
     },
     "status": {
       "valid": "Valide",

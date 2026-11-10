@@ -1138,7 +1138,15 @@
       "activitiesCount_one": "{{count}} actividad",
       "activitiesCount_other": "{{count}} actividades",
       "activitiesCount_many": "{{count}} actividades",
-      "backend_failed": "Falló la validación del servidor. Repítala antes de importar."
+      "backend_failed": "Falló la validación del servidor. Repítala antes de importar.",
+      "balanceCheck": {
+        "matchTitle": "Las posiciones coinciden con su extracto a fecha de {{date}}",
+        "matchDescription": "Tras esta importación, la cuenta tiene lo que muestra el extracto para los {{count}} valores.",
+        "mismatchTitle": "Posiciones que difieren de su extracto a fecha de {{date}}",
+        "mismatchDescription": "Tras esta importación, estas cantidades no coincidirán con el extracto. Busque operaciones de su bróker aún no importadas o filas marcadas como ya importadas que no lo están.",
+        "statement": "Extracto",
+        "account": "Cuenta tras importar"
+      }
     },
     "status": {
       "valid": "Válida",

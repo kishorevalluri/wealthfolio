@@ -1106,7 +1106,15 @@
       "willBeImportedTitle_other": "{{count}} of {{all}} activities will be imported",
       "activitiesCount_one": "{{count}} activity",
       "activitiesCount_other": "{{count}} activities",
-      "backend_failed": "Backend validation failed. Retry validation before importing."
+      "backend_failed": "Backend validation failed. Retry validation before importing.",
+      "balanceCheck": {
+        "matchTitle": "Holdings match your statement as of {{date}}",
+        "matchDescription": "After this import, the account holds what the statement shows for all {{count}} securities.",
+        "mismatchTitle": "Holdings that differ from your statement as of {{date}}",
+        "mismatchDescription": "After this import, these quantities won't match the statement. Look for trades not yet imported from your broker, or rows marked as already imported that aren't.",
+        "statement": "Statement",
+        "account": "Account after import"
+      }
     },
     "status": {
       "valid": "Valid",

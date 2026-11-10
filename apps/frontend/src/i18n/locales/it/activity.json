@@ -1138,7 +1138,15 @@
       "activitiesCount_one": "{{count}} movimento",
       "activitiesCount_many": "{{count}} movimenti",
       "activitiesCount_other": "{{count}} movimenti",
-      "backend_failed": "Convalida del server non riuscita. Riprova prima di importare."
+      "backend_failed": "Convalida del server non riuscita. Riprova prima di importare.",
+      "balanceCheck": {
+        "matchTitle": "Le posizioni corrispondono al tuo estratto al {{date}}",
+        "matchDescription": "Dopo questa importazione, il conto detiene ciò che mostra l'estratto per tutti i {{count}} titoli.",
+        "mismatchTitle": "Posizioni diverse dal tuo estratto al {{date}}",
+        "mismatchDescription": "Dopo questa importazione, queste quantità non corrisponderanno all'estratto. Cerca operazioni del broker non ancora importate o righe segnate per errore come già importate.",
+        "statement": "Estratto",
+        "account": "Conto dopo l'importazione"
+      }
     },
     "status": {
       "valid": "Valida",

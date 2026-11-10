@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { checkActivitiesImport, previewImportAssets, logger } from "@/adapters";
+import type { StatementBalance } from "../utils/statement-balances";
 import type {
   ActivityImport,
   ImportAssetPreviewItem,
@@ -128,6 +129,8 @@ export interface ImportState {
   parseConfig: ParseConfig;
   headers: string[];
   parsedRows: string[][];
+  // Closing balances from a depository statement, for the review step's check
+  statementBalances: StatementBalance[];
   // Indexes into parsedRows left out of this import in Mapping; not part of the template
   skippedRowIndexes: number[];
   mapping: ImportMappingData | null;
@@ -173,6 +176,7 @@ const INITIAL_STATE: ImportState = {
   parseConfig: defaultParseConfig,
   headers: [],
   parsedRows: [],
+  statementBalances: [],
   skippedRowIndexes: [],
   mapping: null,
   draftActivities: [],
@@ -201,7 +205,10 @@ export type ImportAction =
   | { type: "SET_FILE"; payload: File }
   | { type: "SET_ACCOUNT_ID"; payload: string }
   | { type: "SET_PARSE_CONFIG"; payload: Partial<ParseConfig> }
-  | { type: "SET_PARSED_DATA"; payload: { headers: string[]; rows: string[][] } }
+  | {
+      type: "SET_PARSED_DATA";
+      payload: { headers: string[]; rows: string[][]; statementBalances?: StatementBalance[] };
+    }
   | { type: "SET_SKIPPED_ROWS"; payload: number[] }
   | { type: "SET_MAPPING"; payload: ImportMappingData }
   | { type: "SET_DRAFT_ACTIVITIES"; payload: DraftActivity[] }
@@ -322,6 +329,7 @@ function importReducer(state: ImportState, action: ImportAction): ImportState {
         ...state,
         headers: action.payload.headers,
         parsedRows: action.payload.rows,
+        statementBalances: action.payload.statementBalances ?? [],
         // A new parse can renumber rows, so skips from the old rows no longer apply
         skippedRowIndexes: [],
       };

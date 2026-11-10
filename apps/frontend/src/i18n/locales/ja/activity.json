@@ -1093,7 +1093,15 @@
       "skipReason": "スキップ済み",
       "willBeImportedTitle_other": "{{all}}件中{{count}}件の取引がインポートされます",
       "activitiesCount_other": "{{count}}件の取引",
-      "backend_failed": "サーバー側の検証に失敗しました。インポート前に再検証してください。"
+      "backend_failed": "サーバー側の検証に失敗しました。インポート前に再検証してください。",
+      "balanceCheck": {
+        "matchTitle": "{{date}}時点の明細と保有数量が一致しています",
+        "matchDescription": "このインポート後、{{count}}銘柄すべてで口座の保有数量が明細と一致します。",
+        "mismatchTitle": "{{date}}時点の明細と異なる保有銘柄",
+        "mismatchDescription": "このインポート後も、これらの数量は明細と一致しません。未インポートの証券会社の取引や、誤ってインポート済みと判定された行を確認してください。",
+        "statement": "明細",
+        "account": "インポート後の口座"
+      }
     },
     "status": {
       "valid": "有効",

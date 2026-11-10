@@ -1093,7 +1093,15 @@
       "skipReason": "已跳过",
       "willBeImportedTitle_other": "共 {{all}} 条活动中将导入 {{count}} 条",
       "activitiesCount_other": "{{count}} 条活动",
-      "backend_failed": "后端校验失败。请重新校验后再导入。"
+      "backend_failed": "后端校验失败。请重新校验后再导入。",
+      "balanceCheck": {
+        "matchTitle": "持仓与截至 {{date}} 的对账单一致",
+        "matchDescription": "本次导入后，全部 {{count}} 只证券的账户持仓与对账单一致。",
+        "mismatchTitle": "与截至 {{date}} 的对账单不一致的持仓",
+        "mismatchDescription": "本次导入后，这些数量仍与对账单不符。请检查尚未导入的券商交易，或被误判为已导入的行。",
+        "statement": "对账单",
+        "account": "导入后的账户"
+      }
     },
     "status": {
       "valid": "有效",

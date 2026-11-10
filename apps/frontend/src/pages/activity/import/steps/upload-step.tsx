@@ -67,6 +67,7 @@ import {
   sanitizeImportMappingForProfile,
 } from "../utils/activity-import-profile";
 import { mergeDetectedParseConfig } from "../utils/import-flow-utils";
+import { statementBalancesFromRows, type StatementBalance } from "../utils/statement-balances";
 import { badgeVariants } from "@wealthfolio/ui";
 
 /** PDF statements and Excel reports are parsed by the backend, not as CSV. */
@@ -861,6 +862,7 @@ export function UploadStep() {
         setPendingPdfFile(null);
         setParseError(null);
         let rows = result.parsed.rows;
+        let statementBalances: StatementBalance[] = [];
         if (importType === ImportType.HOLDINGS) {
           const hasHoldings = rows.some((r) => r[1] === "HOLDING BALANCE");
           if (hasHoldings) {
@@ -869,11 +871,13 @@ export function UploadStep() {
         } else if (importType === ImportType.ACTIVITY) {
           const hasTxns = rows.some((r) => r[1] !== "HOLDING BALANCE");
           if (hasTxns) {
+            // Keep the closing balances to check the import against
+            statementBalances = statementBalancesFromRows(rows);
             rows = rows.filter((r) => r[1] !== "HOLDING BALANCE");
           }
         }
 
-        dispatch(setParsedData(result.parsed.headers, rows));
+        dispatch(setParsedData(result.parsed.headers, rows, statementBalances));
         dispatch(setParseConfig(result.parsed.detectedConfig));
 
         if (result.recommendedTemplateId) {

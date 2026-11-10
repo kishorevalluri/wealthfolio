@@ -1106,7 +1106,15 @@
       "activitiesCount_other": "{{count}} 筆交易紀錄",
       "willBeImportedTitle_one": "將匯入 {{all}} 筆交易紀錄中的 {{count}} 筆",
       "activitiesCount_one": "{{count}} 筆交易紀錄",
-      "backend_failed": "後端驗證失敗。請重新驗證後再匯入。"
+      "backend_failed": "後端驗證失敗。請重新驗證後再匯入。",
+      "balanceCheck": {
+        "matchTitle": "持倉與截至 {{date}} 的對帳單一致",
+        "matchDescription": "本次匯入後，全部 {{count}} 檔證券的帳戶持倉與對帳單一致。",
+        "mismatchTitle": "與截至 {{date}} 的對帳單不一致的持倉",
+        "mismatchDescription": "本次匯入後，這些數量仍與對帳單不符。請檢查尚未匯入的券商交易，或被誤判為已匯入的列。",
+        "statement": "對帳單",
+        "account": "匯入後的帳戶"
+      }
     },
     "status": {
       "valid": "有效",

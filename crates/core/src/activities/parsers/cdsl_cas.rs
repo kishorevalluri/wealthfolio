@@ -565,8 +565,10 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                 statement_date = m.as_str().to_string();
             }
         } else if lower.contains("for the period from") && statement_date.is_empty() {
-            if let Some(m) = date_match_re.find_iter(line).last() {
-                statement_date = m.as_str().to_string();
+            // Needs both dates: a title that wraps before "TO" has only the start.
+            let dates: Vec<_> = date_match_re.find_iter(line).collect();
+            if let [_, .., end] = dates.as_slice() {
+                statement_date = end.as_str().to_string();
             }
         }
 
@@ -1207,6 +1209,33 @@ INF000000CC1
         assert_eq!(row[6], "128004.07");
         // 52,499.99 / 2,476.236
         assert_eq!(row[9], "21.2015");
+    }
+
+    #[test]
+    fn a_wrapped_period_title_does_not_set_the_statement_date() {
+        let sample = "CONSOLIDATED ACCOUNT STATEMENT FOR THE PERIOD FROM 01-08-2026
+TO 31-08-2026
+MUTUAL FUND UNITS HELD AS ON 31-08-2026
+Scheme Name
+ISIN
+Folio No.
+ClosingBal(Units)
+NAV (`)
+CumulativeAmountInvested (inINR)
+Valuation (`)
+860 - Example HealthcareFund - Dir - Growth
+INF000000CC1
+6187921/97
+2476.236
+51.693
+52,499.99
+1,28,004.07
+75,504.08
+143.82
+";
+        let (_, rows) = parse_cdsl_cas(sample);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0][0], "31-08-2026");
     }
 
     #[test]

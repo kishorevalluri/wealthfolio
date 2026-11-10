@@ -8,6 +8,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ImportAlert } from "../components/import-alert";
 import { ImportReviewGrid } from "../components/import-review-grid";
+import { StatementBalanceCheck } from "../components/statement-balance-check";
 import {
   bulkForceImportDrafts,
   bulkSetCurrency,
@@ -508,6 +509,14 @@ export function ReviewStep() {
           variant="success"
           title={t("activity:import.review.allValidTitle", { all: filterStats.all })}
           description={t("activity:import.review.allValidDescription")}
+        />
+      )}
+
+      {state.statementBalances.length > 0 && !state.validationError && !isStale && (
+        <StatementBalanceCheck
+          accountId={state.accountId}
+          balances={state.statementBalances}
+          drafts={draftActivities}
         />
       )}
 

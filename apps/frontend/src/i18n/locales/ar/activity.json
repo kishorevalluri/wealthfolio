@@ -1020,7 +1020,15 @@
       "willBeImportedTitle_other": "سيتم استيراد {{count}} نشاط من أصل {{all}}",
       "willBeImportedTitle_two": "سيتم استيراد نشاطين من أصل {{all}}",
       "willBeImportedTitle_zero": "سيتم استيراد {{count}} أنشطة من أصل {{all}}",
-      "backend_failed": "فشل التحقق في الخادم. أعد التحقق قبل الاستيراد."
+      "backend_failed": "فشل التحقق في الخادم. أعد التحقق قبل الاستيراد.",
+      "balanceCheck": {
+        "matchTitle": "المقتنيات تطابق كشف حسابك بتاريخ {{date}}",
+        "matchDescription": "بعد هذا الاستيراد، يحتفظ الحساب بما يظهره الكشف لجميع الأوراق المالية وعددها {{count}}.",
+        "mismatchTitle": "مقتنيات تختلف عن كشف حسابك بتاريخ {{date}}",
+        "mismatchDescription": "بعد هذا الاستيراد لن تطابق هذه الكميات الكشف. ابحث عن صفقات من الوسيط لم تُستورد بعد، أو صفوف عُلّمت خطأً على أنها مستوردة.",
+        "statement": "الكشف",
+        "account": "الحساب بعد الاستيراد"
+      }
     },
     "reviewToolbar": {
       "account": "الحساب",
