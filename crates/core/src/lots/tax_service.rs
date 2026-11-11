@@ -7,7 +7,8 @@ use serde_json::Value;
 
 use super::{
     calculate_indian_capital_gains, IndianAssetTaxClassification, IndianDisposalCharges,
-    IndianTaxAssetInfo, IndianTaxYearSummary, LotDisposal, LotRecord, LotRepositoryTrait,
+    IndianLossesBroughtForward, IndianTaxAssetInfo, IndianTaxYearSummary, LotDisposal, LotRecord,
+    LotRepositoryTrait,
 };
 use crate::activities::{Activity, ActivityServiceTrait};
 use crate::assets::{Asset, AssetServiceTrait, InstrumentType};
@@ -147,6 +148,39 @@ fn disposal_charges(
     }
 }
 
+/// Years a capital loss can be carried forward (Section 74).
+const LOSS_CARRY_YEARS: i32 = 8;
+
+/// Capital loss of one financial year not yet set off.
+struct LossYear {
+    year: i32,
+    stcl: Decimal,
+    ltcl: Decimal,
+}
+
+/// Takes the brought-forward losses `summary` set off from the oldest years
+/// first, then adds `year`'s own unabsorbed loss.
+fn carry_losses_forward(losses: &mut Vec<LossYear>, summary: &IndianTaxYearSummary, year: i32) {
+    let mut st_used = summary.stcl_brought_forward_set_off;
+    let mut lt_used = summary.ltcl_brought_forward_set_off;
+    for loss in losses.iter_mut() {
+        let st = st_used.min(loss.stcl);
+        loss.stcl -= st;
+        st_used -= st;
+        let lt = lt_used.min(loss.ltcl);
+        loss.ltcl -= lt;
+        lt_used -= lt;
+    }
+    let st_left_before: Decimal = losses.iter().map(|l| l.stcl).sum();
+    let lt_left_before: Decimal = losses.iter().map(|l| l.ltcl).sum();
+    let stcl = (summary.stcl_carried_forward - st_left_before).max(Decimal::ZERO);
+    let ltcl = (summary.ltcl_carried_forward - lt_left_before).max(Decimal::ZERO);
+    losses.retain(|l| !l.stcl.is_zero() || !l.ltcl.is_zero());
+    if !stcl.is_zero() || !ltcl.is_zero() {
+        losses.push(LossYear { year, stcl, ltcl });
+    }
+}
+
 /// Financial year `fy_start_year` (e.g. 2024 for FY 2024-25) runs from April 1 of `fy_start_year`
 /// to March 31 of `fy_start_year + 1`.
 pub async fn compute_indian_tax_summary(
@@ -164,28 +198,6 @@ pub async fn compute_indian_tax_summary(
         return Ok(empty());
     }
 
-    let (Some(start_date_exclusive), Some(end_date_inclusive)) = (
-        NaiveDate::from_ymd_opt(fy_start_year, 3, 31),
-        NaiveDate::from_ymd_opt(fy_start_year + 1, 3, 31),
-    ) else {
-        return Err(ValidationError::InvalidInput(format!(
-            "Financial year {fy_start_year} is out of range"
-        ))
-        .into());
-    };
-
-    let disposals = lots_repo
-        .get_lot_disposals_for_accounts_in_date_range(
-            account_ids,
-            start_date_exclusive,
-            end_date_inclusive,
-        )
-        .await?;
-
-    if disposals.is_empty() {
-        return Ok(empty());
-    }
-
     // Retrieve all lot open dates
     let all_lots = lots_repo.get_all_lots().await?;
     let mut lot_open_dates = HashMap::new();
@@ -196,23 +208,6 @@ pub async fn compute_indian_tax_summary(
     }
     let lots_by_id: HashMap<&str, &LotRecord> =
         all_lots.iter().map(|lot| (lot.id.as_str(), lot)).collect();
-    let mut sell_trades: HashMap<String, Option<Activity>> = HashMap::new();
-    for d in &disposals {
-        if !sell_trades.contains_key(&d.disposal_activity_id) {
-            let trade = activity_service.get_activity(&d.disposal_activity_id).ok();
-            sell_trades.insert(d.disposal_activity_id.clone(), trade);
-        }
-    }
-    let charges: HashMap<String, IndianDisposalCharges> = disposals
-        .iter()
-        .map(|d| {
-            let lot = lots_by_id.get(d.lot_id.as_str()).copied();
-            let trade = sell_trades
-                .get(&d.disposal_activity_id)
-                .and_then(Option::as_ref);
-            (d.id.clone(), disposal_charges(d, lot, trade))
-        })
-        .collect();
 
     // Retrieve assets to build classification and grandfathering FMV maps
     let assets = asset_service.get_assets()?;
@@ -250,15 +245,74 @@ pub async fn compute_indian_tax_summary(
         );
     }
 
-    let mut summary = calculate_indian_capital_gains(
-        &disposals,
-        &lot_open_dates,
-        &asset_classifications,
-        &asset_fmv_2018,
-        &asset_info_map,
-        &charges,
-        fy_start_year,
-    );
+    // Section 74: a loss is carried forward for eight years. Work through the
+    // earlier years in order, so each year's unabsorbed loss reaches this one.
+    let mut losses: Vec<LossYear> = Vec::new();
+    let mut disposals = Vec::new();
+    let mut summary = empty();
+    for year in (fy_start_year - LOSS_CARRY_YEARS)..=fy_start_year {
+        let (Some(start_date_exclusive), Some(end_date_inclusive)) = (
+            NaiveDate::from_ymd_opt(year, 3, 31),
+            NaiveDate::from_ymd_opt(year + 1, 3, 31),
+        ) else {
+            return Err(ValidationError::InvalidInput(format!(
+                "Financial year {fy_start_year} is out of range"
+            ))
+            .into());
+        };
+        disposals = lots_repo
+            .get_lot_disposals_for_accounts_in_date_range(
+                account_ids,
+                start_date_exclusive,
+                end_date_inclusive,
+            )
+            .await?;
+
+        let mut sell_trades: HashMap<String, Option<Activity>> = HashMap::new();
+        for d in &disposals {
+            if !sell_trades.contains_key(&d.disposal_activity_id) {
+                let trade = activity_service.get_activity(&d.disposal_activity_id).ok();
+                sell_trades.insert(d.disposal_activity_id.clone(), trade);
+            }
+        }
+        let charges: HashMap<String, IndianDisposalCharges> = disposals
+            .iter()
+            .map(|d| {
+                let lot = lots_by_id.get(d.lot_id.as_str()).copied();
+                let trade = sell_trades
+                    .get(&d.disposal_activity_id)
+                    .and_then(Option::as_ref);
+                (d.id.clone(), disposal_charges(d, lot, trade))
+            })
+            .collect();
+
+        losses.retain(|l| l.year >= year - LOSS_CARRY_YEARS);
+        let brought_forward = IndianLossesBroughtForward {
+            stcl: losses.iter().map(|l| l.stcl).sum(),
+            ltcl: losses.iter().map(|l| l.ltcl).sum(),
+        };
+        summary = calculate_indian_capital_gains(
+            &disposals,
+            &lot_open_dates,
+            &asset_classifications,
+            &asset_fmv_2018,
+            &asset_info_map,
+            &charges,
+            brought_forward,
+            year,
+        );
+        carry_losses_forward(&mut losses, &summary, year);
+    }
+    // What can still go to next year: drop the losses whose eighth year this is.
+    losses.retain(|l| l.year > fy_start_year - LOSS_CARRY_YEARS);
+    summary.stcl_carried_forward = losses.iter().map(|l| l.stcl).sum();
+    summary.ltcl_carried_forward = losses.iter().map(|l| l.ltcl).sum();
+    if disposals.is_empty()
+        && summary.stcl_carried_forward.is_zero()
+        && summary.ltcl_carried_forward.is_zero()
+    {
+        return Ok(empty());
+    }
 
     // Funds whose tax type was guessed: a debt or international fund guessed as
     // an equity fund is taxed at the wrong rate, so ask for it to be set.
@@ -366,5 +420,35 @@ mod tests {
         // Never more than the whole charge, and nothing from a zero quantity.
         assert_eq!(share(dec!(50), dec!(120), dec!(100)), dec!(50));
         assert_eq!(share(dec!(50), dec!(1), Decimal::ZERO), Decimal::ZERO);
+    }
+
+    #[test]
+    fn losses_are_used_oldest_first_and_new_ones_added() {
+        let mut losses = vec![
+            LossYear {
+                year: 2017,
+                stcl: dec!(10),
+                ltcl: dec!(5),
+            },
+            LossYear {
+                year: 2020,
+                stcl: dec!(20),
+                ltcl: Decimal::ZERO,
+            },
+        ];
+        let summary = IndianTaxYearSummary {
+            stcl_brought_forward_set_off: dec!(15),
+            ltcl_brought_forward_set_off: dec!(5),
+            // 15 of the old losses left plus 7 of this year's own.
+            stcl_carried_forward: dec!(22),
+            ltcl_carried_forward: dec!(3),
+            ..Default::default()
+        };
+        carry_losses_forward(&mut losses, &summary, 2024);
+        let left: Vec<_> = losses.iter().map(|l| (l.year, l.stcl, l.ltcl)).collect();
+        assert_eq!(
+            left,
+            vec![(2020, dec!(15), dec!(0)), (2024, dec!(7), dec!(3))]
+        );
     }
 }
