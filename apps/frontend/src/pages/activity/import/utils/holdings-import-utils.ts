@@ -383,7 +383,11 @@ function parseHoldingsSnapshotsInternal(
 
   const snapshotsByDate = new Map<
     string,
-    { positions: HoldingsPositionInput[]; cashBalances: Record<string, string> }
+    {
+      positions: HoldingsPositionInput[];
+      cashBalances: Record<string, string>;
+      mergeable: Map<string, HoldingsPositionInput>;
+    }
   >();
 
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
@@ -406,7 +410,7 @@ function parseHoldingsSnapshotsInternal(
     const avgCost = parsedAvgCost ?? rawAvgCost;
 
     if (!snapshotsByDate.has(snapshotDate)) {
-      snapshotsByDate.set(snapshotDate, { positions: [], cashBalances: {} });
+      snapshotsByDate.set(snapshotDate, { positions: [], cashBalances: {}, mergeable: new Map() });
     }
 
     const snapshot = snapshotsByDate.get(snapshotDate)!;
@@ -443,11 +447,36 @@ function parseHoldingsSnapshotsInternal(
         symbolMeta?.[rawSymbol]?.providerSymbol ??
         symbolMeta?.[symbol]?.providerSymbol;
       const assetId = rowResolution?.assetId;
-      snapshot.positions.push({
+      const positionCurrency = currency || defaultCurrency;
+      // The same security can appear on more than one row of a statement
+      // (one fund in two folios, one share in two demat accounts). A snapshot
+      // holds one position per asset, so add the rows together instead of
+      // letting the last one replace the others.
+      const mergeKey =
+        parsedQuantity !== undefined &&
+        (rawAvgCost === undefined || rawAvgCost === "" || parsedAvgCost !== undefined)
+          ? [assetId ?? "", symbol, exchangeMic ?? "", positionCurrency].join("|")
+          : undefined;
+      const existing = mergeKey ? snapshot.mergeable.get(mergeKey) : undefined;
+      if (existing) {
+        const q1 = parseFloat(existing.quantity);
+        const q2 = parseFloat(quantity);
+        // Round off float noise: 100.1 + 200.2 is 300.3, not 300.29999999999995.
+        const total = Number((q1 + q2).toFixed(10));
+        existing.quantity = String(total);
+        const c1 = existing.avgCost === undefined ? undefined : parseFloat(existing.avgCost);
+        const c2 = avgCost ? parseFloat(avgCost) : undefined;
+        existing.avgCost =
+          c1 !== undefined && c2 !== undefined && total !== 0
+            ? String(Number(((q1 * c1 + q2 * c2) / total).toFixed(6)))
+            : undefined;
+        continue;
+      }
+      const position: HoldingsPositionInput = {
         symbol,
         quantity,
         avgCost: avgCost || undefined,
-        currency: currency || defaultCurrency,
+        currency: positionCurrency,
         ...(exchangeMic ? { exchangeMic } : {}),
         ...(quoteCcy ? { quoteCcy } : {}),
         ...(instrumentType ? { instrumentType } : {}),
@@ -455,7 +484,9 @@ function parseHoldingsSnapshotsInternal(
         ...(providerId ? { providerId } : {}),
         ...(providerSymbol ? { providerSymbol } : {}),
         ...(assetId ? { assetId } : {}),
-      });
+      };
+      snapshot.positions.push(position);
+      if (mergeKey) snapshot.mergeable.set(mergeKey, position);
     }
   }
 

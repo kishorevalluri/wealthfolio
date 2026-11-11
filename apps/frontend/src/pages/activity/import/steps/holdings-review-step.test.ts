@@ -174,6 +174,38 @@ describe("holdings review helpers", () => {
     ]);
   });
 
+  it("adds up rows for the same security instead of keeping only the last", () => {
+    const snapshots = parseHoldingsSnapshots(
+      ["date", "symbol", "quantity", "avgCost", "currency"],
+      [
+        // One fund in two folios, as a depository statement lists it.
+        ["2026-10-31", "INF000000CC1", "100.1", "120", "INR"],
+        ["2026-10-31", "INF000000CC1", "200.2", "125", "INR"],
+        ["2026-10-31", "INE000000AA1", "30", "", "INR"],
+        ["2026-10-31", "INE000000AA1", "30", "", "INR"],
+      ],
+      {
+        [HoldingsFormat.DATE]: "date",
+        [HoldingsFormat.SYMBOL]: "symbol",
+        [HoldingsFormat.QUANTITY]: "quantity",
+        [HoldingsFormat.AVG_COST]: "avgCost",
+        [HoldingsFormat.CURRENCY]: "currency",
+      },
+      {
+        dateFormat: "YYYY-MM-DD",
+        decimalSeparator: ".",
+        thousandsSeparator: ",",
+        defaultCurrency: "INR",
+      },
+    );
+
+    expect(snapshots[0].positions).toEqual([
+      // (100.1 × 120 + 200.2 × 125) / 300.3
+      { symbol: "INF000000CC1", quantity: "300.3", avgCost: "123.333333", currency: "INR" },
+      { symbol: "INE000000AA1", quantity: "60", avgCost: undefined, currency: "INR" },
+    ]);
+  });
+
   it("preserves malformed rows in their date group for backend validation", () => {
     const snapshots = parseHoldingsSnapshotsForValidation(
       ["date", "symbol", "quantity", "avgCost", "currency"],

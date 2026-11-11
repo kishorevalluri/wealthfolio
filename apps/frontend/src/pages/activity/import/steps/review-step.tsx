@@ -2,6 +2,7 @@ import { Badge } from "@wealthfolio/ui/components/ui/badge";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { ProgressIndicator } from "@wealthfolio/ui/components/ui/progress-indicator";
 import { FacetedFilter } from "@wealthfolio/ui";
+import { ImportFormat } from "@/lib/constants";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useNameComparator } from "@/hooks/use-name-comparator";
 import { useCallback, useMemo, useState } from "react";
@@ -517,6 +518,8 @@ export function ReviewStep() {
           accountId={state.accountId}
           balances={state.statementBalances}
           drafts={draftActivities}
+          accountMappings={state.mapping?.accountMappings}
+          hasAccountColumn={!!state.mapping?.fieldMappings?.[ImportFormat.ACCOUNT]}
         />
       )}
 

@@ -47,7 +47,15 @@ pub fn clean_security_description(desc: &str) -> String {
     if let Some(idx) = cleaned.find('#') {
         let after_hash = cleaned[idx + 1..].trim();
         let after_upper = after_hash.to_uppercase();
-        if after_upper.contains("ETF")
+        if after_upper.contains("SGB") {
+            // Sovereign gold bonds: "GOVT OF INDIA#2.5% SGB 2020-21 SERIES V
+            // 2028-LOAN CODE 29278 - RED DT 11.08.2028". The bond is named
+            // after the '#'; the issuer alone would name every SGB the same.
+            cleaned = after_hash;
+            if let Some(end) = cleaned.to_uppercase().find("-LOAN") {
+                cleaned = cleaned[..end].trim();
+            }
+        } else if after_upper.contains("ETF")
             || after_upper.contains("GOLDBEES")
             || after_upper.contains("GOLD BEES")
             || after_upper.contains("LIQUID BEES")
@@ -71,10 +79,16 @@ pub fn clean_security_description(desc: &str) -> String {
             cleaned = cleaned[..idx].trim();
         }
     }
-    if let Some(idx) = cleaned.find("-NEW EQUITY") {
-        cleaned = cleaned[..idx].trim();
+    // Share class suffix without a '#': "LIMITED - NEW EQUITY SHARES OF RE. 1/-",
+    // "LIMITED-EQUITY SHARES", or run together as "MAHINDRAEQUITY SHARES".
+    let equity_suffix =
+        Regex::new(r"(?i)\s*-?\s*(NEW\s*)?EQUITY\s*SHARES").expect("hard-coded regex is valid");
+    if let Some(m) = equity_suffix.find(cleaned) {
+        if m.start() > 0 {
+            cleaned = cleaned[..m.start()].trim();
+        }
     }
-    if let Some(idx) = cleaned.find("-EQUITY SHARES") {
+    if let Some(idx) = cleaned.find("-NEW EQUITY") {
         cleaned = cleaned[..idx].trim();
     }
     if let Some(idx) = cleaned.find("Scheme Code") {
@@ -133,6 +147,10 @@ pub const CDSL_HEADERS: [&str; 11] = [
 /// `Transaction Description` of a holding row; the import wizard uses it to
 /// split holdings from transactions.
 pub const HOLDING_BALANCE: &str = "HOLDING BALANCE";
+
+/// `BO ID` of mutual fund rows held with the fund house (folios, not demat).
+/// Folios held jointly get `MF FOLIOS (JOINT: <name>)`.
+pub const MF_ACCOUNT: &str = "MF FOLIOS";
 
 /// Labels written to `Transaction Description`. The template maps the first
 /// five to activity types. The rest are left for the user to map or skip in
@@ -438,6 +456,12 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     let mut txn_rows: Vec<Vec<String>> = Vec::new();
     let mut holdings_rows: Vec<Vec<String>> = Vec::new();
     let mut current_boid = String::new();
+    // Mutual fund folios aren't held in a demat account, so their rows get
+    // their own account key instead of the last BO ID. A CAS can hold a
+    // second investor section (folios held jointly), named in each page
+    // header; those folios get a separate key.
+    let mut in_mf_section = false;
+    let mut joint_holder: Option<String> = None;
     let mut statement_date = String::new();
     let mut in_transaction_section = false;
     // Security of the transaction rows being read, and its last closing balance.
@@ -518,6 +542,35 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     let mut i = 0;
     while i < lines.len() {
         let line = lines[i];
+
+        // Page header: the investor section is named again on each page.
+        if line.contains("CONSOLIDATED ACCOUNT STATEMENT") {
+            joint_holder = None;
+        }
+        if let Some((_, name)) = line.split_once("Joint A/C Holder:") {
+            let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+            joint_holder = (!name.is_empty()).then_some(name);
+        }
+        {
+            let lower = line.to_lowercase();
+            if lower.contains("mutual fund units held") {
+                in_mf_section = true;
+            } else if lower.contains("bo id")
+                || lower.contains("dp name")
+                || lower.contains("demat accounts held")
+                || lower.contains("nps pran")
+            {
+                in_mf_section = false;
+            }
+        }
+        let account_key = if in_mf_section {
+            match &joint_holder {
+                Some(name) => format!("{MF_ACCOUNT} (JOINT: {})", name.to_uppercase()),
+                None => MF_ACCOUNT.to_string(),
+            }
+        } else {
+            current_boid.clone()
+        };
 
         // Skip lines with Hindi or portfolio summary markers
         if is_summary_or_noise_line(line) {
@@ -607,7 +660,7 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
 
                 if i + 1 < lines.len() {
                     let next_line = lines[i + 1].trim();
-                    // A folio number consists only of digits and optional slash (e.g. "499213345283/0" or "3991001396/0")
+                    // A folio number consists only of digits and optional slash (e.g. "123456789012/0" or "1234567890/0")
                     let is_pure_folio = !next_line.is_empty()
                         && next_line
                             .chars()
@@ -631,9 +684,8 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                         {
                             break;
                         }
-                        let clean_num = next_line.replace(',', "");
-                        if clean_num.parse::<f64>().is_ok() && next_line != "--" {
-                            // Reached numbers (CurrentBal / MarketPrice / etc.)
+                        if number_cell(next_line).is_some() {
+                            // Reached the cells (Current Bal, "--", Market Price, ...)
                             break;
                         }
                         let cleaned_part = clean_security_description(next_line);
@@ -651,6 +703,8 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                 let mut found_avg_cost = None;
 
                 let mut num_cands = Vec::new();
+                // Every cell, "--" included, in order.
+                let mut cells: Vec<Option<(f64, String)>> = Vec::new();
                 for num_offset in offset..=offset + 10 {
                     if i + num_offset >= lines.len() {
                         break;
@@ -665,11 +719,16 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                     if is_summary_or_noise_line(cand) {
                         continue;
                     }
-                    let clean_num = cand.replace(',', "");
-                    if let Ok(num) = clean_num.parse::<f64>() {
-                        if cand != "--" {
-                            num_cands.push((num, clean_num));
+                    match number_cell(cand) {
+                        Some(Some(_)) => {
+                            let clean_num = cand.replace(',', "");
+                            if let Ok(num) = clean_num.parse::<f64>() {
+                                num_cands.push((num, clean_num.clone()));
+                                cells.push(Some((num, clean_num)));
+                            }
                         }
+                        Some(None) => cells.push(None),
+                        None => {}
                     }
                 }
 
@@ -677,7 +736,16 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                 // CurrentBal (cand 0), Free Bal (cand 1), MarketPrice (cand 2), Value (cand 3)
                 // In CDSL MF Table (after folio):
                 // Units (cand 0), NAV (cand 1), Cost (cand 2), Value (cand 3)
-                if !num_cands.is_empty() && num_cands[0].0 > 0.0 {
+                // A demat holding row has seven cells: Current Bal, Frozen,
+                // Pledge, Pledge Setup and Free Bal, then Market Price and
+                // Value. A security sold out during the month shows "--" for
+                // every balance; read it as zero, not as its market price.
+                let cell_text = |c: &Option<(f64, String)>| c.as_ref().map(|(_, t)| t.clone());
+                if !is_folio_line && cells.len() >= 7 && cells[0].is_none() {
+                    found_qty = Some("0".to_string());
+                    found_rate = cell_text(&cells[5]);
+                    found_val = cell_text(&cells[6]);
+                } else if !num_cands.is_empty() && num_cands[0].0 > 0.0 {
                     found_qty = Some(num_cands[0].1.clone());
                     if num_cands.len() >= 4 {
                         if is_folio_line {
@@ -720,7 +788,7 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                         qty,
                         found_rate.unwrap_or_default(),
                         found_val.unwrap_or_default(),
-                        current_boid.clone(),
+                        account_key.clone(),
                         String::new(),
                         found_avg_cost.unwrap_or_default(),
                         String::new(),
@@ -811,7 +879,7 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                                 fmt(qty.abs()),
                                 String::new(),
                                 String::new(),
-                                &current_boid,
+                                &account_key,
                                 fmt_opt(cells.stamp.filter(|s| !s.is_zero())),
                                 particulars,
                             ));
@@ -859,7 +927,7 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                                 units.map(|u| fmt(u.abs())).unwrap_or_default(),
                                 fmt_opt(price.filter(|p| !p.is_zero()).or(nav)),
                                 amount.map(|a| fmt(a.abs())).unwrap_or_default(),
-                                &current_boid,
+                                &account_key,
                                 fmt_opt(stamp.filter(|s| !s.is_zero())),
                                 next,
                             ));
@@ -896,7 +964,7 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                             fmt(qty.abs()),
                             fmt_opt(nums.get(1).copied()),
                             fmt_opt(nums.get(2).map(|a| a.abs())),
-                            &current_boid,
+                            &account_key,
                             String::new(),
                             &desc,
                         ));
@@ -999,18 +1067,18 @@ ISIN: INE002A01018 RELIANCE INDUSTRIES LTD
     #[test]
     fn test_parse_cdsl_mf_holdings() {
         let sample = r#"
-BO ID: 1208160007465501
+BO ID: 1208160000000009
 HOLDING STATEMENT AS ON 31-08-2026
 
 AMC Name : Nippon India Mutual Fund
-Folio No : 499213345283/0
+Folio No : 123456789012/0
 Scheme Name : NIPPON INDIA SMALL CAP FUND - DIRECT GROWTH PLAN GROWTH OPTION
 ISIN : INF204K01K15
 
 SCAG - NIPPON INDIA SMALL CAP FUND - DIRECT GROWTH PLAN GROWTH OPTION
 INF204K01K15
-499213345283/0
-1042.883
+123456789012/0
+1000.5
 210.6366
 169000.00
 219669.33
@@ -1025,10 +1093,10 @@ INF204K01K15
             "NIPPON INDIA SMALL CAP FUND - DIRECT GROWTH PLAN GROWTH OPTION"
         );
         assert_eq!(row[3], "INF204K01K15");
-        assert_eq!(row[4], "1042.883");
+        assert_eq!(row[4], "1000.5");
         assert_eq!(row[5], "210.6366");
         assert_eq!(row[6], "219669.33");
-        assert_eq!(row[7], "1208160007465501");
+        assert_eq!(row[7], "1208160000000009");
     }
 
     /// Demat transaction table as text extraction lays it out: one cell per
@@ -1190,13 +1258,13 @@ CumulativeAmountInvested (inINR)
 Valuation (`)
 860 - Example HealthcareFund - Dir - Growth
 INF000000CC1
-6187921/97
-2476.236
+1234567/89
+2000
 51.693
-52,499.99
-1,28,004.07
-75,504.08
-143.82
+50,000.00
+1,03,386.00
+53,386.00
+106.77
 ";
         let (_, rows) = parse_cdsl_cas(sample);
         assert_eq!(rows.len(), 1, "{rows:?}");
@@ -1204,11 +1272,139 @@ INF000000CC1
         assert_eq!(row[0], "31-08-2026");
         assert_eq!(row[1], HOLDING_BALANCE);
         assert_eq!(row[3], "INF000000CC1");
-        assert_eq!(row[4], "2476.236");
+        assert_eq!(row[4], "2000");
         assert_eq!(row[5], "51.693");
-        assert_eq!(row[6], "128004.07");
-        // 52,499.99 / 2,476.236
-        assert_eq!(row[9], "21.2015");
+        assert_eq!(row[6], "103386.00");
+        // 50,000.00 / 2,000
+        assert_eq!(row[9], "25");
+    }
+
+    #[test]
+    fn a_sold_out_demat_holding_reads_as_zero() {
+        let sample = "BO ID: 1208160000000001
+HOLDING STATEMENT AS ON 31-10-2026
+INE000000AA1
+EXAMPLE SYSTEMS LIMITED #EQUITY SHARES
+--
+--
+--
+--
+--
+204.7500
+0.00
+INE000000BB2
+EXAMPLE POWER LIMITED - NEWEQUITY SHARES OF RE. 2/-AFTER SPLIT
+100.000
+--
+--
+--
+100.000
+800.0000
+80,000.00
+IN0020200161
+GOVT OF INDIA#2.5% SGB2020-21 SERIES V 2028-LOANCODE 29278 - RED DT11.08.2028
+1.000
+--
+--
+--
+1.000
+14007.0000
+14,007.00
+";
+        let (_, rows) = parse_cdsl_cas(sample);
+        let summary: Vec<(&str, &str, &str, &str)> = rows
+            .iter()
+            .map(|r| (r[2].as_str(), r[4].as_str(), r[5].as_str(), r[6].as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                ("EXAMPLE SYSTEMS LIMITED", "0", "204.7500", "0.00"),
+                ("EXAMPLE POWER LIMITED", "100.000", "800.0000", "80000.00"),
+                (
+                    "2.5% SGB2020-21 SERIES V 2028",
+                    "1.000",
+                    "14007.0000",
+                    "14007.00"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn mf_rows_get_their_own_account_key_per_investor_section() {
+        let sample = "CONSOLIDATED ACCOUNT STATEMENT (CAS) FOR SECURITIES HELD IN DEMAT
+DP Name : EXAMPLE BROKING LIMITED
+BO ID : 1208160000000001
+HOLDING STATEMENT AS ON 31-10-2026
+INE000000BB2
+EXAMPLE POWER LIMITED
+100.000
+--
+--
+--
+100.000
+800.0000
+80,000.00
+CONSOLIDATED ACCOUNT STATEMENT (CAS) FOR SECURITIES HELD IN DEMAT
+FIRST HOLDER .
+MUTUAL FUND UNITS HELD WITH MF/RTA
+MUTUAL FUND UNITS HELD AS ON 31-10-2026
+860 - Example HealthcareFund - Dir - Growth
+INF000000CC1
+1234567/89
+2000
+51.693
+50,000.00
+1,03,386.00
+53,386.00
+106.77
+CONSOLIDATED ACCOUNT STATEMENT (CAS) FOR SECURITIES HELD IN DEMAT
+First HolderJoint A/C Holder: SECOND  HOLDER
+MUTUAL FUND UNITS HELD WITH MF/RTA
+STATEMENT OF TRANSACTIONS FOR THE PERIOD FROM 01-10-2026 TO 31-10-2026
+Example Mutual Fund
+STDG - Example Short Term Fund - Direct Growth
+ISIN : INF000000BB1
+Opening Balance
+5548.065
+01-10-2026
+Systematic Investment 25658431
+4999.75
+36.1677
+36.1677
+138.238
+.25
+0
+0
+Closing Balance
+5686.303
+MUTUAL FUND UNITS HELD AS ON 31-10-2026
+STDG - Example Short Term Fund - Direct Growth
+INF000000BB1
+910238755965/0
+5686.303
+36.2658
+2,15,000.00
+2,06,220.80
+1,220.80
+0.57
+";
+        let (_, rows) = parse_cdsl_cas(sample);
+        let accounts: Vec<(&str, &str, &str)> = rows
+            .iter()
+            .map(|r| (r[1].as_str(), r[3].as_str(), r[7].as_str()))
+            .collect();
+        let joint = "MF FOLIOS (JOINT: SECOND HOLDER)";
+        assert_eq!(
+            accounts,
+            vec![
+                (LABEL_BUY, "INF000000BB1", joint),
+                (HOLDING_BALANCE, "INE000000BB2", "1208160000000001"),
+                (HOLDING_BALANCE, "INF000000CC1", MF_ACCOUNT),
+                (HOLDING_BALANCE, "INF000000BB1", joint),
+            ]
+        );
     }
 
     #[test]
@@ -1225,13 +1421,13 @@ CumulativeAmountInvested (inINR)
 Valuation (`)
 860 - Example HealthcareFund - Dir - Growth
 INF000000CC1
-6187921/97
-2476.236
+1234567/89
+2000
 51.693
-52,499.99
-1,28,004.07
-75,504.08
-143.82
+50,000.00
+1,03,386.00
+53,386.00
+106.77
 ";
         let (_, rows) = parse_cdsl_cas(sample);
         assert_eq!(rows.len(), 1, "{rows:?}");

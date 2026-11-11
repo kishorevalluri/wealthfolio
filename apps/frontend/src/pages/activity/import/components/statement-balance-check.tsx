@@ -5,21 +5,79 @@ import { addDays, format, parseISO } from "date-fns";
 import { getHoldingsList, searchActivities } from "@/adapters";
 import { QueryKeys } from "@/lib/query-keys";
 import type { DraftActivity } from "../context";
-import { findBalanceMismatches, type StatementBalance } from "../utils/statement-balances";
+import { useAccounts } from "@/hooks/use-accounts";
+import {
+  balancesByAccount,
+  findBalanceMismatches,
+  type StatementBalance,
+} from "../utils/statement-balances";
 import { ImportAlert } from "./import-alert";
 
 interface StatementBalanceCheckProps {
+  /** The account picked on the upload step. */
   accountId: string;
   balances: StatementBalance[];
   drafts: DraftActivity[];
+  /** Statement account (BO ID) to Wealthfolio account, from the mapping step. */
+  accountMappings?: Record<string, string>;
+  /** Whether the import reads the account from a column. */
+  hasAccountColumn: boolean;
 }
 
 /**
  * Checks the import against the closing balances on a depository statement:
- * what the account will hold on the statement date, security by security.
+ * what each account will hold on the statement date, security by security.
+ * A statement covers several demat accounts and folio groups; each is
+ * checked against the account it is mapped to.
  */
-export function StatementBalanceCheck({ accountId, balances, drafts }: StatementBalanceCheckProps) {
+export function StatementBalanceCheck({
+  accountId,
+  balances,
+  drafts,
+  accountMappings,
+  hasAccountColumn,
+}: StatementBalanceCheckProps) {
+  const { accounts } = useAccounts({ filterActive: false, includeArchived: true });
+  const groups = useMemo(
+    () =>
+      balancesByAccount({
+        balances,
+        accountMappings,
+        hasAccountColumn,
+        defaultAccountId: accountId,
+      }),
+    [accountId, accountMappings, balances, hasAccountColumn],
+  );
+  const showNames = groups.size > 1;
+
+  return (
+    <>
+      {[...groups.entries()].map(([groupAccountId, groupBalances]) => (
+        <AccountBalanceCheck
+          key={groupAccountId}
+          accountId={groupAccountId}
+          accountName={showNames ? accounts?.find((a) => a.id === groupAccountId)?.name : undefined}
+          balances={groupBalances}
+          drafts={drafts.filter((d) => d.accountId === groupAccountId)}
+        />
+      ))}
+    </>
+  );
+}
+
+function AccountBalanceCheck({
+  accountId,
+  accountName,
+  balances,
+  drafts,
+}: {
+  accountId: string;
+  accountName?: string;
+  balances: StatementBalance[];
+  drafts: DraftActivity[];
+}) {
   const { t } = useTranslation();
+  const withName = (title: string) => (accountName ? `${accountName}: ${title}` : title);
   const statementDate = balances[0]?.date ?? "";
   const enabled = !!accountId && balances.length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(statementDate);
 
@@ -70,7 +128,9 @@ export function StatementBalanceCheck({ accountId, balances, drafts }: Statement
     return (
       <ImportAlert
         variant="success"
-        title={t("activity:import.review.balanceCheck.matchTitle", { date: statementDate })}
+        title={withName(
+          t("activity:import.review.balanceCheck.matchTitle", { date: statementDate }),
+        )}
         description={t("activity:import.review.balanceCheck.matchDescription", {
           count: balances.length,
         })}
@@ -81,7 +141,9 @@ export function StatementBalanceCheck({ accountId, balances, drafts }: Statement
   return (
     <ImportAlert
       variant="warning"
-      title={t("activity:import.review.balanceCheck.mismatchTitle", { date: statementDate })}
+      title={withName(
+        t("activity:import.review.balanceCheck.mismatchTitle", { date: statementDate }),
+      )}
       description={t("activity:import.review.balanceCheck.mismatchDescription")}
     >
       <table className="mt-2 w-full text-xs">

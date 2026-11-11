@@ -11,6 +11,8 @@ export const HOLDING_BALANCE_LABEL = "HOLDING BALANCE";
 export interface StatementBalance {
   isin: string;
   name: string;
+  /** The statement's account for the row: a demat BO ID or a folio group. */
+  account: string;
   quantity: number;
   /** YYYY-MM-DD */
   date: string;
@@ -77,19 +79,75 @@ export function parseStatementDate(text: string): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/** Column of the statement account (BO ID) in the parser's rows. */
+const ACCOUNT_COLUMN = 7;
+
 /**
  * Reads the parser's HOLDING BALANCE rows: Date, label, security, ISIN,
- * quantity (the CDSL statement layout).
+ * quantity, ..., BO ID (the CDSL statement layout). A fund held in two
+ * folios of one account is one balance.
  */
 export function statementBalancesFromRows(rows: string[][]): StatementBalance[] {
-  return rows
-    .filter((row) => row[1] === HOLDING_BALANCE_LABEL && row[3]?.trim())
-    .map((row) => ({
-      isin: row[3].trim().toUpperCase(),
+  const byKey = new Map<string, StatementBalance>();
+  for (const row of rows) {
+    if (row[1] !== HOLDING_BALANCE_LABEL || !row[3]?.trim()) continue;
+    const isin = row[3].trim().toUpperCase();
+    const account = row[ACCOUNT_COLUMN]?.trim() ?? "";
+    const key = `${account}|${isin}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.quantity = Number((existing.quantity + toNumber(row[4])).toFixed(10));
+      continue;
+    }
+    byKey.set(key, {
+      isin,
       name: row[2]?.trim() ?? "",
+      account,
       quantity: toNumber(row[4]),
       date: parseStatementDate(row[0] ?? ""),
-    }));
+    });
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Groups statement balances by the Wealthfolio account they will be checked
+ * against. A statement account the import maps to an account is checked
+ * there. Without an account column, every balance goes to the selected
+ * account. Statement accounts left unmapped (no rows of theirs are imported)
+ * are not checked: there is nothing to compare them with.
+ */
+export function balancesByAccount({
+  balances,
+  accountMappings,
+  hasAccountColumn,
+  defaultAccountId,
+}: {
+  balances: StatementBalance[];
+  accountMappings: Record<string, string> | undefined;
+  hasAccountColumn: boolean;
+  defaultAccountId: string;
+}): Map<string, StatementBalance[]> {
+  const groups = new Map<string, StatementBalance[]>();
+  for (const b of balances) {
+    let accountId: string | undefined;
+    if (!hasAccountColumn) {
+      accountId = defaultAccountId;
+    } else {
+      accountId = accountMappings?.[b.account] ?? accountMappings?.[b.account.toLowerCase()];
+    }
+    if (!accountId) continue;
+    const list = groups.get(accountId) ?? [];
+    // Two statement accounts mapped to one account: add up their balances.
+    const same = list.find((x) => x.isin === b.isin);
+    if (same) {
+      same.quantity = Number((same.quantity + b.quantity).toFixed(10));
+    } else {
+      list.push({ ...b });
+    }
+    groups.set(accountId, list);
+  }
+  return groups;
 }
 
 function willImport(draft: DraftActivity): boolean {
@@ -147,4 +205,29 @@ export function findBalanceMismatches({
       account: held.get(b.isin) ?? 0,
     }))
     .filter((m) => Math.abs(m.statement - m.account) > TOLERANCE);
+}
+
+/**
+ * Holdings rows for a holdings-mode import: positions held on the statement
+ * date. A security sold out during the month is listed with zero quantity;
+ * leaving it out of the snapshot is what closes it.
+ */
+export function statementHoldingRows(rows: string[][]): string[][] {
+  return rows.filter((row) => row[1] === HOLDING_BALANCE_LABEL && toNumber(row[4]) !== 0);
+}
+
+/** Statement accounts (BO IDs and folio groups) in the order they appear. */
+export function statementAccounts(rows: string[][]): string[] {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const account = row[ACCOUNT_COLUMN]?.trim();
+    if (account) seen.add(account);
+  }
+  return [...seen];
+}
+
+/** Rows of one statement account, or every row for an empty selection. */
+export function rowsForStatementAccount(rows: string[][], account: string): string[][] {
+  if (!account) return rows;
+  return rows.filter((row) => row[ACCOUNT_COLUMN]?.trim() === account);
 }
