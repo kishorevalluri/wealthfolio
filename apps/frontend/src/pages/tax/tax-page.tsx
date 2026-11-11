@@ -239,22 +239,24 @@ function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
 function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
   const stcl = parseFloat(summary.stclCarriedForward) || 0;
   const ltcl = parseFloat(summary.ltclCarriedForward) || 0;
+  const stclSetOff = parseFloat(summary.stclBroughtForwardSetOff ?? "") || 0;
+  const ltclSetOff = parseFloat(summary.ltclBroughtForwardSetOff ?? "") || 0;
 
-  if (stcl === 0 && ltcl === 0) return null;
+  if (stcl === 0 && ltcl === 0 && stclSetOff === 0 && ltclSetOff === 0) return null;
 
   return (
     <Card className="border-warning-subtle-border bg-warning-subtle">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <Icons.AlertTriangle className="text-warning h-4 w-4" />
-          Carry-Forward Capital Losses
+          Capital Losses Carried Forward
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 text-sm">
           {stcl > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Short-Term Capital Loss</span>
+              <span className="text-muted-foreground">Short-term loss to carry forward</span>
               <span className="text-loss">
                 <AmountDisplay value={stcl} currency="INR" isHidden={false} />
               </span>
@@ -262,14 +264,31 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
           )}
           {ltcl > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Long-Term Capital Loss</span>
+              <span className="text-muted-foreground">Long-term loss to carry forward</span>
               <span className="text-loss">
                 <AmountDisplay value={ltcl} currency="INR" isHidden={false} />
               </span>
             </div>
           )}
+          {stclSetOff > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">
+                Earlier short-term loss set off this year
+              </span>
+              <AmountDisplay value={stclSetOff} currency="INR" isHidden={false} />
+            </div>
+          )}
+          {ltclSetOff > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">
+                Earlier long-term loss set off this year
+              </span>
+              <AmountDisplay value={ltclSetOff} currency="INR" isHidden={false} />
+            </div>
+          )}
           <p className="text-muted-foreground pt-1 text-xs">
-            These losses may be carried forward for up to 8 assessment years.
+            Losses are carried forward for up to 8 years. Earlier losses come from the sales
+            recorded here for earlier years; check them against Schedule CFL of your last return.
           </p>
         </div>
       </CardContent>

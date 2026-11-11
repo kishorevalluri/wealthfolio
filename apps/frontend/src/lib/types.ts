@@ -3171,6 +3171,11 @@ export interface IndianTaxYearSummary {
   exemptLtcgSec1038: string;
   stclCarriedForward: string;
   ltclCarriedForward: string;
+  /** Earlier years' losses (Section 74), computed from earlier years' sales. */
+  stclBroughtForward?: string;
+  ltclBroughtForward?: string;
+  stclBroughtForwardSetOff?: string;
+  ltclBroughtForwardSetOff?: string;
   estimatedStcgTax: string;
   estimatedLtcgTax: string;
   healthEducationCess: string;
