@@ -45,6 +45,7 @@
   "subtype_option_expiry": "Option Expiry",
   "subtype_position_open": "Open Position",
   "subtype_position_close": "Close Position",
+  "subtype_buyback": "Buyback",
   "subtype_return_of_capital": "Return of Capital",
   "subtype_notional_distribution": "Notional Distribution",
   "subtype_conversion_out": "Conversion Out",

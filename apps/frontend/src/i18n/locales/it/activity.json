@@ -46,6 +46,7 @@
   "subtype_option_expiry": "Scadenza opzione",
   "subtype_position_open": "Apertura posizione",
   "subtype_position_close": "Chiusura posizione",
+  "subtype_buyback": "Riacquisto",
   "subtype_return_of_capital": "Rimborso di capitale",
   "subtype_notional_distribution": "Distribuzione nozionale",
   "subtype_conversion_out": "Switch (uscita)",
