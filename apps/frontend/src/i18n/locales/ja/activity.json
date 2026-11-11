@@ -44,6 +44,7 @@
   "subtype_option_expiry": "オプション満期",
   "subtype_position_open": "新規建て",
   "subtype_position_close": "決済",
+  "subtype_buyback": "自社株買い",
   "subtype_return_of_capital": "資本の払い戻し",
   "subtype_notional_distribution": "みなし分配",
   "subtype_conversion_out": "スイッチング（払出）",

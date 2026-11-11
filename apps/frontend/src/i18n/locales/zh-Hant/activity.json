@@ -45,6 +45,7 @@
   "subtype_option_expiry": "選擇權到期",
   "subtype_position_open": "建立部位",
   "subtype_position_close": "平倉",
+  "subtype_buyback": "股份回購",
   "subtype_return_of_capital": "資本返還",
   "subtype_notional_distribution": "名義分配",
   "subtype_conversion_out": "轉換（換出）",

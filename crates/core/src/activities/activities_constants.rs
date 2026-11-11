@@ -279,6 +279,11 @@ pub const ACTIVITY_SUBTYPE_CONVERSION_OUT: &str = "CONVERSION_OUT";
 /// conversion, paired with a `CONVERSION_OUT` row.
 pub const ACTIVITY_SUBTYPE_CONVERSION_IN: &str = "CONVERSION_IN";
 
+/// Buyback: a SELL of shares back to the company that issued them. In India,
+/// from 1 Oct 2024 the whole payment is a deemed dividend (Section 2(22)(f))
+/// and the shares' cost becomes a capital loss.
+pub const ACTIVITY_SUBTYPE_BUYBACK: &str = "BUYBACK";
+
 /// Position-opening trade intent.
 /// Examples: buy-to-open for long options, sell-to-open for short options.
 pub const ACTIVITY_SUBTYPE_POSITION_OPEN: &str = "POSITION_OPEN";

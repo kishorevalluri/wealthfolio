@@ -366,6 +366,15 @@ pub struct IndianDisposalCharges {
     pub sale_tax: Decimal,
     /// The buy trade's tax (STT) share, which the lot's cost includes.
     pub purchase_tax: Decimal,
+    /// The sale was a buyback (a SELL with the BUYBACK subtype).
+    pub buyback: bool,
+}
+
+/// Buybacks from this date are taxed as a deemed dividend, with the shares'
+/// cost a capital loss (Finance (No. 2) Act 2024). Before it the shareholder
+/// was exempt under Section 10(34A).
+pub fn buyback_dividend_start() -> NaiveDate {
+    NaiveDate::from_ymd_opt(2024, 10, 1).expect("valid date")
 }
 
 /// A share bought and sold on the same day: intraday trading, which Section
@@ -562,6 +571,7 @@ pub fn calculate_indian_capital_gains(
     let mut non_fifo = false;
     let mut missing_fmv: std::collections::BTreeSet<String> = Default::default();
     let mut unindexed = false;
+    let mut exempt_buybacks = 0usize;
 
     for d in disposals {
         let Some(disp_date) = parse_date(&d.disposal_date) else {
@@ -583,14 +593,26 @@ pub fn calculate_indian_capital_gains(
             .copied()
             .unwrap_or(IndianAssetTaxClassification::OtherCapitalAsset);
 
+        let charge = charges.get(&d.id).copied().unwrap_or_default();
+        if charge.buyback && disp_date < buyback_dividend_start() {
+            exempt_buybacks += 1;
+            continue;
+        }
         // Lot cost and sale proceeds are net of the trades' fee and tax. Put
         // STT back: it is neither cost nor transfer expense.
-        let charge = charges.get(&d.id).copied().unwrap_or_default();
         let cost_basis: Decimal =
             d.cost_basis_base.parse().unwrap_or(Decimal::ZERO) - charge.purchase_tax;
         let proceeds: Decimal =
             d.proceeds_base.parse().unwrap_or(Decimal::ZERO) + charge.sale_fee + charge.sale_tax;
-        let transfer_expenses = charge.sale_fee;
+        let mut transfer_expenses = charge.sale_fee;
+        // A buyback's payment is a dividend (in Schedule OS), so the sale
+        // value is nil and the cost is a capital loss.
+        let proceeds = if charge.buyback {
+            transfer_expenses = Decimal::ZERO;
+            Decimal::ZERO
+        } else {
+            proceeds
+        };
         let qty: Decimal = d.quantity.parse().unwrap_or(Decimal::ZERO);
         let (sale_price_per_unit, cost_per_unit) = if qty > Decimal::ZERO {
             (proceeds / qty, cost_basis / qty)
@@ -863,6 +885,25 @@ pub fn calculate_indian_capital_gains(
         );
     }
 
+    if exempt_buybacks > 0 {
+        summary.warnings.push(format!(
+            "{} buyback sale(s) before 1 Oct 2024 are exempt under Section 10(34A) and are \
+             left out.",
+            exempt_buybacks
+        ));
+    }
+    if summary
+        .calculations
+        .iter()
+        .any(|c| charges.get(&c.disposal_id).is_some_and(|ch| ch.buyback))
+    {
+        summary.warnings.push(
+            "Buybacks from 1 Oct 2024 are shown with a nil sale value: the payment is a \
+             dividend under Section 2(22)(f), included in Income from Other Sources, and the \
+             shares' cost is a capital loss."
+                .to_string(),
+        );
+    }
     if !summary.speculative_trades.is_empty() {
         summary.warnings.push(format!(
             "{} sale(s) were bought the same day. Intraday trades are speculative \
@@ -1496,6 +1537,7 @@ mod tests {
                 sale_fee: dec!(40),
                 sale_tax: dec!(150),
                 purchase_tax: dec!(100),
+                buyback: false,
             },
         )]);
         let summary = run_with_charges(&[s], &charges, 2024);
@@ -1506,6 +1548,43 @@ mod tests {
         assert_eq!(calc.transfer_expenses, dec!(40));
         assert_eq!(calc.gross_gain, dec!(49960));
         assert_eq!(summary.stcg_total, dec!(49960));
+    }
+
+    #[test]
+    fn buybacks_are_a_capital_loss_from_october_2024_and_exempt_before() {
+        let sales = [
+            sale(
+                "eq",
+                EquityListed,
+                date(2023, 5, 1),
+                date(2024, 11, 4),
+                dec!(80000),
+                dec!(90000),
+            ),
+            sale(
+                "eq",
+                EquityListed,
+                date(2023, 5, 1),
+                date(2024, 9, 2),
+                dec!(80000),
+                dec!(90000),
+            ),
+        ];
+        let buyback = IndianDisposalCharges {
+            buyback: true,
+            ..Default::default()
+        };
+        let charges = HashMap::from([
+            ("disp-0".to_string(), buyback),
+            ("disp-1".to_string(), buyback),
+        ]);
+        let summary = run_with_charges(&sales, &charges, 2024);
+        assert_eq!(summary.calculations.len(), 1);
+        let calc = &summary.calculations[0];
+        assert_eq!(calc.proceeds, dec!(0));
+        assert_eq!(calc.gross_gain, dec!(-80000));
+        assert_eq!(summary.ltcl_carried_forward, dec!(80000));
+        assert!(summary.warnings.iter().any(|w| w.contains("10(34A)")));
     }
 
     #[test]

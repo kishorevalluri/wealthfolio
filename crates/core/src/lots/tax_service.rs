@@ -10,7 +10,7 @@ use super::{
     IndianDisposalCharges, IndianLossesBroughtForward, IndianTaxAssetInfo, IndianTaxYearSummary,
     LotDisposal, LotRecord, LotRepositoryTrait,
 };
-use crate::activities::{Activity, ActivityServiceTrait};
+use crate::activities::{Activity, ActivityServiceTrait, ACTIVITY_SUBTYPE_BUYBACK};
 use crate::assets::{Asset, AssetServiceTrait, InstrumentType};
 use crate::errors::{Result, ValidationError};
 
@@ -141,10 +141,17 @@ fn disposal_charges(
             )
         })
         .unwrap_or_default();
+    let buyback = sell.is_some_and(|trade| {
+        trade
+            .subtype
+            .as_deref()
+            .is_some_and(|s| s.eq_ignore_ascii_case(ACTIVITY_SUBTYPE_BUYBACK))
+    });
     IndianDisposalCharges {
         sale_fee,
         sale_tax,
         purchase_tax,
+        buyback,
     }
 }
 
