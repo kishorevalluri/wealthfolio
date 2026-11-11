@@ -1173,7 +1173,10 @@
       "pdfPasswordPlaceholder": "كلمة المرور",
       "pdfPasswordSubmit": "فتح واستيراد",
       "pdfPasswordHint": "كلمات المرور الشائعة: لكشوف CAMS / KFintech: رقم PAN بأحرف كبيرة أو PAN + تاريخ الميلاد. لكشوف CDSL / NSDL: رقم PAN أو رقم حساب الإيداع المكون من 16 رقمًا.",
-      "pdfDecryptionFailed": "تعذّر فك تشفير ملف PDF. يُرجى التحقق من كلمة المرور."
+      "pdfDecryptionFailed": "تعذّر فك تشفير ملف PDF. يُرجى التحقق من كلمة المرور.",
+      "statementAccount": "حساب الكشف",
+      "statementAccountHelp": "يشمل هذا الكشف أكثر من حساب أوراق مالية أو مجموعة حسابات صناديق. اختر الحساب الذي يمثله هذا الحساب؛ تحل مقتنياته محل مقتنيات الحساب. «الكل» يجمعها معًا.",
+      "statementAccountAll": "كل الحسابات في الكشف"
     },
     "validationAlert": {
       "allValidDescriptionPrefix": "انقر ",

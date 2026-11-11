@@ -884,7 +884,10 @@
       "pdfPasswordPlaceholder": "Password",
       "pdfPasswordSubmit": "Unlock & Import",
       "pdfPasswordHint": "Common passwords: For CAMS / KFintech CAS: PAN (uppercase) or PAN + DOB. For CDSL / NSDL e-CAS: PAN or 16-digit Demat Account No / Client ID.",
-      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password."
+      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
+      "statementAccount": "對帳單帳戶",
+      "statementAccountHelp": "此對帳單包含多個證券帳戶或基金帳戶組。請選擇與此帳戶對應的一個；其持倉將取代此帳戶的持倉。「全部」會將它們合併。",
+      "statementAccountAll": "對帳單中的所有帳戶"
     },
     "parseSettings": {
       "title": "解析設定",

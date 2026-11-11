@@ -46,6 +46,14 @@ export function setParsedData(
 }
 
 /**
+ * Keep every holdings row of a multi-account statement and the statement
+ * account picked for this import ("" for all).
+ */
+export function setStatementHoldings(rows: string[][], account: string): ImportAction {
+  return { type: "SET_STATEMENT_HOLDINGS", payload: { rows, account } };
+}
+
+/**
  * Set which parsed rows (by index) are left out of the import in the mapping step.
  */
 export function setSkippedRows(rowIndexes: number[]): ImportAction {
