@@ -50,6 +50,7 @@ import {
   setParseConfig,
   setParsedData,
   setSelectedTemplate,
+  setStatementHoldings,
   setSuppressLinkedTemplate,
 } from "../context/import-actions";
 import { useImportContext, type ParseConfig } from "../context/import-context";
@@ -67,7 +68,13 @@ import {
   sanitizeImportMappingForProfile,
 } from "../utils/activity-import-profile";
 import { mergeDetectedParseConfig } from "../utils/import-flow-utils";
-import { statementBalancesFromRows, type StatementBalance } from "../utils/statement-balances";
+import {
+  rowsForStatementAccount,
+  statementAccounts,
+  statementBalancesFromRows,
+  statementHoldingRows as holdingRowsOf,
+  type StatementBalance,
+} from "../utils/statement-balances";
 import { badgeVariants } from "@wealthfolio/ui";
 
 /** PDF statements and Excel reports are parsed by the backend, not as CSV. */
@@ -569,6 +576,8 @@ function TemplateSelector({
 // Upload Step Component
 // ─────────────────────────────────────────────────────────────────────────────
 
+const ALL_STATEMENT_ACCOUNTS = "__all__";
+
 export function UploadStep() {
   const { state, dispatch } = useImportContext();
   const { t } = useTranslation();
@@ -851,6 +860,12 @@ export function UploadStep() {
   const [pdfPasswordError, setPdfPasswordError] = useState<string | null>(null);
   const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
   const [isPdfParsing, setIsPdfParsing] = useState(false);
+  // Holdings import of a depository statement that covers several accounts.
+  const { statementHoldingRows, statementAccount } = state;
+  const statementAccountOptions = useMemo(
+    () => statementAccounts(statementHoldingRows),
+    [statementHoldingRows],
+  );
 
   const handlePdfParse = useCallback(
     async (file: File, password?: string) => {
@@ -863,10 +878,14 @@ export function UploadStep() {
         setParseError(null);
         let rows = result.parsed.rows;
         let statementBalances: StatementBalance[] = [];
+        dispatch(setStatementHoldings([], ""));
         if (importType === ImportType.HOLDINGS) {
           const hasHoldings = rows.some((r) => r[1] === "HOLDING BALANCE");
           if (hasHoldings) {
-            rows = rows.filter((r) => r[1] === "HOLDING BALANCE");
+            rows = holdingRowsOf(rows);
+            if (statementAccounts(rows).length > 1) {
+              dispatch(setStatementHoldings(rows, ""));
+            }
           }
         } else if (importType === ImportType.ACTIVITY) {
           const hasTxns = rows.some((r) => r[1] !== "HOLDING BALANCE");
@@ -936,6 +955,7 @@ export function UploadStep() {
       } else {
         dispatch(setFile(null as unknown as File));
         dispatch(setParsedData([], []));
+        dispatch(setStatementHoldings([], ""));
         setPendingPdfFile(null);
         setIsPdfPasswordOpen(false);
       }
@@ -974,6 +994,18 @@ export function UploadStep() {
       }
     },
     [dispatch, state.file, state.parseConfig, t],
+  );
+
+  const handleStatementAccountChange = useCallback(
+    (value: string | null) => {
+      if (statementHoldingRows.length === 0) return;
+      const account = !value || value === ALL_STATEMENT_ACCOUNTS ? "" : value;
+      dispatch(setStatementHoldings(statementHoldingRows, account));
+      dispatch(
+        setParsedData(state.headers, rowsForStatementAccount(statementHoldingRows, account)),
+      );
+    },
+    [dispatch, state.headers, statementHoldingRows],
   );
 
   const hasParseErrors = parseError !== null;
@@ -1080,6 +1112,40 @@ export function UploadStep() {
           hasConfigErrors={hasParseErrors}
         />
       </div>
+
+      {/* Holdings import: which account on the statement this account holds */}
+      {importType === ImportType.HOLDINGS && statementAccountOptions.length > 1 && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5">
+            <Label htmlFor="statement-account" className="text-sm font-semibold">
+              {t("activity:import.upload.statementAccount")}
+            </Label>
+            <HelpTooltip content={t("activity:import.upload.statementAccountHelp")} />
+          </div>
+          <Select
+            value={statementAccount || ALL_STATEMENT_ACCOUNTS}
+            items={{
+              [ALL_STATEMENT_ACCOUNTS]: t("activity:import.upload.statementAccountAll"),
+              ...Object.fromEntries(statementAccountOptions.map((a) => [a, a])),
+            }}
+            onValueChange={handleStatementAccountChange}
+          >
+            <SelectTrigger id="statement-account" className="h-9 text-sm sm:max-w-md">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_STATEMENT_ACCOUNTS}>
+                {t("activity:import.upload.statementAccountAll")}
+              </SelectItem>
+              {statementAccountOptions.map((account) => (
+                <SelectItem key={account} value={account}>
+                  {account}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* CSV / PDF Preview */}
       {state.file && state.headers.length > 0 && (

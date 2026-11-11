@@ -136,8 +136,16 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
+      - name: Make apt retry on mirror failures
+        # Runner mirrors sometimes fail DNS or stall; without a timeout apt
+        # waits until the job's own timeout cancels it.
+        if: needs.changes.outputs.addon_sandbox == 'true'
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries
+
       - name: Install addon sandbox browsers
         if: needs.changes.outputs.addon_sandbox == 'true'
+        timeout-minutes: 15
         run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - name: Run addon sandbox browser tests
@@ -208,10 +216,21 @@ jobs:
           shared-key: pr-rust-check
           save-if: false
 
-      - name: Install system dependencies
+      - name: Make apt retry on mirror failures
+        # Runner mirrors sometimes fail DNS or stall; without a timeout apt
+        # waits until the job's own timeout cancels it.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-ci-retries
+
+      - name: Install system dependencies
+        timeout-minutes: 15
+        run: |
+          pkgs="libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev"
+          # The image's package lists are often enough; refresh only if not.
+          if ! timeout 300 sudo apt-get install -y $pkgs; then
+            for i in 1 2 3; do timeout 180 sudo apt-get update && break; sleep $((i * 10)); done
+            sudo apt-get install -y $pkgs
+          fi
 
       - name: Create dist folder for Tauri context
         run:

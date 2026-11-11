@@ -877,7 +877,10 @@
       "pdfPasswordPlaceholder": "Password",
       "pdfPasswordSubmit": "Unlock & Import",
       "pdfPasswordHint": "Common passwords: For CAMS / KFintech CAS: PAN (uppercase) or PAN + DOB. For CDSL / NSDL e-CAS: PAN or 16-digit Demat Account No / Client ID.",
-      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password."
+      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
+      "statementAccount": "명세서 계좌",
+      "statementAccountHelp": "이 명세서에는 둘 이상의 계좌 또는 폴리오 그룹이 포함되어 있습니다. 이 계좌에 해당하는 것을 선택하세요. 선택한 보유 내역이 이 계좌의 보유 내역을 대체합니다. '전체'는 합산합니다.",
+      "statementAccountAll": "명세서의 모든 계좌"
     },
     "parseSettings": {
       "title": "분석 설정",

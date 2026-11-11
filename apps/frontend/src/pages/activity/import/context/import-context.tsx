@@ -131,6 +131,11 @@ export interface ImportState {
   parsedRows: string[][];
   // Closing balances from a depository statement, for the review step's check
   statementBalances: StatementBalance[];
+  // Holdings import of a statement covering several accounts: every holdings
+  // row, and the statement account picked ("" for all). parsedRows holds the
+  // picked rows; these stay so the picker still works after going Back.
+  statementHoldingRows: string[][];
+  statementAccount: string;
   // Indexes into parsedRows left out of this import in Mapping; not part of the template
   skippedRowIndexes: number[];
   mapping: ImportMappingData | null;
@@ -177,6 +182,8 @@ const INITIAL_STATE: ImportState = {
   headers: [],
   parsedRows: [],
   statementBalances: [],
+  statementHoldingRows: [],
+  statementAccount: "",
   skippedRowIndexes: [],
   mapping: null,
   draftActivities: [],
@@ -209,6 +216,7 @@ export type ImportAction =
       type: "SET_PARSED_DATA";
       payload: { headers: string[]; rows: string[][]; statementBalances?: StatementBalance[] };
     }
+  | { type: "SET_STATEMENT_HOLDINGS"; payload: { rows: string[][]; account: string } }
   | { type: "SET_SKIPPED_ROWS"; payload: number[] }
   | { type: "SET_MAPPING"; payload: ImportMappingData }
   | { type: "SET_DRAFT_ACTIVITIES"; payload: DraftActivity[] }
@@ -332,6 +340,13 @@ function importReducer(state: ImportState, action: ImportAction): ImportState {
         statementBalances: action.payload.statementBalances ?? [],
         // A new parse can renumber rows, so skips from the old rows no longer apply
         skippedRowIndexes: [],
+      };
+
+    case "SET_STATEMENT_HOLDINGS":
+      return {
+        ...state,
+        statementHoldingRows: action.payload.rows,
+        statementAccount: action.payload.account,
       };
 
     case "SET_SKIPPED_ROWS":

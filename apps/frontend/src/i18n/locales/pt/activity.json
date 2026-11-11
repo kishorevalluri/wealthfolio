@@ -900,7 +900,10 @@
       "pdfPasswordPlaceholder": "Password",
       "pdfPasswordSubmit": "Unlock & Import",
       "pdfPasswordHint": "Common passwords: For CAMS / KFintech CAS: PAN (uppercase) or PAN + DOB. For CDSL / NSDL e-CAS: PAN or 16-digit Demat Account No / Client ID.",
-      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password."
+      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
+      "statementAccount": "Conta do extrato",
+      "statementAccountHelp": "Este extrato inclui mais de uma conta demat ou grupo de fólios. Escolha a que corresponde a esta conta; as posições dela substituem as da conta. «Todas» soma-as.",
+      "statementAccountAll": "Todas as contas do extrato"
     },
     "parseSettings": {
       "title": "Configurações de análise",

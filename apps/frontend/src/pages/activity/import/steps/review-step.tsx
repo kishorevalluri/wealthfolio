@@ -2,6 +2,7 @@ import { Badge } from "@wealthfolio/ui/components/ui/badge";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { ProgressIndicator } from "@wealthfolio/ui/components/ui/progress-indicator";
 import { FacetedFilter } from "@wealthfolio/ui";
+import { ImportFormat } from "@/lib/constants";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useNameComparator } from "@/hooks/use-name-comparator";
 import { useCallback, useMemo, useState } from "react";
@@ -19,7 +20,11 @@ import {
   type DraftActivity,
 } from "../context";
 import { buildImportAssetCandidateFromDraft } from "../utils/asset-review-utils";
-import { reconcileExpenseReversalBoundary, validateDraft } from "../utils/draft-utils";
+import {
+  primaryHeader,
+  reconcileExpenseReversalBoundary,
+  validateDraft,
+} from "../utils/draft-utils";
 import { getActivityImportProfileForResolvedAccountIds } from "../utils/activity-import-profile";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,6 +103,8 @@ export function ReviewStep() {
   const { parsedRows, mapping, draftActivities } = state;
   const isValidating = state.isValidating;
   const { accounts = [] } = useAccounts({ filterActive: true, includeArchived: false });
+  const accountHeader = primaryHeader(mapping?.fieldMappings?.[ImportFormat.ACCOUNT]);
+  const statementAccountColumn = accountHeader ? state.headers.indexOf(accountHeader) : -1;
 
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
@@ -517,6 +524,7 @@ export function ReviewStep() {
           accountId={state.accountId}
           balances={state.statementBalances}
           drafts={draftActivities}
+          accountColumn={statementAccountColumn}
         />
       )}
 

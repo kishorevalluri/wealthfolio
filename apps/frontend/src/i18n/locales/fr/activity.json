@@ -900,7 +900,10 @@
       "pdfPasswordPlaceholder": "Password",
       "pdfPasswordSubmit": "Unlock & Import",
       "pdfPasswordHint": "Common passwords: For CAMS / KFintech CAS: PAN (uppercase) or PAN + DOB. For CDSL / NSDL e-CAS: PAN or 16-digit Demat Account No / Client ID.",
-      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password."
+      "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
+      "statementAccount": "Compte du relevé",
+      "statementAccountHelp": "Ce relevé couvre plusieurs comptes-titres ou groupes de folios. Choisissez celui que ce compte représente ; ses positions remplacent celles du compte. « Tous » les additionne.",
+      "statementAccountAll": "Tous les comptes du relevé"
     },
     "parseSettings": {
       "title": "Paramètres d'analyse",
