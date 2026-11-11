@@ -1413,6 +1413,7 @@
   "subtype_conversion_in": "تبديل (دخول)",
   "subtype_option_expiry": "انتهاء صلاحية الخيار",
   "subtype_position_close": "إغلاق المركز",
+  "subtype_buyback": "إعادة شراء الأسهم",
   "subtype_position_open": "فتح مركز",
   "subtype_rebate": "استرداد عمولة التداول",
   "subtype_refund": "استرداد الرسوم",

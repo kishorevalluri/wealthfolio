@@ -44,6 +44,7 @@
   "subtype_option_expiry": "期权到期",
   "subtype_position_open": "开仓",
   "subtype_position_close": "平仓",
+  "subtype_buyback": "股份回购",
   "subtype_return_of_capital": "资本返还",
   "subtype_notional_distribution": "名义分配",
   "subtype_conversion_out": "转换（换出）",

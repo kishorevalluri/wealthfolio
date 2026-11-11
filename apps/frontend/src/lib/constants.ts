@@ -444,6 +444,11 @@ export const ACTIVITY_SUBTYPES = {
   POSITION_OPEN: "POSITION_OPEN",
   // POSITION_CLOSE: closes or reduces an existing long/short position
   POSITION_CLOSE: "POSITION_CLOSE",
+
+  // SELL subtype
+  // BUYBACK: shares sold back to the issuing company (India: a deemed dividend
+  // from 1 Oct 2024, with the shares' cost a capital loss)
+  BUYBACK: "BUYBACK",
 } as const;
 
 export type ActivitySubtype = (typeof ACTIVITY_SUBTYPES)[keyof typeof ACTIVITY_SUBTYPES];
@@ -511,12 +516,17 @@ export const SUBTYPE_DISPLAY_NAMES: Record<string, string> = {
   [ACTIVITY_SUBTYPES.CONVERSION_IN]: "Conversion In",
   [ACTIVITY_SUBTYPES.POSITION_OPEN]: "Open Position",
   [ACTIVITY_SUBTYPES.POSITION_CLOSE]: "Close Position",
+  [ACTIVITY_SUBTYPES.BUYBACK]: "Buyback",
 };
 
 // Suggested subtypes per activity type
 export const SUBTYPES_BY_ACTIVITY_TYPE: Record<string, string[]> = {
   [ActivityType.BUY]: [ACTIVITY_SUBTYPES.POSITION_OPEN, ACTIVITY_SUBTYPES.POSITION_CLOSE],
-  [ActivityType.SELL]: [ACTIVITY_SUBTYPES.POSITION_OPEN, ACTIVITY_SUBTYPES.POSITION_CLOSE],
+  [ActivityType.SELL]: [
+    ACTIVITY_SUBTYPES.POSITION_OPEN,
+    ACTIVITY_SUBTYPES.POSITION_CLOSE,
+    ACTIVITY_SUBTYPES.BUYBACK,
+  ],
   [ActivityType.DIVIDEND]: [
     ACTIVITY_SUBTYPES.DRIP,
     ACTIVITY_SUBTYPES.DIVIDEND_IN_KIND,

@@ -46,6 +46,7 @@
   "subtype_option_expiry": "Vencimiento de opción",
   "subtype_position_open": "Abrir posición",
   "subtype_position_close": "Cerrar posición",
+  "subtype_buyback": "Recompra",
   "subtype_return_of_capital": "Devolución de capital",
   "subtype_notional_distribution": "Distribución nocional",
   "subtype_conversion_out": "Traspaso (salida)",

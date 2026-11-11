@@ -44,6 +44,7 @@
   "subtype_option_expiry": "옵션 만기",
   "subtype_position_open": "포지션 개설",
   "subtype_position_close": "포지션 청산",
+  "subtype_buyback": "자사주 매입",
   "subtype_return_of_capital": "자본 환급",
   "subtype_notional_distribution": "명목 분배",
   "subtype_conversion_out": "전환 (출고)",

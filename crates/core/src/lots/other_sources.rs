@@ -8,8 +8,10 @@ use chrono::{Datelike, FixedOffset, NaiveDate};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use super::buyback_dividend_start;
 use crate::activities::{
-    Activity, ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_TAX,
+    Activity, ACTIVITY_SUBTYPE_BUYBACK, ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_INTEREST,
+    ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_TAX,
 };
 
 /// Dividends received from one asset in the year.
@@ -65,6 +67,10 @@ fn abs(value: Option<Decimal>) -> Decimal {
 /// (TDS) is added back for the gross. A separate TAX row with the
 /// `WITHHOLDING` subtype counts as TDS too: on a dividend when it names an
 /// asset, on interest otherwise.
+///
+/// A SELL with the BUYBACK subtype from 1 Oct 2024 is a deemed dividend
+/// (Section 2(22)(f)): the buyback price times the quantity, with its `tax`
+/// as the TDS the company deducted.
 pub fn summarize_other_sources(
     activities: &[Activity],
     fy_start_year: i32,
@@ -89,6 +95,25 @@ pub fn summarize_other_sources(
         let amount = abs(activity.amount);
         let tax = abs(activity.tax);
         let asset_id = activity.asset_id.clone().unwrap_or_default();
+        let is_buyback = activity.effective_type() == ACTIVITY_TYPE_SELL
+            && activity
+                .subtype
+                .as_deref()
+                .is_some_and(|s| s.eq_ignore_ascii_case(ACTIVITY_SUBTYPE_BUYBACK));
+        if is_buyback && date >= buyback_dividend_start() {
+            let gross = match (activity.quantity, activity.unit_price) {
+                (Some(q), Some(p)) => (q * p).abs(),
+                _ => amount + abs(activity.fee) + tax,
+            };
+            summary.dividends_gross += gross;
+            summary.dividends_tds += tax;
+            summary.dividends_by_period[period(date)] += gross;
+            let row = by_asset.entry(asset_id.clone()).or_default();
+            row.asset_id = asset_id;
+            row.gross += gross;
+            row.tds += tax;
+            continue;
+        }
         match activity.effective_type() {
             ACTIVITY_TYPE_DIVIDEND => {
                 let gross = amount + tax;
@@ -149,6 +174,20 @@ mod tests {
         a.amount = Some(amount);
         a.tax = tax;
         a
+    }
+
+    #[test]
+    fn buybacks_from_october_2024_are_dividends() {
+        let mut buyback = activity("SELL", "2024-11-04", dec!(0), Some(dec!(1000)));
+        buyback.subtype = Some("BUYBACK".to_string());
+        buyback.quantity = Some(dec!(10));
+        buyback.unit_price = Some(dec!(1000));
+        let mut sale = buyback.clone();
+        sale.subtype = None;
+        let s = summarize_other_sources(&[buyback, sale], 2024);
+        assert_eq!(s.dividends_gross, dec!(10000));
+        assert_eq!(s.dividends_tds, dec!(1000));
+        assert_eq!(s.dividends_by_period[2], dec!(10000));
     }
 
     #[test]

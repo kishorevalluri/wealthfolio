@@ -46,6 +46,7 @@
   "subtype_option_expiry": "Expiration d'option",
   "subtype_position_open": "Ouverture de position",
   "subtype_position_close": "Clôture de position",
+  "subtype_buyback": "Rachat d’actions",
   "subtype_return_of_capital": "Remboursement de capital",
   "subtype_notional_distribution": "Distribution théorique",
   "subtype_conversion_out": "Arbitrage (sortie)",
