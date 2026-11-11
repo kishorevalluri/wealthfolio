@@ -8,7 +8,7 @@ use chrono::{Datelike, FixedOffset, NaiveDate};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use super::buyback_dividend_start;
+use super::is_deemed_dividend_buyback;
 use crate::activities::{
     Activity, ACTIVITY_SUBTYPE_BUYBACK, ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_INTEREST,
     ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_TAX,
@@ -68,7 +68,7 @@ fn abs(value: Option<Decimal>) -> Decimal {
 /// `WITHHOLDING` subtype counts as TDS too: on a dividend when it names an
 /// asset, on interest otherwise.
 ///
-/// A SELL with the BUYBACK subtype from 1 Oct 2024 is a deemed dividend
+/// A SELL with the BUYBACK subtype from 1 Oct 2024 to 31 Mar 2026 is a deemed dividend
 /// (Section 2(22)(f)): the buyback price times the quantity, with its `tax`
 /// as the TDS the company deducted.
 pub fn summarize_other_sources(
@@ -100,7 +100,7 @@ pub fn summarize_other_sources(
                 .subtype
                 .as_deref()
                 .is_some_and(|s| s.eq_ignore_ascii_case(ACTIVITY_SUBTYPE_BUYBACK));
-        if is_buyback && date >= buyback_dividend_start() {
+        if is_buyback && is_deemed_dividend_buyback(date) {
             let gross = match (activity.quantity, activity.unit_price) {
                 (Some(q), Some(p)) => (q * p).abs(),
                 _ => amount + abs(activity.fee) + tax,
@@ -184,6 +184,13 @@ mod tests {
         buyback.unit_price = Some(dec!(1000));
         let mut sale = buyback.clone();
         sale.subtype = None;
+        // From 1 Apr 2026 a buyback is a capital gain again, not a dividend.
+        let mut later = buyback.clone();
+        later.activity_date += chrono::Duration::days(600);
+        assert_eq!(
+            summarize_other_sources(std::slice::from_ref(&later), 2026).dividends_gross,
+            dec!(0)
+        );
         let s = summarize_other_sources(&[buyback, sale], 2024);
         assert_eq!(s.dividends_gross, dec!(10000));
         assert_eq!(s.dividends_tds, dec!(1000));

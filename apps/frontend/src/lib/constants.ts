@@ -447,7 +447,7 @@ export const ACTIVITY_SUBTYPES = {
 
   // SELL subtype
   // BUYBACK: shares sold back to the issuing company (India: a deemed dividend
-  // from 1 Oct 2024, with the shares' cost a capital loss)
+  // from 1 Oct 2024 to 31 Mar 2026, with the shares' cost a capital loss)
   BUYBACK: "BUYBACK",
 } as const;
 
