@@ -6,9 +6,9 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 
 use super::{
-    calculate_indian_capital_gains, IndianAssetTaxClassification, IndianDisposalCharges,
-    IndianLossesBroughtForward, IndianTaxAssetInfo, IndianTaxYearSummary, LotDisposal, LotRecord,
-    LotRepositoryTrait,
+    calculate_indian_capital_gains, summarize_other_sources, IndianAssetTaxClassification,
+    IndianDisposalCharges, IndianLossesBroughtForward, IndianTaxAssetInfo, IndianTaxYearSummary,
+    LotDisposal, LotRecord, LotRepositoryTrait,
 };
 use crate::activities::{Activity, ActivityServiceTrait};
 use crate::assets::{Asset, AssetServiceTrait, InstrumentType};
@@ -307,12 +307,20 @@ pub async fn compute_indian_tax_summary(
     losses.retain(|l| l.year > fy_start_year - LOSS_CARRY_YEARS);
     summary.stcl_carried_forward = losses.iter().map(|l| l.stcl).sum();
     summary.ltcl_carried_forward = losses.iter().map(|l| l.ltcl).sum();
+    let other_sources = summarize_other_sources(
+        &activity_service.get_activities_by_account_ids(account_ids)?,
+        fy_start_year,
+    );
     if disposals.is_empty()
         && summary.stcl_carried_forward.is_zero()
         && summary.ltcl_carried_forward.is_zero()
     {
-        return Ok(empty());
+        return Ok(IndianTaxYearSummary {
+            other_sources,
+            ..empty()
+        });
     }
+    summary.other_sources = other_sources;
 
     // Funds whose tax type was guessed: a debt or international fund guessed as
     // an equity fund is taxed at the wrong rate, so ask for it to be set.
