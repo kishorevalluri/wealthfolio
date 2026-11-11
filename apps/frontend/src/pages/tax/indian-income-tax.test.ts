@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeRegimeTax, parseSpecialRateGains, surchargeRate } from "./indian-income-tax";
+import {
+  computeRegimeTax,
+  parseSpecialRateGains,
+  sectionNumber,
+  surchargeRate,
+} from "./indian-income-tax";
 
 describe("computeRegimeTax", () => {
   it("gives a full rebate up to 12 lakh under the FY 2025-26 new regime", () => {
@@ -71,5 +76,15 @@ describe("parseSpecialRateGains", () => {
         { section: "sec111a", rate: "0.20", amount: "0" },
       ]),
     ).toEqual([{ section: "sec112a", rate: 0.125, amount: 75_000 }]);
+  });
+});
+
+describe("sectionNumber", () => {
+  it("uses the Income-tax Act 2025 numbers from 2026-27", () => {
+    expect(sectionNumber("111A", 2025)).toBe("111A");
+    expect(sectionNumber("111A", 2026)).toBe("196");
+    expect(sectionNumber("112A", 2026)).toBe("198");
+    expect(sectionNumber("87A", 2026)).toBe("156");
+    expect(sectionNumber("50AA", 2026)).toBe("50AA");
   });
 });

@@ -30,9 +30,17 @@ pub struct ScheduleCgRow {
     pub estimated_tax: Decimal,
 }
 
-/// ITR label for a row's tax section.
-fn section_label(section: IndianTaxSection) -> &'static str {
+/// First tax year under the Income-tax Act 2025 (2026-27), which renumbers
+/// the sections: 111A is 196, 112 is 197 and 112A is 198.
+pub const INCOME_TAX_ACT_2025_FIRST_YEAR: i32 = 2026;
+
+/// ITR label for a row's tax section in financial year `fy_start_year`.
+fn section_label(section: IndianTaxSection, fy_start_year: i32) -> &'static str {
+    let act_2025 = fy_start_year >= INCOME_TAX_ACT_2025_FIRST_YEAR;
     match section {
+        IndianTaxSection::Sec111a if act_2025 => "Section 196 (formerly 111A)",
+        IndianTaxSection::Sec112a if act_2025 => "Section 198 (formerly 112A)",
+        IndianTaxSection::Sec112 if act_2025 => "Section 197 (formerly 112)",
         IndianTaxSection::Sec111a => "Section 111A",
         IndianTaxSection::Sec112a => "Section 112A",
         IndianTaxSection::Sec112 => "Section 112",
@@ -60,7 +68,7 @@ pub fn to_schedule_cg_rows(summary: &IndianTaxYearSummary) -> Vec<ScheduleCgRow>
                 isin: calc.isin.clone().unwrap_or_default(),
                 asset_name: calc.asset_name.clone(),
                 symbol: calc.asset_symbol.clone().unwrap_or_default(),
-                section: section_label(calc.tax_section).to_string(),
+                section: section_label(calc.tax_section, summary.fy_start_year).to_string(),
                 holding_period: holding_period_label(calc.holding_period).to_string(),
                 acquisition_date: calc.acquisition_date.format("%d/%m/%Y").to_string(),
                 disposal_date: calc.disposal_date.format("%d/%m/%Y").to_string(),
@@ -89,13 +97,28 @@ mod tests {
 
     #[test]
     fn section_labels_correct() {
-        assert_eq!(section_label(IndianTaxSection::Sec111a), "Section 111A");
-        assert_eq!(section_label(IndianTaxSection::Sec112a), "Section 112A");
+        let label = |s| section_label(s, 2025);
+        assert_eq!(label(IndianTaxSection::Sec111a), "Section 111A");
+        assert_eq!(label(IndianTaxSection::Sec112a), "Section 112A");
+        assert_eq!(label(IndianTaxSection::Sec50aa), "Section 50AA (Slab Rate)");
+        assert_eq!(label(IndianTaxSection::Sec112), "Section 112");
+    }
+
+    #[test]
+    fn section_labels_follow_the_2025_act_from_2026_27() {
+        let label = |s| section_label(s, 2026);
         assert_eq!(
-            section_label(IndianTaxSection::Sec50aa),
-            "Section 50AA (Slab Rate)"
+            label(IndianTaxSection::Sec111a),
+            "Section 196 (formerly 111A)"
         );
-        assert_eq!(section_label(IndianTaxSection::Sec112), "Section 112");
+        assert_eq!(
+            label(IndianTaxSection::Sec112),
+            "Section 197 (formerly 112)"
+        );
+        assert_eq!(
+            label(IndianTaxSection::Sec112a),
+            "Section 198 (formerly 112A)"
+        );
     }
 
     #[test]

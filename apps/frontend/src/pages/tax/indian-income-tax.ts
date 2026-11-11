@@ -75,6 +75,25 @@ export function standardDeduction(fyStartYear: number, regime: TaxRegime): numbe
   return regime === "new" && fyStartYear >= 2024 ? 75_000 : 50_000;
 }
 
+/** First tax year under the Income-tax Act 2025 (2026-27). */
+export const INCOME_TAX_ACT_2025_FIRST_YEAR = 2026;
+
+/** The 2025 Act's numbers for the 1961 sections shown here. */
+const SECTIONS_2025: Record<string, string> = {
+  "111A": "196",
+  "112": "197",
+  "112A": "198",
+  "70": "108",
+  "74": "111",
+  "87A": "156",
+};
+
+/** A 1961 Act section number as it reads in `fyStartYear`. */
+export function sectionNumber(section: string, fyStartYear: number): string {
+  const renumbered = SECTIONS_2025[section];
+  return renumbered && fyStartYear >= INCOME_TAX_ACT_2025_FIRST_YEAR ? renumbered : section;
+}
+
 /** Section 87A: total income limit and the most the rebate can be. */
 export function rebateRule(
   fyStartYear: number,
