@@ -1756,6 +1756,7 @@ pub async fn get_indian_tax_summary(
     compute_indian_tax_summary(
         context.lots_repository.as_ref(),
         context.asset_service().as_ref(),
+        context.activity_service().as_ref(),
         &account_ids,
         fy,
     )
@@ -1799,6 +1800,7 @@ async fn indian_tax_summary_for_export(
     compute_indian_tax_summary(
         context.lots_repository.as_ref(),
         context.asset_service().as_ref(),
+        context.activity_service().as_ref(),
         &account_ids,
         fy,
     )

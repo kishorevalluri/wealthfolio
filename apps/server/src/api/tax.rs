@@ -84,6 +84,7 @@ async fn get_indian_tax_summary_get(
     let summary = compute_indian_tax_summary(
         state.lots_repository.as_ref(),
         state.asset_service.as_ref(),
+        state.activity_service.as_ref(),
         &account_ids,
         fy,
     )
@@ -106,6 +107,7 @@ async fn get_indian_tax_summary_post(
     let summary = compute_indian_tax_summary(
         state.lots_repository.as_ref(),
         state.asset_service.as_ref(),
+        state.activity_service.as_ref(),
         &account_ids,
         fy,
     )
@@ -128,6 +130,7 @@ async fn export_schedule_cg(
     let summary = compute_indian_tax_summary(
         state.lots_repository.as_ref(),
         state.asset_service.as_ref(),
+        state.activity_service.as_ref(),
         &account_ids,
         fy,
     )
@@ -167,6 +170,7 @@ async fn export_schedule_cg_post(
     let summary = compute_indian_tax_summary(
         state.lots_repository.as_ref(),
         state.asset_service.as_ref(),
+        state.activity_service.as_ref(),
         &account_ids,
         fy,
     )
@@ -214,6 +218,7 @@ async fn export_cleartax_post(
     let summary = compute_indian_tax_summary(
         state.lots_repository.as_ref(),
         state.asset_service.as_ref(),
+        state.activity_service.as_ref(),
         &account_ids,
         fy,
     )

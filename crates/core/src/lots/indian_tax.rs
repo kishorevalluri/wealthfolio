@@ -353,6 +353,21 @@ pub struct IndianSpecialRateGain {
     pub amount: Decimal,
 }
 
+/// Trade charges behind one disposal, in base currency, for the units it
+/// disposed of. Section 48 allows the expenses of the transfer (brokerage,
+/// stamp duty, exchange charges) as a deduction, but not securities
+/// transaction tax, so a trade's `fee` is the transfer expense and its `tax`
+/// (STT) is added back to the sale value and taken off the cost.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct IndianDisposalCharges {
+    /// The sell trade's fee share.
+    pub sale_fee: Decimal,
+    /// The sell trade's tax (STT) share.
+    pub sale_tax: Decimal,
+    /// The buy trade's tax (STT) share, which the lot's cost includes.
+    pub purchase_tax: Decimal,
+}
+
 /// Compact asset info used by the Indian tax calculator for export fields.
 pub struct IndianTaxAssetInfo {
     pub name: String,
@@ -491,6 +506,7 @@ pub fn calculate_indian_capital_gains(
     asset_classifications: &HashMap<String, IndianAssetTaxClassification>,
     asset_fmv_2018_per_unit: &HashMap<String, Decimal>,
     asset_info: &HashMap<String, IndianTaxAssetInfo>,
+    charges: &HashMap<String, IndianDisposalCharges>,
     fy_start_year: i32,
 ) -> IndianTaxYearSummary {
     let mut summary = IndianTaxYearSummary {
@@ -523,8 +539,14 @@ pub fn calculate_indian_capital_gains(
             .copied()
             .unwrap_or(IndianAssetTaxClassification::OtherCapitalAsset);
 
-        let cost_basis: Decimal = d.cost_basis_base.parse().unwrap_or(Decimal::ZERO);
-        let proceeds: Decimal = d.proceeds_base.parse().unwrap_or(Decimal::ZERO);
+        // Lot cost and sale proceeds are net of the trades' fee and tax. Put
+        // STT back: it is neither cost nor transfer expense.
+        let charge = charges.get(&d.id).copied().unwrap_or_default();
+        let cost_basis: Decimal =
+            d.cost_basis_base.parse().unwrap_or(Decimal::ZERO) - charge.purchase_tax;
+        let proceeds: Decimal =
+            d.proceeds_base.parse().unwrap_or(Decimal::ZERO) + charge.sale_fee + charge.sale_tax;
+        let transfer_expenses = charge.sale_fee;
         let qty: Decimal = d.quantity.parse().unwrap_or(Decimal::ZERO);
         let (sale_price_per_unit, cost_per_unit) = if qty > Decimal::ZERO {
             (proceeds / qty, cost_basis / qty)
@@ -567,9 +589,9 @@ pub fn calculate_indian_capital_gains(
         if tax_section == IndianTaxSection::Sec112 && disp_date < budget_2024_date() {
             match indexed_cost(cost_basis, acq_date, disp_date) {
                 Some(indexed) => {
-                    let indexed_tax = (proceeds - indexed).max(Decimal::ZERO) * Decimal::new(20, 2);
-                    let plain_tax =
-                        (proceeds - cost_basis).max(Decimal::ZERO) * Decimal::new(10, 2);
+                    let net = proceeds - transfer_expenses;
+                    let indexed_tax = (net - indexed).max(Decimal::ZERO) * Decimal::new(20, 2);
+                    let plain_tax = (net - cost_basis).max(Decimal::ZERO) * Decimal::new(10, 2);
                     if classification == IndianAssetTaxClassification::GoldSgb
                         && plain_tax < indexed_tax
                     {
@@ -582,7 +604,7 @@ pub fn calculate_indian_capital_gains(
                 None => unindexed = true,
             }
         }
-        let gross_gain = proceeds - deemed_cost;
+        let gross_gain = proceeds - deemed_cost - transfer_expenses;
 
         match tax_section {
             IndianTaxSection::Sec111a => {
@@ -643,7 +665,7 @@ pub fn calculate_indian_capital_gains(
             sale_price_per_unit,
             cost_per_unit,
             fmv_per_unit_2018,
-            transfer_expenses: Decimal::ZERO,
+            transfer_expenses,
         });
     }
 
@@ -808,6 +830,14 @@ mod tests {
     }
 
     fn run(sales: &[Sale], fy: i32) -> IndianTaxYearSummary {
+        run_with_charges(sales, &HashMap::new(), fy)
+    }
+
+    fn run_with_charges(
+        sales: &[Sale],
+        charges: &HashMap<String, IndianDisposalCharges>,
+        fy: i32,
+    ) -> IndianTaxYearSummary {
         let mut disposals = Vec::new();
         let mut open_dates = HashMap::new();
         let mut classes = HashMap::new();
@@ -846,6 +876,7 @@ mod tests {
             &classes,
             &fmvs,
             &HashMap::new(),
+            charges,
             fy,
         )
     }
@@ -1342,9 +1373,40 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
+            &HashMap::new(),
             2025,
         );
         assert!(summary.warnings.iter().any(|w| w.contains("FIFO")));
+    }
+
+    // Bought for 1,00,000 + 100 STT, sold for 1,50,000 less 40 brokerage and
+    // 150 STT. Cost and proceeds come in net of the charges.
+    #[test]
+    fn stt_is_not_deducted_and_brokerage_is_a_transfer_expense() {
+        let s = sale(
+            "eq",
+            EquityListed,
+            date(2024, 5, 1),
+            date(2024, 12, 2),
+            dec!(100100),
+            dec!(149810),
+        );
+        let charges = HashMap::from([(
+            "disp-0".to_string(),
+            IndianDisposalCharges {
+                sale_fee: dec!(40),
+                sale_tax: dec!(150),
+                purchase_tax: dec!(100),
+            },
+        )]);
+        let summary = run_with_charges(&[s], &charges, 2024);
+        let calc = &summary.calculations[0];
+        assert_eq!(calc.actual_cost, dec!(100000));
+        assert_eq!(calc.proceeds, dec!(150000));
+        assert_eq!(calc.sale_price_per_unit, dec!(150000));
+        assert_eq!(calc.transfer_expenses, dec!(40));
+        assert_eq!(calc.gross_gain, dec!(49960));
+        assert_eq!(summary.stcg_total, dec!(49960));
     }
 
     #[test]

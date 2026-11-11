@@ -6,9 +6,10 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 
 use super::{
-    calculate_indian_capital_gains, IndianAssetTaxClassification, IndianTaxAssetInfo,
-    IndianTaxYearSummary, LotRepositoryTrait,
+    calculate_indian_capital_gains, IndianAssetTaxClassification, IndianDisposalCharges,
+    IndianTaxAssetInfo, IndianTaxYearSummary, LotDisposal, LotRecord, LotRepositoryTrait,
 };
+use crate::activities::{Activity, ActivityServiceTrait};
 use crate::assets::{Asset, AssetServiceTrait, InstrumentType};
 use crate::errors::{Result, ValidationError};
 
@@ -97,11 +98,61 @@ pub fn extract_fmv_2018(asset: &Asset) -> Option<Decimal> {
 
 /// Computes Indian Tax Summary for the specified accounts and financial year.
 ///
+fn decimal(text: &str) -> Decimal {
+    Decimal::from_str(text.trim()).unwrap_or(Decimal::ZERO)
+}
+
+/// The share of `amount` that belongs to `part` of `whole` units (at most all of it).
+fn share(amount: Decimal, part: Decimal, whole: Decimal) -> Decimal {
+    if whole.is_zero() {
+        return Decimal::ZERO;
+    }
+    amount.abs() * (part.abs() / whole.abs()).min(Decimal::ONE)
+}
+
+/// Fee and tax of the sell trade, and tax of the buy trade, for the units one
+/// disposal sold, in base currency.
+fn disposal_charges(
+    d: &LotDisposal,
+    lot: Option<&LotRecord>,
+    sell: Option<&Activity>,
+) -> IndianDisposalCharges {
+    let qty = decimal(&d.quantity);
+    let fx = Some(decimal(&d.fx_rate_to_base))
+        .filter(|r| !r.is_zero())
+        .unwrap_or(Decimal::ONE);
+    let (sale_fee, sale_tax) = match sell {
+        Some(trade) => {
+            let traded = trade.quantity.unwrap_or_default();
+            (
+                share(trade.fee.unwrap_or_default(), qty, traded) * fx,
+                share(trade.tax.unwrap_or_default(), qty, traded) * fx,
+            )
+        }
+        None => (Decimal::ZERO, Decimal::ZERO),
+    };
+    let purchase_tax = lot
+        .map(|lot| {
+            share(
+                decimal(&lot.tax_allocated_base),
+                qty,
+                decimal(&lot.original_quantity),
+            )
+        })
+        .unwrap_or_default();
+    IndianDisposalCharges {
+        sale_fee,
+        sale_tax,
+        purchase_tax,
+    }
+}
+
 /// Financial year `fy_start_year` (e.g. 2024 for FY 2024-25) runs from April 1 of `fy_start_year`
 /// to March 31 of `fy_start_year + 1`.
 pub async fn compute_indian_tax_summary(
     lots_repo: &dyn LotRepositoryTrait,
     asset_service: &dyn AssetServiceTrait,
+    activity_service: &dyn ActivityServiceTrait,
     account_ids: &[String],
     fy_start_year: i32,
 ) -> Result<IndianTaxYearSummary> {
@@ -138,11 +189,30 @@ pub async fn compute_indian_tax_summary(
     // Retrieve all lot open dates
     let all_lots = lots_repo.get_all_lots().await?;
     let mut lot_open_dates = HashMap::new();
-    for lot in all_lots {
+    for lot in &all_lots {
         if let Ok(date) = NaiveDate::parse_from_str(&lot.open_date[..10], "%Y-%m-%d") {
-            lot_open_dates.insert(lot.id, date);
+            lot_open_dates.insert(lot.id.clone(), date);
         }
     }
+    let lots_by_id: HashMap<&str, &LotRecord> =
+        all_lots.iter().map(|lot| (lot.id.as_str(), lot)).collect();
+    let mut sell_trades: HashMap<String, Option<Activity>> = HashMap::new();
+    for d in &disposals {
+        if !sell_trades.contains_key(&d.disposal_activity_id) {
+            let trade = activity_service.get_activity(&d.disposal_activity_id).ok();
+            sell_trades.insert(d.disposal_activity_id.clone(), trade);
+        }
+    }
+    let charges: HashMap<String, IndianDisposalCharges> = disposals
+        .iter()
+        .map(|d| {
+            let lot = lots_by_id.get(d.lot_id.as_str()).copied();
+            let trade = sell_trades
+                .get(&d.disposal_activity_id)
+                .and_then(Option::as_ref);
+            (d.id.clone(), disposal_charges(d, lot, trade))
+        })
+        .collect();
 
     // Retrieve assets to build classification and grandfathering FMV maps
     let assets = asset_service.get_assets()?;
@@ -186,6 +256,7 @@ pub async fn compute_indian_tax_summary(
         &asset_classifications,
         &asset_fmv_2018,
         &asset_info_map,
+        &charges,
         fy_start_year,
     );
 
@@ -286,5 +357,14 @@ mod tests {
             "fmv20180131": "1250.50"
         }));
         assert_eq!(extract_fmv_2018(&asset), Some(dec!(1250.50)));
+    }
+
+    #[test]
+    fn charges_are_shared_by_the_units_sold() {
+        // 40 of a 100-unit trade's fee of 50.
+        assert_eq!(share(dec!(-50), dec!(40), dec!(100)), dec!(20));
+        // Never more than the whole charge, and nothing from a zero quantity.
+        assert_eq!(share(dec!(50), dec!(120), dec!(100)), dec!(50));
+        assert_eq!(share(dec!(50), dec!(1), Decimal::ZERO), Decimal::ZERO);
     }
 }
