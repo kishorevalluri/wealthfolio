@@ -30,7 +30,7 @@ import { useTranslation } from "react-i18next";
 import { useAccounts } from "@/hooks/use-accounts";
 import type { Account } from "@/lib/types";
 import { DualRegimeOptimizer } from "./components/dual-regime-optimizer";
-import { parseSpecialRateGains } from "./indian-income-tax";
+import { parseSpecialRateGains, sectionNumber } from "./indian-income-tax";
 
 // ── Financial Year Selector ────────────────────────────────────────────────────
 
@@ -75,14 +75,14 @@ function classificationLabel(c: IndianAssetTaxClassification): string {
   }
 }
 
-function taxSectionLabel(s: IndianTaxSection): string {
+function taxSectionLabel(s: IndianTaxSection, fyStartYear: number): string {
   switch (s) {
     case "sec111a":
-      return "111A";
+      return sectionNumber("111A", fyStartYear);
     case "sec112a":
-      return "112A";
+      return sectionNumber("112A", fyStartYear);
     case "sec112":
-      return "112";
+      return sectionNumber("112", fyStartYear);
     case "sec50aa":
       return "50AA";
     case "sec10_38":
@@ -140,7 +140,7 @@ function Sec112ACard({ summary }: { summary: IndianTaxYearSummary }) {
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium">
-            Section 112A — LTCG & Tax Harvesting
+            Section {sectionNumber("112A", summary.fyStartYear)} — LTCG & Tax Harvesting
           </CardTitle>
           <Badge variant={used > limit ? "destructive" : "outline"} className="text-2xs">
             {used >= limit
@@ -160,7 +160,9 @@ function Sec112ACard({ summary }: { summary: IndianTaxYearSummary }) {
 
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Gross LTCG (Sec 112A)</span>
+            <span className="text-muted-foreground">
+              Gross LTCG (Sec {sectionNumber("112A", summary.fyStartYear)})
+            </span>
             <AmountDisplay value={gross} currency="INR" isHidden={false} />
           </div>
           <div className="flex justify-between">
@@ -182,13 +184,14 @@ function Sec112ACard({ summary }: { summary: IndianTaxYearSummary }) {
 // ── Budget 2024 Pre/Post Breakdown ────────────────────────────────────────────
 
 function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
+  const sec = (section: string) => sectionNumber(section, summary.fyStartYear);
   const rows = [
     {
-      label: "STCG — Sec 111A (Pre Budget 2024, @ 15%)",
+      label: `STCG — Sec ${sec("111A")} (Pre Budget 2024, @ 15%)`,
       value: parseFloat(summary.stcg111aPreBudget) || 0,
     },
     {
-      label: "STCG — Sec 111A (Post Budget 2024, @ 20%)",
+      label: `STCG — Sec ${sec("111A")} (Post Budget 2024, @ 20%)`,
       value: parseFloat(summary.stcg111aPostBudget) || 0,
     },
     {
@@ -196,15 +199,15 @@ function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
       value: parseFloat(summary.stcgSlabTotal) || 0,
     },
     {
-      label: "LTCG — Sec 112A (Pre Budget 2024, @ 10%)",
+      label: `LTCG — Sec ${sec("112A")} (Pre Budget 2024, @ 10%)`,
       value: parseFloat(summary.ltcg112aPreBudget) || 0,
     },
     {
-      label: "LTCG — Sec 112A (Post Budget 2024, @ 12.5%)",
+      label: `LTCG — Sec ${sec("112A")} (Post Budget 2024, @ 12.5%)`,
       value: parseFloat(summary.ltcg112aPostBudget) || 0,
     },
     {
-      label: "LTCG — Sec 112 (20% with indexation before 23 Jul 2024, 12.5% after)",
+      label: `LTCG — Sec ${sec("112")} (20% with indexation before 23 Jul 2024, 12.5% after)`,
       value: parseFloat(summary.ltcgOtherTotal) || 0,
     },
     {
@@ -389,7 +392,13 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
 
 // ── Disposal Table ─────────────────────────────────────────────────────────────
 
-function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalculation[] }) {
+function DisposalTable({
+  calculations,
+  fyStartYear,
+}: {
+  calculations: IndianCapitalGainCalculation[];
+  fyStartYear: number;
+}) {
   if (calculations.length === 0) return null;
 
   return (
@@ -452,7 +461,7 @@ function DisposalTable({ calculations }: { calculations: IndianCapitalGainCalcul
                         className="text-xs"
                       >
                         {calc.holdingPeriod === "long_term" ? "LT" : "ST"} ·{" "}
-                        {taxSectionLabel(calc.taxSection)}
+                        {taxSectionLabel(calc.taxSection, fyStartYear)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-end text-xs">
@@ -851,14 +860,15 @@ export default function TaxPage() {
         />
 
         {/* Disposal-level table */}
-        <DisposalTable calculations={summary.calculations} />
+        <DisposalTable calculations={summary.calculations} fyStartYear={summary.fyStartYear} />
 
         <p className="text-muted-foreground text-xs">
-          * Estimates apply loss set-off (Section 70) and the Section 112A exemption, and add 4%
-          cess. Section 112 sales before 23 Jul 2024 use indexed cost. Slab-rate gains, surcharge
-          and the basic exemption adjustment depend on your other income, so they are worked out in
-          the regime comparison above. Per-row tax is before set-off. Consult a chartered accountant
-          before filing your ITR.
+          * Estimates apply loss set-off (Section {sectionNumber("70", summary.fyStartYear)}) and
+          the Section {sectionNumber("112A", summary.fyStartYear)} exemption, and add 4% cess.
+          Section {sectionNumber("112", summary.fyStartYear)} sales before 23 Jul 2024 use indexed
+          cost. Slab-rate gains, surcharge and the basic exemption adjustment depend on your other
+          income, so they are worked out in the regime comparison above. Per-row tax is before
+          set-off. Consult a chartered accountant before filing your ITR.
         </p>
       </div>
     </>

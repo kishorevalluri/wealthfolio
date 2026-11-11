@@ -863,6 +863,14 @@ pub fn calculate_indian_capital_gains(
         );
     }
 
+    if fy_start_year >= super::INCOME_TAX_ACT_2025_FIRST_YEAR {
+        summary.warnings.push(
+            "From tax year 2026-27 the Income-tax Act 2025 applies and renumbers the \
+             sections: 111A is now 196, 112 is 197, 112A is 198, 48 is 72, 70 is 108, 74 is \
+             111 and 87A is 156. Other notes here still use the 1961 Act's numbers."
+                .to_string(),
+        );
+    }
     if !summary.speculative_trades.is_empty() {
         summary.warnings.push(format!(
             "{} sale(s) were bought the same day. Intraday trades are speculative \

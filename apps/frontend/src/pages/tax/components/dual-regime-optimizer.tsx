@@ -24,6 +24,7 @@ import { useState } from "react";
 
 import {
   computeRegimeTax,
+  sectionNumber,
   standardDeduction,
   type RegimeTax,
   type SpecialRateGain,
@@ -124,8 +125,9 @@ export function DualRegimeOptimizer({
               Dual-Regime Tax Optimizer ({fyLabel})
             </CardTitle>
             <CardDescription className="text-xs">
-              Old vs. new regime for {fyLabel}: slabs, standard deduction, Section 87A rebate,
-              surcharge with marginal relief, and your capital gains from this portfolio.
+              Old vs. new regime for {fyLabel}: slabs, standard deduction, Section{" "}
+              {sectionNumber("87A", fyStartYear)} rebate, surcharge with marginal relief, and your
+              capital gains from this portfolio.
             </CardDescription>
           </div>
           <Badge
@@ -376,7 +378,9 @@ export function DualRegimeOptimizer({
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell className="text-muted-foreground">Section 87A Rebate</TableCell>
+                <TableCell className="text-muted-foreground">
+                  Section {sectionNumber("87A", fyStartYear)} Rebate
+                </TableCell>
                 <TableCell className="text-end">
                   − <AmountDisplay value={oldTax.rebate87a} currency="INR" isHidden={false} />
                 </TableCell>
