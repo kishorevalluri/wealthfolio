@@ -234,27 +234,120 @@ function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
   );
 }
 
+// ── Income from Other Sources (Schedule OS) ───────────────────────────────────
+
+const DIVIDEND_PERIODS = [
+  "Up to 15 Jun",
+  "16 Jun – 15 Sep",
+  "16 Sep – 15 Dec",
+  "16 Dec – 15 Mar",
+  "16 Mar – 31 Mar",
+];
+
+function OtherSourcesCard({ summary }: { summary: IndianTaxYearSummary }) {
+  const os = summary.otherSources;
+  const dividends = parseFloat(os?.dividendsGross ?? "") || 0;
+  const interest = parseFloat(os?.interestGross ?? "") || 0;
+  if (!os || (dividends === 0 && interest === 0)) return null;
+  const tds = (parseFloat(os.dividendsTds) || 0) + (parseFloat(os.interestTds) || 0);
+
+  const row = (label: string, value: number) => (
+    <div key={label} className="flex justify-between">
+      <span className="text-muted-foreground">{label}</span>
+      <AmountDisplay value={value} currency="INR" isHidden={false} />
+    </div>
+  );
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">
+          Income from Other Sources (Schedule OS)
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-6 text-sm md:grid-cols-2">
+          <div className="space-y-2">
+            {row("Dividends (before TDS)", dividends)}
+            {row("Interest (before TDS)", interest)}
+            {row("TDS recorded", tds)}
+          </div>
+          {dividends > 0 && (
+            <div className="space-y-2">
+              <p className="text-muted-foreground text-xs">Dividends by period</p>
+              {os.dividendsByPeriod.map((value, i) =>
+                row(DIVIDEND_PERIODS[i] ?? "", parseFloat(value) || 0),
+              )}
+            </div>
+          )}
+        </div>
+        <p className="text-muted-foreground pt-3 text-xs">
+          From the dividend and interest activities recorded here; tax in their Tax field counts as
+          TDS. Check the totals against your AIS and Form 26AS, and add them to other income in the
+          regime comparison below.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function IntradayCard({ summary }: { summary: IndianTaxYearSummary }) {
+  const trades = summary.speculativeTrades ?? [];
+  if (trades.length === 0) return null;
+  const income = parseFloat(summary.speculativeIncome ?? "") || 0;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Intraday Trades (Speculative Income)</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {trades.map((trade) => (
+          <div key={trade.disposalId} className="flex justify-between gap-4">
+            <span className="text-muted-foreground">
+              {trade.date} · {trade.assetName || trade.assetId} · {parseFloat(trade.quantity)}
+            </span>
+            <AmountDisplay value={parseFloat(trade.profit) || 0} currency="INR" isHidden={false} />
+          </div>
+        ))}
+        <div className="flex justify-between border-t pt-2 font-medium">
+          <span>{income < 0 ? "Speculative loss" : "Speculative income"}</span>
+          <AmountDisplay value={income} currency="INR" isHidden={false} />
+        </div>
+        <p className="text-muted-foreground pt-1 text-xs">
+          Shares bought and sold on the same day. They are business income under Section 43(5),
+          reported in ITR-3 and taxed at slab rates, so they are not in the capital gains or the
+          exports. Charges, including STT, are already deducted. A loss can only be set off against
+          speculative income and carried forward for four years (Section 73).
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Carry-Forward Loss Card ───────────────────────────────────────────────────
 
 function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
   const stcl = parseFloat(summary.stclCarriedForward) || 0;
   const ltcl = parseFloat(summary.ltclCarriedForward) || 0;
+  const stclSetOff = parseFloat(summary.stclBroughtForwardSetOff ?? "") || 0;
+  const ltclSetOff = parseFloat(summary.ltclBroughtForwardSetOff ?? "") || 0;
 
-  if (stcl === 0 && ltcl === 0) return null;
+  if (stcl === 0 && ltcl === 0 && stclSetOff === 0 && ltclSetOff === 0) return null;
 
   return (
     <Card className="border-warning-subtle-border bg-warning-subtle">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <Icons.AlertTriangle className="text-warning h-4 w-4" />
-          Carry-Forward Capital Losses
+          Capital Losses Carried Forward
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 text-sm">
           {stcl > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Short-Term Capital Loss</span>
+              <span className="text-muted-foreground">Short-term loss to carry forward</span>
               <span className="text-loss">
                 <AmountDisplay value={stcl} currency="INR" isHidden={false} />
               </span>
@@ -262,14 +355,31 @@ function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
           )}
           {ltcl > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Long-Term Capital Loss</span>
+              <span className="text-muted-foreground">Long-term loss to carry forward</span>
               <span className="text-loss">
                 <AmountDisplay value={ltcl} currency="INR" isHidden={false} />
               </span>
             </div>
           )}
+          {stclSetOff > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">
+                Earlier short-term loss set off this year
+              </span>
+              <AmountDisplay value={stclSetOff} currency="INR" isHidden={false} />
+            </div>
+          )}
+          {ltclSetOff > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">
+                Earlier long-term loss set off this year
+              </span>
+              <AmountDisplay value={ltclSetOff} currency="INR" isHidden={false} />
+            </div>
+          )}
           <p className="text-muted-foreground pt-1 text-xs">
-            These losses may be carried forward for up to 8 assessment years.
+            Losses are carried forward for up to 8 years. Earlier losses come from the sales
+            recorded here for earlier years; check them against Schedule CFL of your last return.
           </p>
         </div>
       </CardContent>
@@ -644,6 +754,12 @@ export default function TaxPage() {
             description={`No capital gains or losses recorded for ${fyLabel(parseInt(selectedFY))}.`}
           />
 
+          <CarryForwardCard summary={summary} />
+          <OtherSourcesCard summary={summary} />
+
+          <IntradayCard summary={summary} />
+          <IntradayCard summary={summary} />
+
           {/* Dual-Regime Optimizer */}
           <DualRegimeOptimizer fyStartYear={parseInt(selectedFY)} stcgSlabTotal={0} />
         </div>
@@ -724,6 +840,8 @@ export default function TaxPage() {
 
         {/* Carry-forward losses */}
         <CarryForwardCard summary={summary} />
+
+        <OtherSourcesCard summary={summary} />
 
         {/* Dual-Regime Optimizer */}
         <DualRegimeOptimizer

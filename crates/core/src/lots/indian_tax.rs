@@ -368,6 +368,33 @@ pub struct IndianDisposalCharges {
     pub purchase_tax: Decimal,
 }
 
+/// A share bought and sold on the same day: intraday trading, which Section
+/// 43(5) treats as a speculative business, not a capital gain. Its charges,
+/// STT included, are business expenses, so the profit is the cash in less the
+/// cash out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndianSpeculativeTrade {
+    pub disposal_id: String,
+    pub asset_id: String,
+    pub asset_name: String,
+    pub isin: Option<String>,
+    pub date: NaiveDate,
+    pub quantity: Decimal,
+    /// Sale value net of the sell trade's charges
+    pub proceeds: Decimal,
+    /// Purchase cost including the buy trade's charges
+    pub cost: Decimal,
+    pub profit: Decimal,
+}
+
+/// Capital losses of earlier years still within their eight years (Section 74).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct IndianLossesBroughtForward {
+    pub stcl: Decimal,
+    pub ltcl: Decimal,
+}
+
 /// Compact asset info used by the Indian tax calculator for export fields.
 pub struct IndianTaxAssetInfo {
     pub name: String,
@@ -414,6 +441,14 @@ pub struct IndianTaxYearSummary {
     pub stcl_carried_forward: Decimal,
     /// Long-term capital loss left to carry forward (Section 74)
     pub ltcl_carried_forward: Decimal,
+    /// Short-term capital loss brought forward from earlier years (Section 74)
+    pub stcl_brought_forward: Decimal,
+    /// Long-term capital loss brought forward from earlier years (Section 74)
+    pub ltcl_brought_forward: Decimal,
+    /// Brought-forward short-term loss set off against this year's gains
+    pub stcl_brought_forward_set_off: Decimal,
+    /// Brought-forward long-term loss set off against this year's gains
+    pub ltcl_brought_forward_set_off: Decimal,
     /// Tax on special-rate STCG (Section 111A) after set-off
     pub estimated_stcg_tax: Decimal,
     /// Tax on special-rate LTCG (Sections 112A and 112) after set-off and exemption
@@ -429,6 +464,13 @@ pub struct IndianTaxYearSummary {
     pub warnings: Vec<String>,
     /// ClearTax workbooks the year needs (5,000 rows per sheet per file)
     pub cleartax_files: usize,
+    /// Dividends and interest of the year, for Schedule OS
+    pub other_sources: super::IndianOtherSourcesSummary,
+    /// Net intraday profit (negative for a loss): speculative business
+    /// income, not in the capital gains above
+    pub speculative_income: Decimal,
+    /// Intraday trades, left out of `calculations` and the exports
+    pub speculative_trades: Vec<IndianSpeculativeTrade>,
     pub calculations: Vec<IndianCapitalGainCalculation>,
 }
 
@@ -500,6 +542,7 @@ fn parse_date(value: &str) -> Option<NaiveDate> {
 /// `asset_fmv_2018_per_unit` holds the 31 Jan 2018 fair market value per
 /// unit (highest listed price that day for shares, NAV for funds), as the ITR
 /// and ClearTax ask for it.
+#[allow(clippy::too_many_arguments)]
 pub fn calculate_indian_capital_gains(
     disposals: &[LotDisposal],
     lot_open_dates: &HashMap<String, NaiveDate>,
@@ -507,6 +550,7 @@ pub fn calculate_indian_capital_gains(
     asset_fmv_2018_per_unit: &HashMap<String, Decimal>,
     asset_info: &HashMap<String, IndianTaxAssetInfo>,
     charges: &HashMap<String, IndianDisposalCharges>,
+    brought_forward: IndianLossesBroughtForward,
     fy_start_year: i32,
 ) -> IndianTaxYearSummary {
     let mut summary = IndianTaxYearSummary {
@@ -556,6 +600,26 @@ pub fn calculate_indian_capital_gains(
         let fmv_per_unit_2018 = asset_fmv_2018_per_unit.get(&d.asset_id).copied();
 
         let info = asset_info.get(&d.asset_id);
+        if acq_date == disp_date
+            && is_equity_like(classification)
+            && lot_open_dates.contains_key(&d.lot_id)
+        {
+            let proceeds: Decimal = d.proceeds_base.parse().unwrap_or(Decimal::ZERO);
+            let cost: Decimal = d.cost_basis_base.parse().unwrap_or(Decimal::ZERO);
+            summary.speculative_income += proceeds - cost;
+            summary.speculative_trades.push(IndianSpeculativeTrade {
+                disposal_id: d.id.clone(),
+                asset_id: d.asset_id.clone(),
+                asset_name: info.map(|i| i.name.clone()).unwrap_or_default(),
+                isin: info.and_then(|i| i.isin.clone()),
+                date: disp_date,
+                quantity: qty,
+                proceeds,
+                cost,
+                profit: proceeds - cost,
+            });
+            continue;
+        }
         let holding_period = determine_holding_period_category(acq_date, disp_date, classification);
         let tax_section = determine_tax_section(acq_date, disp_date, classification);
 
@@ -689,6 +753,18 @@ pub fn calculate_indian_capital_gains(
     let stcl_after_st = absorb(stcl, &ST_ORDER, &mut nets);
     let stcl_left = absorb(stcl_after_st, &LT_ORDER, &mut nets);
 
+    // ── Section 74: earlier years' losses, after this year's own set-off ──
+    // The same rules: long-term loss only against long-term gains.
+    let bf_ltcl = brought_forward.ltcl.max(Decimal::ZERO);
+    let bf_stcl = brought_forward.stcl.max(Decimal::ZERO);
+    let bf_ltcl_left = absorb(bf_ltcl, &LT_ORDER, &mut nets);
+    let bf_stcl_after_st = absorb(bf_stcl, &ST_ORDER, &mut nets);
+    let bf_stcl_left = absorb(bf_stcl_after_st, &LT_ORDER, &mut nets);
+    summary.stcl_brought_forward = bf_stcl;
+    summary.ltcl_brought_forward = bf_ltcl;
+    summary.stcl_brought_forward_set_off = bf_stcl - bf_stcl_left;
+    summary.ltcl_brought_forward_set_off = bf_ltcl - bf_ltcl_left;
+
     // ── Section 112A exemption, after set-off; the 12.5% pool first ──
     let get =
         |nets: &HashMap<Bucket, Decimal>, b: Bucket| nets.get(&b).copied().unwrap_or_default();
@@ -752,8 +828,10 @@ pub fn calculate_indian_capital_gains(
     summary.estimated_total_tax = special_tax + summary.health_education_cess;
 
     // ── Section 74 carry-forward ──
-    summary.stcl_carried_forward = stcl_left;
-    summary.ltcl_carried_forward = ltcl_left;
+    // This year's loss plus what is left of earlier years'. Losses older than
+    // eight years are dropped by the caller, which knows each loss's year.
+    summary.stcl_carried_forward = stcl_left + bf_stcl_left;
+    summary.ltcl_carried_forward = ltcl_left + bf_ltcl_left;
 
     if non_fifo {
         summary.warnings.push(
@@ -783,6 +861,16 @@ pub fn calculate_indian_capital_gains(
              the estimate may be high."
                 .to_string(),
         );
+    }
+
+    if !summary.speculative_trades.is_empty() {
+        summary.warnings.push(format!(
+            "{} sale(s) were bought the same day. Intraday trades are speculative \
+             business income (Section 43(5)), reported in ITR-3 rather than as capital \
+             gains, so they are left out of the totals and exports here. A speculative \
+             loss can only be set off against speculative income (Section 73).",
+            summary.speculative_trades.len()
+        ));
     }
 
     summary
@@ -838,6 +926,15 @@ mod tests {
         charges: &HashMap<String, IndianDisposalCharges>,
         fy: i32,
     ) -> IndianTaxYearSummary {
+        run_with(sales, charges, IndianLossesBroughtForward::default(), fy)
+    }
+
+    fn run_with(
+        sales: &[Sale],
+        charges: &HashMap<String, IndianDisposalCharges>,
+        brought_forward: IndianLossesBroughtForward,
+        fy: i32,
+    ) -> IndianTaxYearSummary {
         let mut disposals = Vec::new();
         let mut open_dates = HashMap::new();
         let mut classes = HashMap::new();
@@ -877,6 +974,7 @@ mod tests {
             &fmvs,
             &HashMap::new(),
             charges,
+            brought_forward,
             fy,
         )
     }
@@ -1374,6 +1472,7 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
+            IndianLossesBroughtForward::default(),
             2025,
         );
         assert!(summary.warnings.iter().any(|w| w.contains("FIFO")));
@@ -1410,6 +1509,76 @@ mod tests {
     }
 
     #[test]
+    fn same_day_trades_are_speculative_income_not_capital_gains() {
+        let sales = [
+            sale(
+                "eq",
+                EquityListed,
+                date(2025, 8, 1),
+                date(2025, 8, 1),
+                dec!(10020),
+                dec!(9950),
+            ),
+            sale(
+                "eq",
+                EquityListed,
+                date(2025, 7, 31),
+                date(2025, 8, 1),
+                dec!(1000),
+                dec!(1100),
+            ),
+        ];
+        let summary = run(&sales, 2025);
+        assert_eq!(summary.speculative_income, dec!(-70));
+        assert_eq!(summary.speculative_trades.len(), 1);
+        assert_eq!(summary.speculative_trades[0].profit, dec!(-70));
+        assert_eq!(summary.calculations.len(), 1);
+        assert_eq!(summary.stcg_total, dec!(100));
+        assert!(summary.warnings.iter().any(|w| w.contains("43(5)")));
+    }
+
+    // Section 74: a brought-forward long-term loss can't touch short-term
+    // gains; a short-term one can, and then long-term gains.
+    #[test]
+    fn brought_forward_losses_follow_the_set_off_rules() {
+        let sales = [
+            sale(
+                "st",
+                EquityListed,
+                date(2025, 5, 1),
+                date(2025, 8, 1),
+                dec!(100000),
+                dec!(200000),
+            ),
+            sale(
+                "lt",
+                EquityListed,
+                date(2023, 5, 1),
+                date(2025, 8, 1),
+                dec!(100000),
+                dec!(120000),
+            ),
+        ];
+        let summary = run_with(
+            &sales,
+            &HashMap::new(),
+            IndianLossesBroughtForward {
+                stcl: dec!(150000),
+                ltcl: dec!(50000),
+            },
+            2025,
+        );
+        // LTCL 50k against the 20k LTCG only; STCL 100k against STCG, then
+        // nothing long-term is left for the rest.
+        assert_eq!(summary.ltcl_brought_forward_set_off, dec!(20000));
+        assert_eq!(summary.stcl_brought_forward_set_off, dec!(100000));
+        assert_eq!(summary.ltcl_carried_forward, dec!(30000));
+        assert_eq!(summary.stcl_carried_forward, dec!(50000));
+        assert_eq!(summary.estimated_stcg_tax, dec!(0));
+        assert_eq!(summary.sec_112a_ltcg_taxable, dec!(0));
+    }
+
+    #[test]
     fn json_field_names_match_the_frontend_types() {
         let v = serde_json::to_value(IndianTaxYearSummary::default()).unwrap();
         for key in [
@@ -1421,6 +1590,7 @@ mod tests {
             "sec112aLtcgGross",
             "warnings",
             "cleartaxFiles",
+            "otherSources",
         ] {
             assert!(v.get(key).is_some(), "missing {key}");
         }

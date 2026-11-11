@@ -3154,7 +3154,35 @@ export interface IndianSpecialRateGain {
   amount: string;
 }
 
+export interface IndianOtherSourcesSummary {
+  dividendsGross: string;
+  dividendsTds: string;
+  interestGross: string;
+  interestTds: string;
+  /** Up to 15 Jun, 16 Jun-15 Sep, 16 Sep-15 Dec, 16 Dec-15 Mar, 16 Mar-31 Mar. */
+  dividendsByPeriod: string[];
+  dividendsByAsset: { assetId: string; gross: string; tds: string }[];
+}
+
+export interface IndianSpeculativeTrade {
+  disposalId: string;
+  assetId: string;
+  assetName: string;
+  isin?: string | null;
+  date: string;
+  quantity: string;
+  proceeds: string;
+  cost: string;
+  profit: string;
+}
+
 export interface IndianTaxYearSummary {
+  /** Dividends and interest of the year, for Schedule OS. */
+  otherSources?: IndianOtherSourcesSummary;
+  /** Net intraday profit: speculative business income (Section 43(5)). */
+  speculativeIncome?: string;
+  /** Same-day trades, left out of `calculations`. */
+  speculativeTrades?: IndianSpeculativeTrade[];
   fyStartYear: number;
   stcg111aPreBudget: string;
   stcg111aPostBudget: string;
@@ -3171,6 +3199,11 @@ export interface IndianTaxYearSummary {
   exemptLtcgSec1038: string;
   stclCarriedForward: string;
   ltclCarriedForward: string;
+  /** Earlier years' losses (Section 74), computed from earlier years' sales. */
+  stclBroughtForward?: string;
+  ltclBroughtForward?: string;
+  stclBroughtForwardSetOff?: string;
+  ltclBroughtForwardSetOff?: string;
   estimatedStcgTax: string;
   estimatedLtcgTax: string;
   healthEducationCess: string;
