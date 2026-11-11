@@ -3164,9 +3164,25 @@ export interface IndianOtherSourcesSummary {
   dividendsByAsset: { assetId: string; gross: string; tds: string }[];
 }
 
+export interface IndianSpeculativeTrade {
+  disposalId: string;
+  assetId: string;
+  assetName: string;
+  isin?: string | null;
+  date: string;
+  quantity: string;
+  proceeds: string;
+  cost: string;
+  profit: string;
+}
+
 export interface IndianTaxYearSummary {
   /** Dividends and interest of the year, for Schedule OS. */
   otherSources?: IndianOtherSourcesSummary;
+  /** Net intraday profit: speculative business income (Section 43(5)). */
+  speculativeIncome?: string;
+  /** Same-day trades, left out of `calculations`. */
+  speculativeTrades?: IndianSpeculativeTrade[];
   fyStartYear: number;
   stcg111aPreBudget: string;
   stcg111aPostBudget: string;

@@ -291,6 +291,40 @@ function OtherSourcesCard({ summary }: { summary: IndianTaxYearSummary }) {
   );
 }
 
+function IntradayCard({ summary }: { summary: IndianTaxYearSummary }) {
+  const trades = summary.speculativeTrades ?? [];
+  if (trades.length === 0) return null;
+  const income = parseFloat(summary.speculativeIncome ?? "") || 0;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Intraday Trades (Speculative Income)</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {trades.map((trade) => (
+          <div key={trade.disposalId} className="flex justify-between gap-4">
+            <span className="text-muted-foreground">
+              {trade.date} · {trade.assetName || trade.assetId} · {parseFloat(trade.quantity)}
+            </span>
+            <AmountDisplay value={parseFloat(trade.profit) || 0} currency="INR" isHidden={false} />
+          </div>
+        ))}
+        <div className="flex justify-between border-t pt-2 font-medium">
+          <span>{income < 0 ? "Speculative loss" : "Speculative income"}</span>
+          <AmountDisplay value={income} currency="INR" isHidden={false} />
+        </div>
+        <p className="text-muted-foreground pt-1 text-xs">
+          Shares bought and sold on the same day. They are business income under Section 43(5),
+          reported in ITR-3 and taxed at slab rates, so they are not in the capital gains or the
+          exports. Charges, including STT, are already deducted. A loss can only be set off against
+          speculative income and carried forward for four years (Section 73).
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Carry-Forward Loss Card ───────────────────────────────────────────────────
 
 function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
@@ -722,6 +756,9 @@ export default function TaxPage() {
 
           <CarryForwardCard summary={summary} />
           <OtherSourcesCard summary={summary} />
+
+          <IntradayCard summary={summary} />
+          <IntradayCard summary={summary} />
 
           {/* Dual-Regime Optimizer */}
           <DualRegimeOptimizer fyStartYear={parseInt(selectedFY)} stcgSlabTotal={0} />

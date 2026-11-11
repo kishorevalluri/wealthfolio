@@ -368,6 +368,26 @@ pub struct IndianDisposalCharges {
     pub purchase_tax: Decimal,
 }
 
+/// A share bought and sold on the same day: intraday trading, which Section
+/// 43(5) treats as a speculative business, not a capital gain. Its charges,
+/// STT included, are business expenses, so the profit is the cash in less the
+/// cash out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndianSpeculativeTrade {
+    pub disposal_id: String,
+    pub asset_id: String,
+    pub asset_name: String,
+    pub isin: Option<String>,
+    pub date: NaiveDate,
+    pub quantity: Decimal,
+    /// Sale value net of the sell trade's charges
+    pub proceeds: Decimal,
+    /// Purchase cost including the buy trade's charges
+    pub cost: Decimal,
+    pub profit: Decimal,
+}
+
 /// Capital losses of earlier years still within their eight years (Section 74).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct IndianLossesBroughtForward {
@@ -446,6 +466,11 @@ pub struct IndianTaxYearSummary {
     pub cleartax_files: usize,
     /// Dividends and interest of the year, for Schedule OS
     pub other_sources: super::IndianOtherSourcesSummary,
+    /// Net intraday profit (negative for a loss): speculative business
+    /// income, not in the capital gains above
+    pub speculative_income: Decimal,
+    /// Intraday trades, left out of `calculations` and the exports
+    pub speculative_trades: Vec<IndianSpeculativeTrade>,
     pub calculations: Vec<IndianCapitalGainCalculation>,
 }
 
@@ -575,6 +600,26 @@ pub fn calculate_indian_capital_gains(
         let fmv_per_unit_2018 = asset_fmv_2018_per_unit.get(&d.asset_id).copied();
 
         let info = asset_info.get(&d.asset_id);
+        if acq_date == disp_date
+            && is_equity_like(classification)
+            && lot_open_dates.contains_key(&d.lot_id)
+        {
+            let proceeds: Decimal = d.proceeds_base.parse().unwrap_or(Decimal::ZERO);
+            let cost: Decimal = d.cost_basis_base.parse().unwrap_or(Decimal::ZERO);
+            summary.speculative_income += proceeds - cost;
+            summary.speculative_trades.push(IndianSpeculativeTrade {
+                disposal_id: d.id.clone(),
+                asset_id: d.asset_id.clone(),
+                asset_name: info.map(|i| i.name.clone()).unwrap_or_default(),
+                isin: info.and_then(|i| i.isin.clone()),
+                date: disp_date,
+                quantity: qty,
+                proceeds,
+                cost,
+                profit: proceeds - cost,
+            });
+            continue;
+        }
         let holding_period = determine_holding_period_category(acq_date, disp_date, classification);
         let tax_section = determine_tax_section(acq_date, disp_date, classification);
 
@@ -816,6 +861,16 @@ pub fn calculate_indian_capital_gains(
              the estimate may be high."
                 .to_string(),
         );
+    }
+
+    if !summary.speculative_trades.is_empty() {
+        summary.warnings.push(format!(
+            "{} sale(s) were bought the same day. Intraday trades are speculative \
+             business income (Section 43(5)), reported in ITR-3 rather than as capital \
+             gains, so they are left out of the totals and exports here. A speculative \
+             loss can only be set off against speculative income (Section 73).",
+            summary.speculative_trades.len()
+        ));
     }
 
     summary
@@ -1451,6 +1506,35 @@ mod tests {
         assert_eq!(calc.transfer_expenses, dec!(40));
         assert_eq!(calc.gross_gain, dec!(49960));
         assert_eq!(summary.stcg_total, dec!(49960));
+    }
+
+    #[test]
+    fn same_day_trades_are_speculative_income_not_capital_gains() {
+        let sales = [
+            sale(
+                "eq",
+                EquityListed,
+                date(2025, 8, 1),
+                date(2025, 8, 1),
+                dec!(10020),
+                dec!(9950),
+            ),
+            sale(
+                "eq",
+                EquityListed,
+                date(2025, 7, 31),
+                date(2025, 8, 1),
+                dec!(1000),
+                dec!(1100),
+            ),
+        ];
+        let summary = run(&sales, 2025);
+        assert_eq!(summary.speculative_income, dec!(-70));
+        assert_eq!(summary.speculative_trades.len(), 1);
+        assert_eq!(summary.speculative_trades[0].profit, dec!(-70));
+        assert_eq!(summary.calculations.len(), 1);
+        assert_eq!(summary.stcg_total, dec!(100));
+        assert!(summary.warnings.iter().any(|w| w.contains("43(5)")));
     }
 
     // Section 74: a brought-forward long-term loss can't touch short-term
