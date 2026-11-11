@@ -444,6 +444,8 @@ pub struct IndianTaxYearSummary {
     pub warnings: Vec<String>,
     /// ClearTax workbooks the year needs (5,000 rows per sheet per file)
     pub cleartax_files: usize,
+    /// Dividends and interest of the year, for Schedule OS
+    pub other_sources: super::IndianOtherSourcesSummary,
     pub calculations: Vec<IndianCapitalGainCalculation>,
 }
 
@@ -1504,6 +1506,7 @@ mod tests {
             "sec112aLtcgGross",
             "warnings",
             "cleartaxFiles",
+            "otherSources",
         ] {
             assert!(v.get(key).is_some(), "missing {key}");
         }

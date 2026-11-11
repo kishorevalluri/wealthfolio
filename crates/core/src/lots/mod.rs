@@ -25,12 +25,16 @@ use crate::errors::Result;
 
 pub mod cleartax_export;
 pub mod indian_tax;
+pub mod other_sources;
 pub mod tax_export;
 pub mod tax_service;
 pub use cleartax_export::{
     build_cleartax_workbook, cleartax_excluded_count, cleartax_file_count, cleartax_file_name,
 };
 pub use indian_tax::*;
+pub use other_sources::{
+    summarize_other_sources, IndianDividendByAsset, IndianOtherSourcesSummary,
+};
 pub use tax_export::{to_schedule_cg_rows, ScheduleCgRow};
 pub use tax_service::{
     classify_asset_for_indian_tax, compute_indian_tax_summary, extract_fmv_2018,

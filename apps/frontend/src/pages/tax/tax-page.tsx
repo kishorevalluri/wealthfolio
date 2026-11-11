@@ -234,6 +234,63 @@ function BudgetBreakdownCard({ summary }: { summary: IndianTaxYearSummary }) {
   );
 }
 
+// ── Income from Other Sources (Schedule OS) ───────────────────────────────────
+
+const DIVIDEND_PERIODS = [
+  "Up to 15 Jun",
+  "16 Jun – 15 Sep",
+  "16 Sep – 15 Dec",
+  "16 Dec – 15 Mar",
+  "16 Mar – 31 Mar",
+];
+
+function OtherSourcesCard({ summary }: { summary: IndianTaxYearSummary }) {
+  const os = summary.otherSources;
+  const dividends = parseFloat(os?.dividendsGross ?? "") || 0;
+  const interest = parseFloat(os?.interestGross ?? "") || 0;
+  if (!os || (dividends === 0 && interest === 0)) return null;
+  const tds = (parseFloat(os.dividendsTds) || 0) + (parseFloat(os.interestTds) || 0);
+
+  const row = (label: string, value: number) => (
+    <div key={label} className="flex justify-between">
+      <span className="text-muted-foreground">{label}</span>
+      <AmountDisplay value={value} currency="INR" isHidden={false} />
+    </div>
+  );
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">
+          Income from Other Sources (Schedule OS)
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-6 text-sm md:grid-cols-2">
+          <div className="space-y-2">
+            {row("Dividends (before TDS)", dividends)}
+            {row("Interest (before TDS)", interest)}
+            {row("TDS recorded", tds)}
+          </div>
+          {dividends > 0 && (
+            <div className="space-y-2">
+              <p className="text-muted-foreground text-xs">Dividends by period</p>
+              {os.dividendsByPeriod.map((value, i) =>
+                row(DIVIDEND_PERIODS[i] ?? "", parseFloat(value) || 0),
+              )}
+            </div>
+          )}
+        </div>
+        <p className="text-muted-foreground pt-3 text-xs">
+          From the dividend and interest activities recorded here; tax in their Tax field counts as
+          TDS. Check the totals against your AIS and Form 26AS, and add them to other income in the
+          regime comparison below.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Carry-Forward Loss Card ───────────────────────────────────────────────────
 
 function CarryForwardCard({ summary }: { summary: IndianTaxYearSummary }) {
@@ -663,6 +720,9 @@ export default function TaxPage() {
             description={`No capital gains or losses recorded for ${fyLabel(parseInt(selectedFY))}.`}
           />
 
+          <CarryForwardCard summary={summary} />
+          <OtherSourcesCard summary={summary} />
+
           {/* Dual-Regime Optimizer */}
           <DualRegimeOptimizer fyStartYear={parseInt(selectedFY)} stcgSlabTotal={0} />
         </div>
@@ -743,6 +803,8 @@ export default function TaxPage() {
 
         {/* Carry-forward losses */}
         <CarryForwardCard summary={summary} />
+
+        <OtherSourcesCard summary={summary} />
 
         {/* Dual-Regime Optimizer */}
         <DualRegimeOptimizer
