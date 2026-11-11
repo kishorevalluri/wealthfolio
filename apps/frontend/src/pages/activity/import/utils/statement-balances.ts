@@ -112,33 +112,48 @@ export function statementBalancesFromRows(rows: string[][]): StatementBalance[] 
 
 /**
  * Groups statement balances by the Wealthfolio account they will be checked
- * against. A statement account the import maps to an account is checked
- * there. Without an account column, every balance goes to the selected
- * account. Statement accounts left unmapped (no rows of theirs are imported)
- * are not checked: there is nothing to compare them with.
+ * against: the account the import's own rows from that statement account
+ * go to (as resolved for each row, including changes made in review).
+ * Without an account column, every balance goes to the selected account.
+ * Statement accounts with no rows in this import are not checked: there is
+ * nothing to compare them with.
  */
 export function balancesByAccount({
   balances,
-  accountMappings,
-  hasAccountColumn,
+  drafts,
+  accountColumn,
   defaultAccountId,
 }: {
   balances: StatementBalance[];
-  accountMappings: Record<string, string> | undefined;
-  hasAccountColumn: boolean;
+  drafts: Pick<DraftActivity, "rawRow" | "accountId">[];
+  /** Index of the account column in the raw rows, or -1 without one. */
+  accountColumn: number;
   defaultAccountId: string;
 }): Map<string, StatementBalance[]> {
+  // Statement account -> the account most of its rows go to.
+  const counts = new Map<string, Map<string, number>>();
+  if (accountColumn >= 0) {
+    for (const d of drafts) {
+      if (!d.accountId) continue;
+      const key = d.rawRow?.[accountColumn]?.trim() ?? "";
+      const byAccount = counts.get(key) ?? new Map<string, number>();
+      byAccount.set(d.accountId, (byAccount.get(d.accountId) ?? 0) + 1);
+      counts.set(key, byAccount);
+    }
+  }
+  const accountFor = (key: string): string | undefined => {
+    if (accountColumn < 0) return defaultAccountId || undefined;
+    const byAccount = counts.get(key);
+    if (!byAccount) return undefined;
+    return [...byAccount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  };
+
   const groups = new Map<string, StatementBalance[]>();
   for (const b of balances) {
-    let accountId: string | undefined;
-    if (!hasAccountColumn) {
-      accountId = defaultAccountId;
-    } else {
-      accountId = accountMappings?.[b.account] ?? accountMappings?.[b.account.toLowerCase()];
-    }
+    const accountId = accountFor(b.account);
     if (!accountId) continue;
     const list = groups.get(accountId) ?? [];
-    // Two statement accounts mapped to one account: add up their balances.
+    // Two statement accounts going to one account: add up their balances.
     const same = list.find((x) => x.isin === b.isin);
     if (same) {
       same.quantity = Number((same.quantity + b.quantity).toFixed(10));

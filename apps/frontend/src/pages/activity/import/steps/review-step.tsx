@@ -20,7 +20,11 @@ import {
   type DraftActivity,
 } from "../context";
 import { buildImportAssetCandidateFromDraft } from "../utils/asset-review-utils";
-import { reconcileExpenseReversalBoundary, validateDraft } from "../utils/draft-utils";
+import {
+  primaryHeader,
+  reconcileExpenseReversalBoundary,
+  validateDraft,
+} from "../utils/draft-utils";
 import { getActivityImportProfileForResolvedAccountIds } from "../utils/activity-import-profile";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,6 +103,8 @@ export function ReviewStep() {
   const { parsedRows, mapping, draftActivities } = state;
   const isValidating = state.isValidating;
   const { accounts = [] } = useAccounts({ filterActive: true, includeArchived: false });
+  const accountHeader = primaryHeader(mapping?.fieldMappings?.[ImportFormat.ACCOUNT]);
+  const statementAccountColumn = accountHeader ? state.headers.indexOf(accountHeader) : -1;
 
   const [selectedRows, setSelectedRows] = useState<number[]>([]);
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
@@ -518,8 +524,7 @@ export function ReviewStep() {
           accountId={state.accountId}
           balances={state.statementBalances}
           drafts={draftActivities}
-          accountMappings={state.mapping?.accountMappings}
-          hasAccountColumn={!!state.mapping?.fieldMappings?.[ImportFormat.ACCOUNT]}
+          accountColumn={statementAccountColumn}
         />
       )}
 

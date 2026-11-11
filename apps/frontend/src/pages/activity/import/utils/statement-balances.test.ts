@@ -95,12 +95,17 @@ describe("balancesByAccount", () => {
     b("1208180000000002", "INE000000BB2", 5),
     b("MF FOLIOS", "INF000000CC1", 10),
   ];
+  const row = (account: string) => ["", "", "", "", "", "", "", account];
 
-  it("checks each statement account against the account it maps to", () => {
+  it("checks each statement account against the account its rows go to", () => {
     const groups = balancesByAccount({
       balances,
-      accountMappings: { "1208160000000001": "zerodha", "MF FOLIOS": "mf" },
-      hasAccountColumn: true,
+      drafts: [
+        { rawRow: row("1208160000000001"), accountId: "zerodha" },
+        { rawRow: row("MF FOLIOS"), accountId: "mf" },
+        { rawRow: row("MF FOLIOS"), accountId: "mf" },
+      ],
+      accountColumn: 7,
       defaultAccountId: "zerodha",
     });
     // The second demat account has no rows in this import: not checked.
@@ -110,11 +115,28 @@ describe("balancesByAccount", () => {
     ]);
   });
 
-  it("adds up two statement accounts mapped to one account", () => {
+  it("follows rows moved to another account in review", () => {
+    const groups = balancesByAccount({
+      balances: [balances[3]],
+      drafts: [
+        { rawRow: row("MF FOLIOS"), accountId: "joint" },
+        { rawRow: row("MF FOLIOS"), accountId: "joint" },
+        { rawRow: row("MF FOLIOS"), accountId: "mf" },
+      ],
+      accountColumn: 7,
+      defaultAccountId: "zerodha",
+    });
+    expect([...groups.keys()]).toEqual(["joint"]);
+  });
+
+  it("adds up two statement accounts imported into one account", () => {
     const groups = balancesByAccount({
       balances,
-      accountMappings: { "1208160000000001": "all", "1208180000000002": "all" },
-      hasAccountColumn: true,
+      drafts: [
+        { rawRow: row("1208160000000001"), accountId: "all" },
+        { rawRow: row("1208180000000002"), accountId: "all" },
+      ],
+      accountColumn: 7,
       defaultAccountId: "all",
     });
     expect(groups.get("all")?.map((x) => [x.isin, x.quantity])).toEqual([
@@ -126,8 +148,8 @@ describe("balancesByAccount", () => {
   it("checks everything against the selected account without an account column", () => {
     const groups = balancesByAccount({
       balances: [balances[0]],
-      accountMappings: {},
-      hasAccountColumn: false,
+      drafts: [],
+      accountColumn: -1,
       defaultAccountId: "picked",
     });
     expect([...groups.keys()]).toEqual(["picked"]);

@@ -18,47 +18,49 @@ interface StatementBalanceCheckProps {
   accountId: string;
   balances: StatementBalance[];
   drafts: DraftActivity[];
-  /** Statement account (BO ID) to Wealthfolio account, from the mapping step. */
-  accountMappings?: Record<string, string>;
-  /** Whether the import reads the account from a column. */
-  hasAccountColumn: boolean;
+  /** Index of the account column in the raw rows, or -1 without one. */
+  accountColumn: number;
 }
 
 /**
  * Checks the import against the closing balances on a depository statement:
  * what each account will hold on the statement date, security by security.
  * A statement covers several demat accounts and folio groups; each is
- * checked against the account it is mapped to.
+ * checked against the account its rows are imported into.
  */
 export function StatementBalanceCheck({
   accountId,
   balances,
   drafts,
-  accountMappings,
-  hasAccountColumn,
+  accountColumn,
 }: StatementBalanceCheckProps) {
   const { accounts } = useAccounts({ filterActive: false, includeArchived: true });
-  const groups = useMemo(
-    () =>
-      balancesByAccount({
-        balances,
-        accountMappings,
-        hasAccountColumn,
-        defaultAccountId: accountId,
-      }),
-    [accountId, accountMappings, balances, hasAccountColumn],
-  );
-  const showNames = groups.size > 1;
+  const groups = useMemo(() => {
+    const byAccount = balancesByAccount({
+      balances,
+      drafts,
+      accountColumn,
+      defaultAccountId: accountId,
+    });
+    return [...byAccount.entries()].map(([groupAccountId, groupBalances]) => ({
+      accountId: groupAccountId,
+      balances: groupBalances,
+      drafts: drafts.filter((d) => d.accountId === groupAccountId),
+    }));
+  }, [accountColumn, accountId, balances, drafts]);
+  const showNames = groups.length > 1;
 
   return (
     <>
-      {[...groups.entries()].map(([groupAccountId, groupBalances]) => (
+      {groups.map((group) => (
         <AccountBalanceCheck
-          key={groupAccountId}
-          accountId={groupAccountId}
-          accountName={showNames ? accounts?.find((a) => a.id === groupAccountId)?.name : undefined}
-          balances={groupBalances}
-          drafts={drafts.filter((d) => d.accountId === groupAccountId)}
+          key={group.accountId}
+          accountId={group.accountId}
+          accountName={
+            showNames ? accounts?.find((a) => a.id === group.accountId)?.name : undefined
+          }
+          balances={group.balances}
+          drafts={group.drafts}
         />
       ))}
     </>

@@ -50,6 +50,7 @@ import {
   setParseConfig,
   setParsedData,
   setSelectedTemplate,
+  setStatementHoldings,
   setSuppressLinkedTemplate,
 } from "../context/import-actions";
 import { useImportContext, type ParseConfig } from "../context/import-context";
@@ -71,7 +72,7 @@ import {
   rowsForStatementAccount,
   statementAccounts,
   statementBalancesFromRows,
-  statementHoldingRows,
+  statementHoldingRows as holdingRowsOf,
   type StatementBalance,
 } from "../utils/statement-balances";
 import { badgeVariants } from "@wealthfolio/ui";
@@ -859,16 +860,11 @@ export function UploadStep() {
   const [pdfPasswordError, setPdfPasswordError] = useState<string | null>(null);
   const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
   const [isPdfParsing, setIsPdfParsing] = useState(false);
-  // Holdings import of a depository statement that covers several accounts:
-  // every holdings row, and the statement account picked for this account.
-  const [statementHoldings, setStatementHoldings] = useState<{
-    headers: string[];
-    rows: string[][];
-  } | null>(null);
-  const [statementAccount, setStatementAccount] = useState("");
+  // Holdings import of a depository statement that covers several accounts.
+  const { statementHoldingRows, statementAccount } = state;
   const statementAccountOptions = useMemo(
-    () => (statementHoldings ? statementAccounts(statementHoldings.rows) : []),
-    [statementHoldings],
+    () => statementAccounts(statementHoldingRows),
+    [statementHoldingRows],
   );
 
   const handlePdfParse = useCallback(
@@ -882,14 +878,13 @@ export function UploadStep() {
         setParseError(null);
         let rows = result.parsed.rows;
         let statementBalances: StatementBalance[] = [];
-        setStatementHoldings(null);
-        setStatementAccount("");
+        dispatch(setStatementHoldings([], ""));
         if (importType === ImportType.HOLDINGS) {
           const hasHoldings = rows.some((r) => r[1] === "HOLDING BALANCE");
           if (hasHoldings) {
-            rows = statementHoldingRows(rows);
+            rows = holdingRowsOf(rows);
             if (statementAccounts(rows).length > 1) {
-              setStatementHoldings({ headers: result.parsed.headers, rows });
+              dispatch(setStatementHoldings(rows, ""));
             }
           }
         } else if (importType === ImportType.ACTIVITY) {
@@ -960,8 +955,7 @@ export function UploadStep() {
       } else {
         dispatch(setFile(null as unknown as File));
         dispatch(setParsedData([], []));
-        setStatementHoldings(null);
-        setStatementAccount("");
+        dispatch(setStatementHoldings([], ""));
         setPendingPdfFile(null);
         setIsPdfPasswordOpen(false);
       }
@@ -1004,17 +998,14 @@ export function UploadStep() {
 
   const handleStatementAccountChange = useCallback(
     (value: string | null) => {
-      if (!statementHoldings) return;
+      if (statementHoldingRows.length === 0) return;
       const account = !value || value === ALL_STATEMENT_ACCOUNTS ? "" : value;
-      setStatementAccount(account);
+      dispatch(setStatementHoldings(statementHoldingRows, account));
       dispatch(
-        setParsedData(
-          statementHoldings.headers,
-          rowsForStatementAccount(statementHoldings.rows, account),
-        ),
+        setParsedData(state.headers, rowsForStatementAccount(statementHoldingRows, account)),
       );
     },
-    [dispatch, statementHoldings],
+    [dispatch, state.headers, statementHoldingRows],
   );
 
   const hasParseErrors = parseError !== null;

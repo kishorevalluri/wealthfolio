@@ -33,6 +33,10 @@ pub fn is_summary_or_noise_line(line: &str) -> bool {
         || lower.contains("market value as on")
 }
 
+static EQUITY_SUFFIX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"(?i)\s*-?\s*(NEW\s*)?EQUITY\s*SHARES").expect("hard-coded regex is valid")
+});
+
 /// Cleans CDSL security descriptions.
 ///
 /// Strips corporate action suffixes like:
@@ -81,9 +85,7 @@ pub fn clean_security_description(desc: &str) -> String {
     }
     // Share class suffix without a '#': "LIMITED - NEW EQUITY SHARES OF RE. 1/-",
     // "LIMITED-EQUITY SHARES", or run together as "MAHINDRAEQUITY SHARES".
-    let equity_suffix =
-        Regex::new(r"(?i)\s*-?\s*(NEW\s*)?EQUITY\s*SHARES").expect("hard-coded regex is valid");
-    if let Some(m) = equity_suffix.find(cleaned) {
+    if let Some(m) = EQUITY_SUFFIX.find(cleaned) {
         if m.start() > 0 {
             cleaned = cleaned[..m.start()].trim();
         }
@@ -720,12 +722,17 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                         continue;
                     }
                     match number_cell(cand) {
-                        Some(Some(_)) => {
+                        Some(Some(value)) => {
                             let clean_num = cand.replace(',', "");
                             if let Ok(num) = clean_num.parse::<f64>() {
                                 num_cands.push((num, clean_num.clone()));
-                                cells.push(Some((num, clean_num)));
                             }
+                            // Keep the cell even when f64 can't read it, so
+                            // later cells stay in their columns.
+                            cells.push(Some((
+                                clean_num.parse::<f64>().unwrap_or_default(),
+                                fmt(value),
+                            )));
                         }
                         Some(None) => cells.push(None),
                         None => {}
@@ -738,11 +745,12 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
                 // Units (cand 0), NAV (cand 1), Cost (cand 2), Value (cand 3)
                 // A demat holding row has seven cells: Current Bal, Frozen,
                 // Pledge, Pledge Setup and Free Bal, then Market Price and
-                // Value. A security sold out during the month shows "--" for
-                // every balance; read it as zero, not as its market price.
+                // Value. Read them by column: a pledged or frozen holding has
+                // numbers in the middle columns, and a security sold out during
+                // the month has "--" in every balance (zero, not its price).
                 let cell_text = |c: &Option<(f64, String)>| c.as_ref().map(|(_, t)| t.clone());
-                if !is_folio_line && cells.len() >= 7 && cells[0].is_none() {
-                    found_qty = Some("0".to_string());
+                if !is_folio_line && cells.len() >= 7 {
+                    found_qty = Some(cell_text(&cells[0]).unwrap_or_else(|| "0".to_string()));
                     found_rate = cell_text(&cells[5]);
                     found_val = cell_text(&cells[6]);
                 } else if !num_cands.is_empty() && num_cands[0].0 > 0.0 {
@@ -1301,6 +1309,15 @@ EXAMPLE POWER LIMITED - NEWEQUITY SHARES OF RE. 2/-AFTER SPLIT
 100.000
 800.0000
 80,000.00
+INE000000CC3
+EXAMPLE PLEDGED LIMITED
+100.000
+--
+40.000
+--
+60.000
+800.0000
+80,000.00
 IN0020200161
 GOVT OF INDIA#2.5% SGB2020-21 SERIES V 2028-LOANCODE 29278 - RED DT11.08.2028
 1.000
@@ -1319,14 +1336,10 @@ GOVT OF INDIA#2.5% SGB2020-21 SERIES V 2028-LOANCODE 29278 - RED DT11.08.2028
         assert_eq!(
             summary,
             vec![
-                ("EXAMPLE SYSTEMS LIMITED", "0", "204.7500", "0.00"),
-                ("EXAMPLE POWER LIMITED", "100.000", "800.0000", "80000.00"),
-                (
-                    "2.5% SGB2020-21 SERIES V 2028",
-                    "1.000",
-                    "14007.0000",
-                    "14007.00"
-                ),
+                ("EXAMPLE SYSTEMS LIMITED", "0", "204.75", "0"),
+                ("EXAMPLE POWER LIMITED", "100", "800", "80000"),
+                ("EXAMPLE PLEDGED LIMITED", "100", "800", "80000"),
+                ("2.5% SGB2020-21 SERIES V 2028", "1", "14007", "14007"),
             ]
         );
     }
