@@ -148,4 +148,14 @@ describe("CDSL corporate actions with an ISIN change", () => {
     expect(drafts[0].sourceGroupId).toBe(drafts[1].sourceGroupId);
     expect(drafts[2].sourceGroupId).toBeUndefined();
   });
+
+  it("does not pair a debit and credit of the same ISIN", () => {
+    // A same-ISIN debit and credit on one day (e.g. a re-credit after a
+    // reversal) is not an ISIN change.
+    const drafts = draftsFor([
+      row("01-07-2026", "CORPORATE ACTION DEBIT", "EXAMPLE BANK LTD", "INE000B01015", "100"),
+      row("01-07-2026", "CORPORATE ACTION CREDIT", "EXAMPLE BANK LTD", "INE000B01015", "100"),
+    ]);
+    expect(drafts.every((d) => d.sourceGroupId === undefined)).toBe(true);
+  });
 });
