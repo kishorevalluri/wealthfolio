@@ -37,7 +37,7 @@ pub use other_sources::{
 };
 pub use tax_export::{to_schedule_cg_rows, ScheduleCgRow, INCOME_TAX_ACT_2025_FIRST_YEAR};
 pub use tax_service::{
-    classify_asset_for_indian_tax, compute_indian_tax_summary, extract_fmv_2018,
+    classify_asset_for_indian_tax, compute_indian_tax_summary, extract_fmv_2018, is_lot_carried_on,
 };
 
 // ── Repository trait ──────────────────────────────────────────────────────────

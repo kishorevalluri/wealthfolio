@@ -10,7 +10,10 @@ use super::{
     IndianDisposalCharges, IndianLossesBroughtForward, IndianTaxAssetInfo, IndianTaxYearSummary,
     LotDisposal, LotRecord, LotRepositoryTrait,
 };
-use crate::activities::{Activity, ActivityServiceTrait, ACTIVITY_SUBTYPE_BUYBACK};
+use crate::activities::{
+    is_conversion_row, Activity, ActivityServiceTrait, ACTIVITY_SUBTYPE_BUYBACK,
+    ACTIVITY_TYPE_TRANSFER_OUT,
+};
 use crate::assets::{Asset, AssetServiceTrait, InstrumentType};
 use crate::errors::{Result, ValidationError};
 
@@ -155,6 +158,16 @@ fn disposal_charges(
     }
 }
 
+/// Whether the activity that relieved a lot was a transfer of it rather than
+/// a sale. A transfer out to another account, and the leaving row of a
+/// conversion (an amalgamation or an ISIN change), carry the lot on at its
+/// cost and purchase date: no transfer under Section 47, so nothing to report.
+/// Their relief rows have proceeds equal to cost, and would otherwise show as
+/// sales at nil gain in the report and the ClearTax file.
+pub fn is_lot_carried_on(activity: &Activity) -> bool {
+    activity.effective_type().trim() == ACTIVITY_TYPE_TRANSFER_OUT || is_conversion_row(activity)
+}
+
 /// Years a capital loss can be carried forward (Section 74).
 const LOSS_CARRY_YEARS: i32 = 8;
 
@@ -282,6 +295,12 @@ pub async fn compute_indian_tax_summary(
                 sell_trades.insert(d.disposal_activity_id.clone(), trade);
             }
         }
+        disposals.retain(|d| {
+            !sell_trades
+                .get(&d.disposal_activity_id)
+                .and_then(Option::as_ref)
+                .is_some_and(is_lot_carried_on)
+        });
         let charges: HashMap<String, IndianDisposalCharges> = disposals
             .iter()
             .map(|d| {
@@ -435,6 +454,36 @@ mod tests {
         // Never more than the whole charge, and nothing from a zero quantity.
         assert_eq!(share(dec!(50), dec!(120), dec!(100)), dec!(50));
         assert_eq!(share(dec!(50), dec!(1), Decimal::ZERO), Decimal::ZERO);
+    }
+
+    #[test]
+    fn transfers_and_conversions_carry_lots_on_and_sales_do_not() {
+        let activity = |kind: &str, subtype: Option<&str>| -> Activity {
+            let mut a: Activity = serde_json::from_value(serde_json::json!({
+                "id": "a",
+                "accountId": "acc",
+                "assetId": "INFY",
+                "activityType": kind,
+                "status": "POSTED",
+                "activityDate": "2025-01-01T00:00:00Z",
+                "currency": "INR",
+                "isUserModified": false,
+                "needsReview": false,
+                "createdAt": "2025-01-01T00:00:00Z",
+                "updatedAt": "2025-01-01T00:00:00Z",
+            }))
+            .expect("test activity");
+            a.subtype = subtype.map(str::to_string);
+            a
+        };
+        assert!(is_lot_carried_on(&activity("TRANSFER_OUT", None)));
+        assert!(is_lot_carried_on(&activity(
+            "ADJUSTMENT",
+            Some("CONVERSION_OUT")
+        )));
+        assert!(!is_lot_carried_on(&activity("SELL", None)));
+        assert!(!is_lot_carried_on(&activity("SELL", Some("BUYBACK"))));
+        assert!(!is_lot_carried_on(&activity("ADJUSTMENT", None)));
     }
 
     #[test]
