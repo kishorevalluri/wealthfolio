@@ -150,6 +150,9 @@ pub const CDSL_HEADERS: [&str; 11] = [
 /// split holdings from transactions.
 pub const HOLDING_BALANCE: &str = "HOLDING BALANCE";
 
+/// `BO ID` of NPS rows (units held with the CRA under a PRAN, not demat).
+pub const NPS_ACCOUNT: &str = "NPS PRAN";
+
 /// `BO ID` of mutual fund rows held with the fund house (folios, not demat).
 /// Folios held jointly get `MF FOLIOS (JOINT: <name>)`.
 pub const MF_ACCOUNT: &str = "MF FOLIOS";
@@ -157,7 +160,10 @@ pub const MF_ACCOUNT: &str = "MF FOLIOS";
 /// Labels written to `Transaction Description`. The template maps the first
 /// five to activity types. The rest are left for the user to map or skip in
 /// the review step, because the statement doesn't say what they mean for cost
-/// (a bonus, split or merger, or an unknown credit or debit).
+/// (a bonus, split or merger, or an unknown credit or debit). The import
+/// wizard pairs a corporate-action debit and credit of different ISINs on one
+/// day into a conversion (`pairCorporateActionConversions` in the frontend),
+/// which carries cost and date to the new ISIN.
 pub const LABEL_BUY: &str = "BUY";
 pub const LABEL_SELL: &str = "SELL";
 pub const LABEL_TRANSFER_IN: &str = "TRANSFER IN";
@@ -441,6 +447,194 @@ fn txn_row(
     ]
 }
 
+/// Pension fund managers, as NPS scheme names spell them.
+const NPS_MANAGERS: [&str; 11] = [
+    "ADITYA BIRLA",
+    "AXIS",
+    "DSP",
+    "HDFC",
+    "ICICI",
+    "KOTAK",
+    "LIC",
+    "MAX",
+    "SBI",
+    "TATA",
+    "UTI",
+];
+
+/// A stable name for an NPS scheme. The statement spells one scheme several
+/// ways ("LIC PENSION FUND SCHEME G -TIER I POP", "NPS TRUST- A/C HDFC
+/// PENSIONFUND MANAGEMENT LIMITEDSCHEME C - TIER IPOP"), so transactions and
+/// holdings are named from the manager, asset class and tier:
+/// "HDFC PENSION FUND SCHEME C - TIER I". Text that doesn't parse is kept,
+/// with its spaces tidied.
+pub fn nps_scheme_name(text: &str) -> String {
+    let upper = text.to_uppercase();
+    let squashed: String = upper.split_whitespace().collect::<Vec<_>>().join(" ");
+    let manager = NPS_MANAGERS
+        .iter()
+        .filter_map(|m| squashed.find(m).map(|at| (at, *m)))
+        .min_by_key(|(at, _)| *at)
+        .map(|(_, m)| m);
+    let class = Regex::new(r"SCHEME\s*-?\s*([ACEG])\b")
+        .ok()
+        .and_then(|re| re.captures(&squashed))
+        .map(|c| c[1].to_string());
+    let tier = Regex::new(r"TIER\s*-?\s*(II|I)")
+        .ok()
+        .and_then(|re| re.captures(&squashed))
+        .map(|c| c[1].to_string());
+    match (manager, class, tier) {
+        (Some(manager), Some(class), Some(tier)) => {
+            format!("{manager} PENSION FUND SCHEME {class} - TIER {tier}")
+        }
+        _ => squashed,
+    }
+}
+
+/// Lines of the NPS sections ("NPS PRAN HELD WITH CRA" up to the end of its
+/// investment summary or the next page header), and every other line.
+fn split_nps_sections<'a>(lines: &[&'a str]) -> (Vec<&'a str>, Vec<&'a str>) {
+    let mut rest = Vec::with_capacity(lines.len());
+    let mut nps = Vec::new();
+    let mut in_nps = false;
+    for &line in lines {
+        let upper = line.to_uppercase();
+        if upper.contains("NPS PRAN HELD WITH CRA") {
+            in_nps = true;
+        } else if in_nps && upper.contains("CONSOLIDATED ACCOUNT STATEMENT") {
+            in_nps = false;
+        }
+        if in_nps {
+            nps.push(line);
+            if upper.starts_with("FOR ANY QUERIES REGARDING NPS") {
+                in_nps = false;
+            }
+        } else {
+            rest.push(line);
+        }
+    }
+    (rest, nps)
+}
+
+/// Rows from the NPS sections: contributions and debits from the statement
+/// of transactions, holdings from the holding statement.
+fn parse_nps_sections(lines: &[&str]) -> Vec<Vec<String>> {
+    let date_re =
+        Regex::new(r"^(\d{1,2}[-/][A-Za-z]{3}[-/]\d{2,4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})$")
+            .expect("hard-coded regex is valid");
+    let as_on_re =
+        Regex::new(r"(\d{1,2}[-/][A-Za-z0-9]{2,3}[-/]\d{2,4})").expect("hard-coded regex is valid");
+    let mut rows = Vec::new();
+    let mut in_holdings = false;
+    let mut holding_date = String::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let upper = line.to_uppercase();
+        if upper.contains("STATEMENT OF TRANSACTIONS") {
+            in_holdings = false;
+        } else if upper.contains("HOLDING STATEMENT") {
+            in_holdings = true;
+            if let Some(c) = as_on_re.captures(line) {
+                holding_date = c[1].to_string();
+            }
+            i += 1;
+            continue;
+        } else if upper.starts_with("PORTFOLIO VALUE") || upper.contains("INVESTMENT SUMMARY") {
+            in_holdings = false;
+        }
+
+        if !in_holdings && date_re.is_match(line) {
+            // Date, scheme and description lines, the CR/DR flag, then
+            // amount, NAV and units.
+            let mut scheme = Vec::new();
+            let mut description = Vec::new();
+            let mut j = i + 1;
+            let mut flag = None;
+            while j < lines.len() && j <= i + 8 {
+                let l = lines[j];
+                let u = l.trim().to_uppercase();
+                if u == "CR" || u == "DR" {
+                    flag = Some(u);
+                    break;
+                }
+                if date_re.is_match(l) || number(l).is_some() {
+                    break;
+                }
+                if u.starts_with("BY ") || u.starts_with("TO ") || !description.is_empty() {
+                    description.push(l);
+                } else {
+                    scheme.push(l);
+                }
+                j += 1;
+            }
+            let cells: Vec<Decimal> = lines
+                .iter()
+                .skip(j + 1)
+                .take(3)
+                .map_while(|l| number(l))
+                .collect();
+            if let (Some(flag), [amount, nav, units]) = (flag, cells.as_slice()) {
+                if !units.is_zero() {
+                    let label = if flag == "CR" { LABEL_BUY } else { LABEL_SELL };
+                    rows.push(txn_row(
+                        line,
+                        label,
+                        &nps_scheme_name(&scheme.join(" ")),
+                        "",
+                        fmt(units.abs()),
+                        fmt(nav.abs()),
+                        fmt(amount.abs()),
+                        NPS_ACCOUNT,
+                        String::new(),
+                        &description.join(" "),
+                    ));
+                }
+                i = j + 4;
+                continue;
+            }
+        }
+
+        let is_header = ["SCHEME NAME", "FUND MANAGER", "NUMBER OF", "NAV ("]
+            .iter()
+            .any(|h| upper.contains(h));
+        if in_holdings && number(line).is_none() && !is_header {
+            // Scheme and fund manager lines, then units and NAV.
+            let mut text = vec![line];
+            let mut j = i + 1;
+            while j < lines.len() && j <= i + 4 && number(lines[j]).is_none() {
+                text.push(lines[j]);
+                j += 1;
+            }
+            let units = lines.get(j).and_then(|l| number(l));
+            let nav = lines.get(j + 1).and_then(|l| number(l));
+            let joined = text.join(" ");
+            if let (Some(units), Some(nav)) = (units, nav) {
+                if joined.to_uppercase().contains("SCHEME") {
+                    rows.push(vec![
+                        holding_date.clone(),
+                        HOLDING_BALANCE.to_string(),
+                        nps_scheme_name(&joined),
+                        String::new(),
+                        fmt(units),
+                        fmt(nav),
+                        fmt((units * nav).round_dp(2)),
+                        NPS_ACCOUNT.to_string(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                    ]);
+                }
+                i = j + 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    rows
+}
+
 /// Parse CDSL e-CAS text into tabular headers and rows (see [`CDSL_HEADERS`]).
 ///
 /// - Holdings (demat and mutual fund) become `HOLDING BALANCE` rows dated on
@@ -451,7 +645,11 @@ fn txn_row(
 ///   Credit or Debit column, and the price is left for a broker trade list.
 /// - Mutual fund transactions carry amount, NAV, price, units and stamp duty
 ///   (written to `Fee`, as it is part of the purchase cost).
-/// - NPS rows are left out, as they have no ISIN.
+/// - NPS (the "NPS PRAN HELD WITH CRA" pages) gives contributions as BUY rows
+///   and withdrawals or unit debits as SELL rows, with amount, NAV and units,
+///   plus holdings at the NAV on the statement date. Schemes have no ISIN, so
+///   each gets a stable name (see [`nps_scheme_name`]) and the account key
+///   [`NPS_ACCOUNT`]. NPS rows outside such a section are left out.
 pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     let headers = CDSL_HEADERS.iter().map(|h| h.to_string()).collect();
 
@@ -482,11 +680,14 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     let mf_scheme_line_regex =
         Regex::new(r"^[A-Z0-9]{2,8}\s+-\s+\S").expect("hard-coded regex is valid");
 
-    let lines: Vec<&str> = text
+    let all_lines: Vec<&str> = text
         .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty())
         .collect();
+    // NPS sections are read on their own; the rest of the parser never sees them.
+    let (lines, nps_lines) = split_nps_sections(&all_lines);
+    let nps_rows = parse_nps_sections(&nps_lines);
     // 0. Pre-scan Mutual Fund Folios section if present:
     // e.g.
     // Scheme Name : NIPPON INDIA SMALL CAP FUND - DIRECT GROWTH PLAN GROWTH OPTION
@@ -985,8 +1186,13 @@ pub fn parse_cdsl_cas(text: &str) -> (Vec<String>, Vec<Vec<String>>) {
     }
 
     // Transactions first, then holdings.
+    let (nps_txns, nps_holdings): (Vec<_>, Vec<_>) = nps_rows
+        .into_iter()
+        .partition(|row| row[1] != HOLDING_BALANCE);
     let mut combined = txn_rows;
+    combined.extend(nps_txns);
     combined.extend(holdings_rows);
+    combined.extend(nps_holdings);
 
     (headers, combined)
 }
@@ -1250,6 +1456,153 @@ Closing Balance
         assert_eq!(sell[4], "27.624");
         assert_eq!(sell[6], "1000");
         assert_eq!(sell[8], "");
+    }
+
+    #[test]
+    fn nps_scheme_names_are_stable_across_spellings() {
+        assert_eq!(
+            nps_scheme_name("LIC PENSION FUND SCHEME G -TIER I POP"),
+            "LIC PENSION FUND SCHEME G - TIER I"
+        );
+        assert_eq!(
+            nps_scheme_name("LIC PENSION FUND SCHEME G - TIER I POP LIC PENSION FUND LIMITED"),
+            "LIC PENSION FUND SCHEME G - TIER I"
+        );
+        assert_eq!(
+            nps_scheme_name(
+                "NPS TRUST- A/C HDFC PENSIONFUND MANAGEMENT LIMITEDSCHEME C - TIER I POP"
+            ),
+            "HDFC PENSION FUND SCHEME C - TIER I"
+        );
+        assert_eq!(
+            nps_scheme_name(
+                "NPS TRUST- A/C HDFC PENSION FUNDMANAGEMENT LIMITED SCHEME C - TIER IPOP HDFC PENSION FUND MANAGEMENTLIMITED"
+            ),
+            "HDFC PENSION FUND SCHEME C - TIER I"
+        );
+        assert_eq!(
+            nps_scheme_name("SBI PENSION FUND SCHEME E - TIER II"),
+            "SBI PENSION FUND SCHEME E - TIER II"
+        );
+        assert_eq!(nps_scheme_name("SOME  OTHER   FUND"), "SOME OTHER FUND");
+    }
+
+    #[test]
+    fn nps_contributions_and_holdings_are_read() {
+        // Shaped like the PDF text of a CDSL CAS NPS page (synthetic numbers).
+        let sample = "CONSOLIDATED ACCOUNT STATEMENT (CAS)
+NPS PRAN HELD WITH CRA
+NPS-SP :
+EXAMPLE
+PRAN ID :
+100000000001
+STATEMENT OF TRANSACTIONS FOR THE PERIOD FROM 01-08-2026 TO 31-08-2026
+Date
+Scheme Details
+Transaction Description
+Debit /CreditFlag
+Amount (`)
+Nav (`)
+Units
+Opening Balance
+1,000.0000
+03-Aug-2026
+ICICI PENSION FUND SCHEME E- TIER I POP
+By Contribution forJuly,2026
+CR
+5,000.00
+50.0000
+100.0000
+Closing Balance
+1,100.0000
+Opening Balance
+200.0000
+03-Aug-2026
+NPS TRUST- A/C HDFC PENSIONFUND MANAGEMENT LIMITEDSCHEME C - TIER I POP
+By Contribution forJuly,2026
+CR
+1,000.00
+25.0000
+40.0000
+Closing Balance
+240.0000
+HOLDING STATEMENT AS ON 31-08-2026
+Scheme Name
+Fund Manager
+Number OfUnits
+NAV (`)
+ICICI PENSION FUND SCHEME E - TIER I POP
+ICICI PENSION FUND MANAGEMENTLIMITED
+1,100.0000
+51.0000
+NPS TRUST- A/C HDFC PENSION FUNDMANAGEMENT LIMITED SCHEME C - TIER IPOP
+HDFC PENSION FUND MANAGEMENTLIMITED
+240.0000
+25.5000
+Portfolio Value ` 62,220.00 as on 31-08-2026
+NPS INVESTMENT SUMMARY FOR Tier 1
+NPS Valuation
+5,97,800.98
+For any queries regarding NPS PRAN statement, please contact your respective NPS-SP.
+";
+        let (_, rows) = parse_cdsl_cas(sample);
+        let summary: Vec<Vec<&str>> = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r[0].as_str(),
+                    r[1].as_str(),
+                    r[2].as_str(),
+                    r[4].as_str(),
+                    r[5].as_str(),
+                    r[6].as_str(),
+                    r[7].as_str(),
+                ]
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                vec![
+                    "03-Aug-2026",
+                    LABEL_BUY,
+                    "ICICI PENSION FUND SCHEME E - TIER I",
+                    "100",
+                    "50",
+                    "5000",
+                    NPS_ACCOUNT
+                ],
+                vec![
+                    "03-Aug-2026",
+                    LABEL_BUY,
+                    "HDFC PENSION FUND SCHEME C - TIER I",
+                    "40",
+                    "25",
+                    "1000",
+                    NPS_ACCOUNT
+                ],
+                vec![
+                    "31-08-2026",
+                    HOLDING_BALANCE,
+                    "ICICI PENSION FUND SCHEME E - TIER I",
+                    "1100",
+                    "51",
+                    "56100",
+                    NPS_ACCOUNT
+                ],
+                vec![
+                    "31-08-2026",
+                    HOLDING_BALANCE,
+                    "HDFC PENSION FUND SCHEME C - TIER I",
+                    "240",
+                    "25.5",
+                    "6120",
+                    NPS_ACCOUNT
+                ],
+            ]
+        );
+        assert_eq!(rows[0][10], "By Contribution forJuly,2026");
+        assert!(rows.iter().all(|r| r[3].is_empty()));
     }
 
     #[test]

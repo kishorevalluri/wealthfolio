@@ -65,6 +65,8 @@ export interface DraftActivity {
   accountId: string;
   comment?: string;
   subtype?: string;
+  /** Pairs the two rows of a conversion (ADJUSTMENT CONVERSION_OUT / CONVERSION_IN). */
+  sourceGroupId?: string;
   fxRate?: string | null;
   /** Whether a transfer or credit crosses the tracked-account boundary. */
   isExternal?: boolean;
@@ -630,6 +632,7 @@ export function ImportProvider({ children, initialAccountId }: ImportProviderPro
                 comment: draft.comment,
                 fxRate: draft.fxRate,
                 subtype: draft.subtype,
+                sourceGroupId: draft.sourceGroupId,
               }) satisfies Partial<ActivityImport>,
           ) as ActivityImport[];
 

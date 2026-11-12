@@ -770,7 +770,7 @@ export function createDraftActivities(
         undefined)
       : undefined;
 
-  return parsedRows.flatMap((row, rowIndex): DraftActivity[] => {
+  const drafts = parsedRows.flatMap((row, rowIndex): DraftActivity[] => {
     // Rows skipped in the mapping step are left out, keeping later rows' indexes
     if (skippedRows.has(rowIndex)) return [];
 
@@ -986,6 +986,122 @@ export function createDraftActivities(
       } as DraftActivity,
     ];
   });
+  return pairCorporateActionConversions(
+    drafts,
+    (draft) => getColumnValue(draft.rawRow, ImportFormat.ACTIVITY_TYPE),
+    accountTypeById,
+  );
+}
+
+/** Labels the CDSL e-CAS parser writes for corporate-action demat movements. */
+export const CORPORATE_ACTION_CREDIT_LABEL = "CORPORATE ACTION CREDIT";
+export const CORPORATE_ACTION_DEBIT_LABEL = "CORPORATE ACTION DEBIT";
+
+/** Issuer part of an Indian ISIN (country, issuer type and issuer code). */
+function indianIssuerCode(isin: string | undefined): string | undefined {
+  const value = isin?.trim().toUpperCase();
+  return value && /^IN[A-Z0-9]{10}$/.test(value) ? value.slice(0, 7) : undefined;
+}
+
+/**
+ * A depository statement shows a split, consolidation, face-value change or
+ * merger that changes the ISIN as a debit of the old ISIN and a credit of the
+ * new one, with no price. Imported as two unrelated rows they lose the
+ * purchase cost and date, so each debit and credit that belong together
+ * become one conversion (two ADJUSTMENT rows, CONVERSION_OUT and
+ * CONVERSION_IN, sharing a group id), which carries cost and date to the new
+ * ISIN.
+ *
+ * Rows pair only within one account and day, for different ISINs. A debit
+ * and a credit of the same issuer pair first; if exactly one debit and one
+ * credit are then left, they pair too (a merger into another company). Rows
+ * the user mapped to a type, and anything left over (a bonus, a buyback or
+ * redemption debit, a demerger credit), stay as they are.
+ */
+export function pairCorporateActionConversions(
+  drafts: DraftActivity[],
+  rawTypeOf: (draft: DraftActivity) => string | undefined,
+  accountTypeById?: Map<string, string>,
+): DraftActivity[] {
+  const label = (draft: DraftActivity) => rawTypeOf(draft)?.trim().toUpperCase();
+  const groups = new Map<string, { debits: number[]; credits: number[] }>();
+  drafts.forEach((draft, index) => {
+    if (draft.activityType || draft.status === "skipped" || !draft.isin) return;
+    const kind = label(draft);
+    if (kind !== CORPORATE_ACTION_DEBIT_LABEL && kind !== CORPORATE_ACTION_CREDIT_LABEL) return;
+    if (!hasPositiveValue(draft.quantity)) return;
+    const key = `${draft.accountId}|${String(draft.activityDate)}`;
+    const group = groups.get(key) ?? { debits: [], credits: [] };
+    (kind === CORPORATE_ACTION_DEBIT_LABEL ? group.debits : group.credits).push(index);
+    groups.set(key, group);
+  });
+
+  const pairs: [number, number][] = [];
+  for (const { debits, credits } of groups.values()) {
+    const isinOf = (index: number) => drafts[index].isin!.trim().toUpperCase();
+    const openDebits = [...debits];
+    const openCredits = [...credits];
+    for (const debit of debits) {
+      const issuer = indianIssuerCode(drafts[debit].isin);
+      if (!issuer) continue;
+      const sameIssuer = openCredits.filter(
+        (credit) =>
+          indianIssuerCode(drafts[credit].isin) === issuer && isinOf(credit) !== isinOf(debit),
+      );
+      const debitsOfIssuer = openDebits.filter(
+        (other) => indianIssuerCode(drafts[other].isin) === issuer,
+      );
+      if (sameIssuer.length !== 1 || debitsOfIssuer.length !== 1) continue;
+      pairs.push([debit, sameIssuer[0]]);
+      openDebits.splice(openDebits.indexOf(debit), 1);
+      openCredits.splice(openCredits.indexOf(sameIssuer[0]), 1);
+    }
+    if (
+      openDebits.length === 1 &&
+      openCredits.length === 1 &&
+      isinOf(openDebits[0]) !== isinOf(openCredits[0])
+    ) {
+      pairs.push([openDebits[0], openCredits[0]]);
+    }
+  }
+  if (pairs.length === 0) return drafts;
+
+  const result = [...drafts];
+  for (const [debit, credit] of pairs) {
+    const leaving = drafts[debit];
+    const arriving = drafts[credit];
+    const groupId = [
+      "cas-ca",
+      leaving.accountId,
+      String(leaving.activityDate).slice(0, 10),
+      leaving.isin!.trim().toUpperCase(),
+      arriving.isin!.trim().toUpperCase(),
+    ].join(":");
+    for (const [index, subtype] of [
+      [debit, ACTIVITY_SUBTYPES.CONVERSION_OUT],
+      [credit, ACTIVITY_SUBTYPES.CONVERSION_IN],
+    ] as const) {
+      const draft: Partial<DraftActivity> = {
+        ...drafts[index],
+        activityType: ActivityType.ADJUSTMENT,
+        subtype,
+        sourceGroupId: groupId,
+        unitPrice: undefined,
+        amount: undefined,
+        fee: undefined,
+        tax: undefined,
+      };
+      const validation = validateDraft(draft, accountTypeById);
+      result[index] = {
+        ...draft,
+        status: validation.status,
+        errors: validation.errors,
+        localErrorMessages: validation.localErrorMessages,
+        warnings: validation.warnings,
+      } as DraftActivity;
+    }
+  }
+  return result;
 }
 
 export function draftToActivityImport(draft: DraftActivity): ActivityImport {
@@ -1025,6 +1141,7 @@ export function draftToActivityImport(draft: DraftActivity): ActivityImport {
     lineNumber: draft.rowIndex + 1,
     isDraft: false,
     comment: draft.comment,
+    sourceGroupId: draft.sourceGroupId,
     forceImport: draft.forceImport ?? false,
     isExternal: isTransfer || isCredit ? draft.isExternal : undefined,
   };
