@@ -320,7 +320,7 @@
     "indian_tax_type_auto": "Automatico",
     "indian_tax_type_hint": "Come vengono tassate in India le plusvalenze su questo titolo. Automatico lo deduce dal tipo di titolo e tratta ogni fondo come azionario, quindi impostalo per fondi obbligazionari, oro e internazionali.",
     "fmv_2018": "Prezzo al 31 gen 2018",
-    "fmv_2018_hint": "Prezzo massimo (o NAV per i fondi) per unità al 31 gen 2018. Serve alla salvaguardia delle unità acquistate prima del 1 feb 2018.",
+    "fmv_2018_hint": "Prezzo massimo (o NAV per i fondi) per unità al 31 gen 2018, rettificato per frazionamenti o fusioni successivi (metà del prezzo dopo un frazionamento 2 per 1). Serve alla salvaguardia delle unità acquistate prima del 1 feb 2018.",
     "indianTaxTypes": {
       "equity_listed": "Azioni quotate",
       "equity_mf": "Fondo azionario o ETF",

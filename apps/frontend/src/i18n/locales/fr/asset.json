@@ -320,7 +320,7 @@
     "indian_tax_type_auto": "Automatique",
     "indian_tax_type_hint": "Mode d'imposition en Inde des plus-values sur cet actif. Automatique le déduit du type d'actif et traite chaque fonds comme un fonds actions : indiquez-le pour les fonds obligataires, or et internationaux.",
     "fmv_2018": "Cours au 31 janv. 2018",
-    "fmv_2018_hint": "Cours le plus haut (ou VL pour les fonds) par part au 31 janv. 2018. Sert à la clause d'antériorité des parts achetées avant le 1er févr. 2018.",
+    "fmv_2018_hint": "Cours le plus haut (ou VL pour les fonds) par part au 31 janv. 2018, ajusté de toute division ou fusion ultérieure (la moitié du cours après une division 2 pour 1). Sert à la clause d'antériorité des parts achetées avant le 1er févr. 2018.",
     "indianTaxTypes": {
       "equity_listed": "Actions cotées",
       "equity_mf": "Fonds actions ou ETF",

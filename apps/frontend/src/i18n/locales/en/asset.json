@@ -320,7 +320,7 @@
     "indian_tax_type_auto": "Automatic",
     "indian_tax_type_hint": "How gains on this asset are taxed in India. Automatic guesses from the asset type and treats every fund as an equity fund, so set it for debt, gold and international funds.",
     "fmv_2018": "Price on 31 Jan 2018",
-    "fmv_2018_hint": "Highest price (or NAV for funds) on 31 Jan 2018 per unit. Used to grandfather units bought before 1 Feb 2018.",
+    "fmv_2018_hint": "Highest price (or NAV for funds) on 31 Jan 2018 per unit, restated for any split or merger since then (half the price after a 2-for-1 split). Used to grandfather units bought before 1 Feb 2018.",
     "indianTaxTypes": {
       "equity_listed": "Listed shares",
       "equity_mf": "Equity fund or ETF",

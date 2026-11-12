@@ -320,7 +320,7 @@
     "indian_tax_type_auto": "Automático",
     "indian_tax_type_hint": "Como os ganhos deste ativo são tributados na Índia. Automático deduz pelo tipo de ativo e trata todo fundo como fundo de ações, por isso defina-o para fundos de renda fixa, ouro e internacionais.",
     "fmv_2018": "Preço em 31 jan 2018",
-    "fmv_2018_hint": "Preço máximo (ou NAV para fundos) por unidade em 31 jan 2018. Usado na regra de anterioridade para unidades compradas antes de 1 fev 2018.",
+    "fmv_2018_hint": "Preço máximo (ou NAV para fundos) por unidade em 31 jan 2018, ajustado por qualquer desdobramento ou fusão posterior (metade do preço após um desdobramento de 2 por 1). Usado na regra de anterioridade para unidades compradas antes de 1 fev 2018.",
     "indianTaxTypes": {
       "equity_listed": "Ações listadas",
       "equity_mf": "Fundo de ações ou ETF",
