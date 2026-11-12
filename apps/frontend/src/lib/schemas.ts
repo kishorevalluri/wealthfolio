@@ -231,6 +231,8 @@ export const importActivitySchema = z
     comment: z.string().optional(),
     fxRate: decimalLikeSchema.nullable().optional(),
     subtype: z.string().optional(),
+    /** Pairs the two rows of a conversion (ADJUSTMENT CONVERSION_OUT / CONVERSION_IN). */
+    sourceGroupId: z.string().optional(),
     forceImport: z.boolean().default(false),
     /** Whether a transfer or credit crosses the tracked-account boundary.
      * Persisted as `metadata.flow.is_external` on the activity. */
