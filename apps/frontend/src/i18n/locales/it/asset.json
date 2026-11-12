@@ -318,14 +318,16 @@
     "indian_tax_section": "Fisco indiano",
     "indian_tax_type": "Tipo fiscale indiano",
     "indian_tax_type_auto": "Automatico",
-    "indian_tax_type_hint": "Come vengono tassate in India le plusvalenze su questo titolo. Automatico lo deduce dal tipo di titolo e tratta ogni fondo come azionario, quindi impostalo per fondi obbligazionari, oro e internazionali.",
+    "indian_tax_type_hint": "Come sono tassate in India le plusvalenze su questo titolo. Automatico lo deduce dal tipo di titolo e dal nome del fondo, quindi controllalo per ogni fondo.",
     "fmv_2018": "Prezzo al 31 gen 2018",
     "fmv_2018_hint": "Prezzo massimo (o NAV per i fondi) per unità al 31 gen 2018, rettificato per frazionamenti o fusioni successivi (metà del prezzo dopo un frazionamento 2 per 1). Serve alla salvaguardia delle unità acquistate prima del 1 feb 2018.",
     "indianTaxTypes": {
       "equity_listed": "Azioni quotate",
       "equity_mf": "Fondo azionario o ETF",
       "reit_invit": "REIT o InvIT",
-      "debt_mf": "Fondo obbligazionario, oro o altro",
+      "debt_mf": "Fondo obbligazionario (oltre il 65% in obbligazioni)",
+      "non_equity_etf": "ETF oro, argento o internazionale",
+      "non_equity_fund": "Fondo di fondi oro, internazionale o altro",
       "unlisted_debenture_post_2024": "Obbligazione non quotata",
       "gold_sgb": "Oro o Sovereign Gold Bond",
       "other_capital_asset": "Altro bene"

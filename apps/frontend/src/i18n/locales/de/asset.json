@@ -318,14 +318,16 @@
     "indian_tax_section": "Indische Steuer",
     "indian_tax_type": "Indische Steuerart",
     "indian_tax_type_auto": "Automatisch",
-    "indian_tax_type_hint": "Wie Gewinne aus diesem Wert in Indien besteuert werden. Automatisch leitet die Art aus dem Wertpapiertyp ab und behandelt jeden Fonds als Aktienfonds. Lege sie daher für Renten-, Gold- und internationale Fonds fest.",
+    "indian_tax_type_hint": "Wie Gewinne aus diesem Wert in Indien besteuert werden. Automatisch schätzt anhand des Werttyps und des Fondsnamens, prüfen Sie es daher bei jedem Fonds.",
     "fmv_2018": "Kurs am 31.01.2018",
     "fmv_2018_hint": "Höchstkurs (bei Fonds der NAV) je Einheit am 31.01.2018, umgerechnet auf spätere Splits oder Fusionen (nach einem Split 2:1 der halbe Kurs). Dient dem Bestandsschutz für Einheiten, die vor dem 01.02.2018 gekauft wurden.",
     "indianTaxTypes": {
       "equity_listed": "Börsennotierte Aktien",
       "equity_mf": "Aktienfonds oder ETF",
       "reit_invit": "REIT oder InvIT",
-      "debt_mf": "Renten-, Gold- oder sonstiger Fonds",
+      "debt_mf": "Rentenfonds (über 65 % Anleihen)",
+      "non_equity_etf": "Gold-, Silber- oder internationaler ETF",
+      "non_equity_fund": "Gold-, internationaler oder sonstiger Dachfonds",
       "unlisted_debenture_post_2024": "Nicht börsennotierte Anleihe",
       "gold_sgb": "Gold oder Sovereign Gold Bond",
       "other_capital_asset": "Sonstiger Vermögenswert"

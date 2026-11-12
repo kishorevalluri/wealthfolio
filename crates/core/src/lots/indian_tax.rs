@@ -27,12 +27,22 @@ pub enum IndianAssetTaxClassification {
     EquityMf,
     /// Units of listed business trusts (REITs and InvITs).
     ReitInvIt,
-    /// Mutual funds that are not equity-oriented (debt, gold, international,
-    /// most FoFs). Units bought on or after 1 Apr 2023 fall under Section 50AA:
-    /// any gain is short-term and taxed at slab rate. Older units follow the
-    /// general capital-asset rules.
+    /// Debt funds: more than 65% in debt and money market instruments (the
+    /// "specified mutual fund" of Section 50AA from 1 Apr 2025; before that,
+    /// any fund with 35% or less in Indian equity). Units bought on or after
+    /// 1 Apr 2023 fall under Section 50AA: any gain is short-term and taxed at
+    /// slab rate. Older units follow the general capital-asset rules.
     #[serde(alias = "debt_mf_post_2023")]
     DebtMf,
+    /// Listed non-equity, non-debt fund units: gold, silver and international
+    /// ETFs. Units bought from 1 Apr 2023 and sold before 1 Apr 2025 fall under
+    /// Section 50AA. Otherwise they are listed securities: long-term after 12
+    /// months for sales from 23 Jul 2024 (36 months before).
+    NonEquityEtf,
+    /// Unlisted non-equity, non-debt fund units: gold, international and other
+    /// fund-of-funds. As [`Self::NonEquityEtf`], but long-term after 24 months
+    /// for sales from 23 Jul 2024.
+    NonEquityFund,
     /// Unlisted bonds and debentures. Under Section 50AA, transfers on or after
     /// 23 Jul 2024 are short-term at slab rate whatever the holding period.
     UnlistedDebenturePost2024,
@@ -87,6 +97,13 @@ fn sec_112a_start() -> NaiveDate {
 /// 1 Apr 2023: Section 50AA starts applying to non-equity mutual funds.
 fn sec_50aa_mf_start() -> NaiveDate {
     NaiveDate::from_ymd_opt(2023, 4, 1).expect("hard-coded date is valid")
+}
+
+/// From 1 Apr 2025 (assessment year 2026-27) a "specified mutual fund" under
+/// Section 50AA is one with more than 65% in debt, so gold, international and
+/// other non-equity funds leave it (Finance (No. 2) Act 2024).
+fn sec_50aa_specified_mf_narrowed() -> NaiveDate {
+    NaiveDate::from_ymd_opt(2025, 4, 1).expect("hard-coded date is valid")
 }
 
 /// Financial year (start year) that contains `date`: April to March.
@@ -238,6 +255,11 @@ fn is_sec_50aa(
 ) -> bool {
     match classification {
         IndianAssetTaxClassification::DebtMf => acquisition_date >= sec_50aa_mf_start(),
+        IndianAssetTaxClassification::NonEquityEtf
+        | IndianAssetTaxClassification::NonEquityFund => {
+            acquisition_date >= sec_50aa_mf_start()
+                && disposal_date < sec_50aa_specified_mf_narrowed()
+        }
         IndianAssetTaxClassification::UnlistedDebenturePost2024 => {
             disposal_date >= budget_2024_date()
         }
@@ -265,7 +287,15 @@ pub fn determine_holding_period_category(
                 36
             }
         }
+        IndianAssetTaxClassification::NonEquityEtf => {
+            if post_budget {
+                12
+            } else {
+                36
+            }
+        }
         IndianAssetTaxClassification::DebtMf
+        | IndianAssetTaxClassification::NonEquityFund
         | IndianAssetTaxClassification::UnlistedDebenturePost2024
         | IndianAssetTaxClassification::OtherCapitalAsset
         | IndianAssetTaxClassification::GoldSgb => {
@@ -941,6 +971,50 @@ pub fn calculate_indian_capital_gains(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn gold_and_international_funds_leave_section_50aa_from_april_2025() {
+        use IndianAssetTaxClassification::*;
+        let d = |y, m, day| NaiveDate::from_ymd_opt(y, m, day).unwrap();
+        // Bought after 1 Apr 2023, sold before 1 Apr 2025: Section 50AA.
+        assert_eq!(
+            determine_tax_section(d(2023, 6, 1), d(2025, 3, 31), NonEquityEtf),
+            IndianTaxSection::Sec50aa
+        );
+        // Sold from 1 Apr 2025: a listed ETF is long-term after 12 months.
+        assert_eq!(
+            determine_tax_section(d(2023, 6, 1), d(2025, 4, 1), NonEquityEtf),
+            IndianTaxSection::Sec112
+        );
+        assert_eq!(
+            determine_tax_section(d(2024, 9, 1), d(2025, 6, 1), NonEquityEtf),
+            IndianTaxSection::SlabStcg
+        );
+        // An unlisted fund of funds needs 24 months.
+        assert_eq!(
+            determine_tax_section(d(2023, 4, 15), d(2025, 5, 1), NonEquityFund),
+            IndianTaxSection::Sec112
+        );
+        assert_eq!(
+            determine_tax_section(d(2024, 6, 1), d(2025, 5, 1), NonEquityFund),
+            IndianTaxSection::SlabStcg
+        );
+        // A debt fund stays in Section 50AA.
+        assert_eq!(
+            determine_tax_section(d(2023, 6, 1), d(2026, 5, 1), DebtMf),
+            IndianTaxSection::Sec50aa
+        );
+        // Bought before 1 Apr 2023 and sold before 23 Jul 2024: 36 months.
+        assert_eq!(
+            determine_tax_section(d(2021, 6, 1), d(2024, 5, 1), NonEquityEtf),
+            IndianTaxSection::SlabStcg
+        );
+        assert_eq!(
+            determine_tax_section(d(2021, 1, 1), d(2024, 5, 1), NonEquityEtf),
+            IndianTaxSection::Sec112
+        );
+    }
+
     use super::*;
     use rust_decimal_macros::dec;
 

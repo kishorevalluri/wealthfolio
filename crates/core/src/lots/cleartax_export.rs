@@ -39,7 +39,11 @@ pub fn cleartax_sheet(calc: &IndianCapitalGainCalculation) -> Option<ClearTaxShe
             Some(ClearTaxSheet::Shares)
         }
         IndianAssetTaxClassification::EquityMf => Some(ClearTaxSheet::MutualFund { equity: true }),
-        IndianAssetTaxClassification::DebtMf => Some(ClearTaxSheet::MutualFund { equity: false }),
+        IndianAssetTaxClassification::DebtMf
+        | IndianAssetTaxClassification::NonEquityEtf
+        | IndianAssetTaxClassification::NonEquityFund => {
+            Some(ClearTaxSheet::MutualFund { equity: false })
+        }
         IndianAssetTaxClassification::UnlistedDebenturePost2024
         | IndianAssetTaxClassification::OtherCapitalAsset
         | IndianAssetTaxClassification::GoldSgb => None,

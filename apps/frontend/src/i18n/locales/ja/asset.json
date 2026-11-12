@@ -318,14 +318,16 @@
     "indian_tax_section": "インドの税金",
     "indian_tax_type": "インドの課税区分",
     "indian_tax_type_auto": "自動",
-    "indian_tax_type_hint": "この資産の譲渡益がインドでどう課税されるか。自動では資産タイプから推定し、すべてのファンドを株式ファンドとして扱うため、債券・金・海外ファンドは設定してください。",
+    "indian_tax_type_hint": "この資産の利益がインドでどのように課税されるか。自動では資産の種類とファンド名から推定するため、ファンドごとに確認してください。",
     "fmv_2018": "2018年1月31日の価格",
     "fmv_2018_hint": "2018年1月31日の1単位あたり最高値（ファンドは基準価額）。その後の株式分割や合併を反映した値を入力します（1対2の分割後は半額）。2018年2月1日より前に購入した単位の経過措置に使います。",
     "indianTaxTypes": {
       "equity_listed": "上場株式",
       "equity_mf": "株式ファンドまたはETF",
       "reit_invit": "REITまたはInvIT",
-      "debt_mf": "債券・金・その他のファンド",
+      "debt_mf": "債券ファンド（債券65%超）",
+      "non_equity_etf": "金・銀・海外ETF",
+      "non_equity_fund": "金・海外などのファンド・オブ・ファンズ",
       "unlisted_debenture_post_2024": "非上場社債",
       "gold_sgb": "金またはソブリン金債",
       "other_capital_asset": "その他の資産"
