@@ -29,6 +29,8 @@ pub fn explicit_tax_classification(asset: &Asset) -> Option<IndianAssetTaxClassi
         "debt_mf" | "debtmf" | "debt_mf_post_2023" | "debtmfpost2023" => {
             Some(IndianAssetTaxClassification::DebtMf)
         }
+        "non_equity_etf" | "nonequityetf" => Some(IndianAssetTaxClassification::NonEquityEtf),
+        "non_equity_fund" | "nonequityfund" => Some(IndianAssetTaxClassification::NonEquityFund),
         "unlisted_debenture_post_2024" | "unlisteddebenturepost2024" => {
             Some(IndianAssetTaxClassification::UnlistedDebenturePost2024)
         }
@@ -59,7 +61,9 @@ pub fn classify_asset_for_indian_tax(asset: &Asset) -> IndianAssetTaxClassificat
                 .to_lowercase();
             let mic = asset.instrument_exchange_mic.as_deref().unwrap_or("");
 
-            if name_lower.contains("reit")
+            if name_lower.contains("sovereign gold bond") || has_word(&name_lower, "sgb") {
+                IndianAssetTaxClassification::GoldSgb
+            } else if name_lower.contains("reit")
                 || name_lower.contains("invit")
                 || symbol_lower.contains("reit")
                 || symbol_lower.contains("invit")
@@ -70,8 +74,9 @@ pub fn classify_asset_for_indian_tax(asset: &Asset) -> IndianAssetTaxClassificat
                 || name_lower.contains("fund")
                 || name_lower.contains("mutual")
                 || name_lower.contains("etf")
+                || name_lower.contains("bees")
             {
-                IndianAssetTaxClassification::EquityMf
+                guess_fund_classification(&name_lower)
             } else {
                 IndianAssetTaxClassification::EquityListed
             }
@@ -79,6 +84,68 @@ pub fn classify_asset_for_indian_tax(asset: &Asset) -> IndianAssetTaxClassificat
         Some(InstrumentType::Metal) => IndianAssetTaxClassification::GoldSgb,
         Some(InstrumentType::Bond) => IndianAssetTaxClassification::OtherCapitalAsset,
         _ => IndianAssetTaxClassification::OtherCapitalAsset,
+    }
+}
+
+/// Words in a fund's name that mark it as a debt fund.
+const DEBT_FUND_WORDS: [&str; 14] = [
+    "liquid",
+    "1d rate",
+    "overnight",
+    "money market",
+    "bharat bond",
+    "gilt",
+    "g-sec",
+    "gsec",
+    "sdl",
+    "debt",
+    "bond",
+    "short term",
+    "short duration",
+    "ultra short",
+];
+
+/// Words in a fund's name that mark it as a gold, silver or international fund.
+const NON_EQUITY_FUND_WORDS: [&str; 14] = [
+    "gold",
+    "silver",
+    "nasdaq",
+    "s&p",
+    "hang seng",
+    "msci",
+    "nyse",
+    "fang",
+    "international",
+    "overseas",
+    "feeder",
+    "u.s.",
+    "japan",
+    "taiwan",
+];
+
+fn has_word(name: &str, word: &str) -> bool {
+    name.match_indices(word).any(|(at, _)| {
+        let before = name[..at].chars().next_back();
+        let after = name[at + word.len()..].chars().next();
+        !before.is_some_and(|c| c.is_alphanumeric()) && !after.is_some_and(|c| c.is_alphanumeric())
+    })
+}
+
+/// A fund's tax type guessed from its name (lower case): debt, gold or
+/// international (listed when an ETF), else equity. Only a guess, so the tax
+/// summary asks for it to be checked.
+fn guess_fund_classification(name: &str) -> IndianAssetTaxClassification {
+    let listed = has_word(name, "etf") || name.contains("bees");
+    if NON_EQUITY_FUND_WORDS.iter().any(|w| has_word(name, w)) {
+        if listed {
+            IndianAssetTaxClassification::NonEquityEtf
+        } else {
+            IndianAssetTaxClassification::NonEquityFund
+        }
+    } else if DEBT_FUND_WORDS.iter().any(|w| has_word(name, w)) {
+        IndianAssetTaxClassification::DebtMf
+    } else {
+        IndianAssetTaxClassification::EquityMf
     }
 }
 
@@ -337,14 +404,23 @@ pub async fn compute_indian_tax_summary(
         .iter()
         .filter(|a| sold.contains(a.id.as_str()))
         .filter(|a| explicit_tax_classification(a).is_none())
-        .filter(|a| classify_asset_for_indian_tax(a) == IndianAssetTaxClassification::EquityMf)
-        .map(|a| a.name.clone().unwrap_or_else(|| a.id.clone()))
+        .filter_map(|a| {
+            let kind = match classify_asset_for_indian_tax(a) {
+                IndianAssetTaxClassification::EquityMf => "equity fund",
+                IndianAssetTaxClassification::DebtMf => "debt fund",
+                IndianAssetTaxClassification::NonEquityEtf => "gold or international ETF",
+                IndianAssetTaxClassification::NonEquityFund => "gold or international fund",
+                _ => return None,
+            };
+            let name = a.name.clone().unwrap_or_else(|| a.id.clone());
+            Some(format!("{name} ({kind})"))
+        })
         .collect();
     guessed.sort();
     if !guessed.is_empty() {
         summary.warnings.push(format!(
-            "The tax type of {} was guessed as equity fund. If any is a debt, gold or \
-             international fund, set its Indian tax type on the asset's page.",
+            "The tax type of these funds was guessed from their names: {}. If any is \
+             wrong, set its Indian tax type on the asset's page.",
             guessed.join(", ")
         ));
     }
@@ -415,6 +491,46 @@ mod tests {
             classify_asset_for_indian_tax(&equity_asset),
             IndianAssetTaxClassification::DebtMf
         );
+    }
+
+    #[test]
+    fn funds_are_guessed_from_their_names() {
+        let guess = |name: &str, mic: &str| {
+            let asset = Asset {
+                name: Some(name.to_string()),
+                instrument_type: Some(InstrumentType::Equity),
+                instrument_exchange_mic: Some(mic.to_string()),
+                ..Asset::default()
+            };
+            classify_asset_for_indian_tax(&asset)
+        };
+        use IndianAssetTaxClassification::*;
+        assert_eq!(guess("Nippon India ETF Gold BeES", "XNSE"), NonEquityEtf);
+        assert_eq!(guess("Motilal Oswal NASDAQ 100 ETF", "XNSE"), NonEquityEtf);
+        assert_eq!(
+            guess(
+                "Motilal Oswal Nasdaq 100 Fund of Fund - Direct Plan Growth",
+                "AMFI"
+            ),
+            NonEquityFund
+        );
+        assert_eq!(
+            guess("Nippon India ETF Nifty 1D Rate Liquid BeES", "XNSE"),
+            DebtMf
+        );
+        assert_eq!(guess("Bharat Bond ETF - April 2030", "XNSE"), DebtMf);
+        assert_eq!(
+            guess("Axis Short Term Fund - Direct Growth", "AMFI"),
+            DebtMf
+        );
+        assert_eq!(guess("SBI Nifty 50 ETF", "XNSE"), EquityMf);
+        assert_eq!(guess("Goldman Sachs India Equity Fund", "AMFI"), EquityMf);
+        assert_eq!(
+            guess("Capitalmind Flexi Cap Fund - Direct", "AMFI"),
+            EquityMf
+        );
+        assert_eq!(guess("Sovereign Gold Bond 2.50% Aug 2028", "XNSE"), GoldSgb);
+        assert_eq!(guess("Reliance Industries", "XNSE"), EquityListed);
     }
 
     #[test]

@@ -453,6 +453,13 @@ export function mapSymbol(
 /**
  * Validate a draft activity and return errors/warnings
  */
+/** A price written as zero, as opposed to a missing one. */
+function isExplicitZero(value: string | null | undefined): boolean {
+  if (value == null || String(value).trim() === "") return false;
+  const n = Number(value);
+  return Number.isFinite(n) && n === 0;
+}
+
 export function validateDraft(
   draft: Partial<DraftActivity>,
   accountTypeById?: Map<string, string>,
@@ -526,7 +533,10 @@ export function validateDraft(
     if (!hasPositiveValue(draft.quantity)) {
       errors.quantity = [localMessage("activity:validation.quantity_must_be_greater_than_0")];
     }
-    if (!hasPositiveValue(draft.unitPrice)) {
+    // A buy at an explicit price of 0 is shares received free, such as
+    // Indian bonus shares (cost 0, acquired on the allotment date).
+    const freeBuy = activityType === ActivityType.BUY && isExplicitZero(draft.unitPrice);
+    if (!hasPositiveValue(draft.unitPrice) && !freeBuy) {
       errors.unitPrice = [localMessage("activity:validation.unit_price_must_be_greater_than_0")];
     }
   }
@@ -959,7 +969,15 @@ export function createDraftActivities(
           : undefined,
       quantity: resolved.quantity,
       unitPrice,
-      amount: resolved.amount,
+      // A free buy (bonus shares) has a total of 0; without it the import
+      // would hold the row back for review as having no total.
+      amount:
+        activityType === ActivityType.BUY &&
+        isExplicitZero(unitPrice) &&
+        hasPositiveValue(resolved.quantity) &&
+        (resolved.amount == null || resolved.amount === "")
+          ? "0"
+          : resolved.amount,
       currency,
       currencySource,
       fee,

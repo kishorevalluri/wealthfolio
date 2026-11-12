@@ -318,14 +318,16 @@
     "indian_tax_section": "Imposto indiano",
     "indian_tax_type": "Tipo fiscal indiano",
     "indian_tax_type_auto": "Automático",
-    "indian_tax_type_hint": "Como os ganhos deste ativo são tributados na Índia. Automático deduz pelo tipo de ativo e trata todo fundo como fundo de ações, por isso defina-o para fundos de renda fixa, ouro e internacionais.",
+    "indian_tax_type_hint": "Como os ganhos deste ativo são tributados na Índia. Automático deduz pelo tipo de ativo e pelo nome do fundo, por isso confira em cada fundo.",
     "fmv_2018": "Preço em 31 jan 2018",
     "fmv_2018_hint": "Preço máximo (ou NAV para fundos) por unidade em 31 jan 2018. Usado na regra de anterioridade para unidades compradas antes de 1 fev 2018.",
     "indianTaxTypes": {
       "equity_listed": "Ações listadas",
       "equity_mf": "Fundo de ações ou ETF",
       "reit_invit": "REIT ou InvIT",
-      "debt_mf": "Fundo de renda fixa, ouro ou outro",
+      "debt_mf": "Fundo de renda fixa (mais de 65% em dívida)",
+      "non_equity_etf": "ETF de ouro, prata ou internacional",
+      "non_equity_fund": "Fundo de fundos de ouro, internacional ou outro",
       "unlisted_debenture_post_2024": "Debênture não listada",
       "gold_sgb": "Ouro ou Sovereign Gold Bond",
       "other_capital_asset": "Outro ativo"

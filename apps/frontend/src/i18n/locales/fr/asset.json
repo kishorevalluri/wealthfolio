@@ -318,14 +318,16 @@
     "indian_tax_section": "Fiscalité indienne",
     "indian_tax_type": "Type fiscal indien",
     "indian_tax_type_auto": "Automatique",
-    "indian_tax_type_hint": "Mode d'imposition en Inde des plus-values sur cet actif. Automatique le déduit du type d'actif et traite chaque fonds comme un fonds actions : indiquez-le pour les fonds obligataires, or et internationaux.",
+    "indian_tax_type_hint": "Mode d'imposition en Inde des plus-values sur cet actif. Automatique le déduit du type d'actif et du nom du fonds ; vérifiez-le pour chaque fonds.",
     "fmv_2018": "Cours au 31 janv. 2018",
     "fmv_2018_hint": "Cours le plus haut (ou VL pour les fonds) par part au 31 janv. 2018. Sert à la clause d'antériorité des parts achetées avant le 1er févr. 2018.",
     "indianTaxTypes": {
       "equity_listed": "Actions cotées",
       "equity_mf": "Fonds actions ou ETF",
       "reit_invit": "REIT ou InvIT",
-      "debt_mf": "Fonds obligataire, or ou autre",
+      "debt_mf": "Fonds obligataire (plus de 65 % en obligations)",
+      "non_equity_etf": "ETF or, argent ou international",
+      "non_equity_fund": "Fonds de fonds or, international ou autre",
       "unlisted_debenture_post_2024": "Obligation non cotée",
       "gold_sgb": "Or ou Sovereign Gold Bond",
       "other_capital_asset": "Autre actif"

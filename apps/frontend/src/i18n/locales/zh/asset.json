@@ -318,14 +318,16 @@
     "indian_tax_section": "印度税务",
     "indian_tax_type": "印度税务类型",
     "indian_tax_type_auto": "自动",
-    "indian_tax_type_hint": "此资产收益在印度的征税方式。自动会根据资产类型推断，并将所有基金视为股票基金，因此请为债券、黄金和海外基金手动设置。",
+    "indian_tax_type_hint": "此资产的收益在印度如何征税。自动模式会根据资产类型和基金名称推测，请逐一确认每只基金。",
     "fmv_2018": "2018年1月31日价格",
     "fmv_2018_hint": "2018年1月31日每单位最高价（基金为净值），用于2018年2月1日前买入单位的祖父条款。",
     "indianTaxTypes": {
       "equity_listed": "上市股票",
       "equity_mf": "股票基金或ETF",
       "reit_invit": "REIT或InvIT",
-      "debt_mf": "债券、黄金或其他基金",
+      "debt_mf": "债券基金（债券超过65%）",
+      "non_equity_etf": "黄金、白银或海外ETF",
+      "non_equity_fund": "黄金、海外或其他母基金",
       "unlisted_debenture_post_2024": "非上市债券",
       "gold_sgb": "黄金或主权黄金债券",
       "other_capital_asset": "其他资产"

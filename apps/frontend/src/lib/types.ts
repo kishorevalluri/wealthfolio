@@ -3108,6 +3108,8 @@ export type IndianAssetTaxClassification =
   | "equity_mf"
   | "reit_invit"
   | "debt_mf"
+  | "non_equity_etf"
+  | "non_equity_fund"
   | "unlisted_debenture_post_2024"
   | "other_capital_asset"
   | "gold_sgb";

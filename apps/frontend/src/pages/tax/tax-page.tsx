@@ -64,7 +64,11 @@ function classificationLabel(c: IndianAssetTaxClassification): string {
     case "reit_invit":
       return "REIT / InvIT";
     case "debt_mf":
-      return "Debt / Other MF";
+      return "Debt MF";
+    case "non_equity_etf":
+      return "Gold / Intl ETF";
+    case "non_equity_fund":
+      return "Gold / Intl FoF";
     case "unlisted_debenture_post_2024":
       return "Unlisted Deb (post-2024)";
     case "gold_sgb":
