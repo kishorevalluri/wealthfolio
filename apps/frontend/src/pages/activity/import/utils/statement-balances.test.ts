@@ -242,4 +242,31 @@ describe("findBalanceMismatches", () => {
     });
     expect(result).toEqual([]);
   });
+
+  it("counts both rows of a conversion (an ISIN change)", () => {
+    const result = findBalanceMismatches({
+      balances: [
+        { isin: "INE000000CC1", name: "OLD", account: "", quantity: 0, date: "2026-08-31" },
+        { isin: "INE000000CC9", name: "NEW", account: "", quantity: 50, date: "2026-08-31" },
+      ],
+      holdings: [],
+      laterActivities: [],
+      drafts: [
+        draft({ isin: "INE000000CC1", quantity: "10", activityType: "BUY" }),
+        draft({
+          isin: "INE000000CC1",
+          quantity: "10",
+          activityType: "ADJUSTMENT",
+          subtype: "CONVERSION_OUT",
+        }),
+        draft({
+          isin: "INE000000CC9",
+          quantity: "50",
+          activityType: "ADJUSTMENT",
+          subtype: "CONVERSION_IN",
+        }),
+      ],
+    });
+    expect(result).toEqual([]);
+  });
 });

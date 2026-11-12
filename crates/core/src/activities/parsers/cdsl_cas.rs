@@ -157,7 +157,10 @@ pub const MF_ACCOUNT: &str = "MF FOLIOS";
 /// Labels written to `Transaction Description`. The template maps the first
 /// five to activity types. The rest are left for the user to map or skip in
 /// the review step, because the statement doesn't say what they mean for cost
-/// (a bonus, split or merger, or an unknown credit or debit).
+/// (a bonus, split or merger, or an unknown credit or debit). The import
+/// wizard pairs a corporate-action debit and credit of different ISINs on one
+/// day into a conversion (`pairCorporateActionConversions` in the frontend),
+/// which carries cost and date to the new ISIN.
 pub const LABEL_BUY: &str = "BUY";
 pub const LABEL_SELL: &str = "SELL";
 pub const LABEL_TRANSFER_IN: &str = "TRANSFER IN";

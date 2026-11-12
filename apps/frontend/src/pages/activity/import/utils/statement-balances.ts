@@ -37,6 +37,7 @@ export interface HeldPosition {
 export interface LaterActivity {
   assetId?: string;
   activityType: string;
+  subtype?: string | null;
   quantity: string | number | null;
 }
 
@@ -50,7 +51,12 @@ function toNumber(value: string | number | null | undefined): number {
 }
 
 /** Sign of a row's effect on quantity, or 0 when it has none. */
-function quantitySign(activityType: string): number {
+function quantitySign(activityType: string, subtype?: string | null): number {
+  if (activityType === "ADJUSTMENT") {
+    // The two rows of a conversion (a split or merger with an ISIN change).
+    const kind = subtype?.trim().toUpperCase();
+    return kind === "CONVERSION_IN" ? 1 : kind === "CONVERSION_OUT" ? -1 : 0;
+  }
   switch (activityType) {
     case "BUY":
     case "TRANSFER_IN":
@@ -203,13 +209,13 @@ export function findBalanceMismatches({
 
   for (const a of laterActivities) {
     const isin = a.assetId ? isinByAsset.get(a.assetId) : undefined;
-    add(isin, -quantitySign(a.activityType) * Math.abs(toNumber(a.quantity)));
+    add(isin, -quantitySign(a.activityType, a.subtype) * Math.abs(toNumber(a.quantity)));
   }
   for (const d of drafts) {
     if (!willImport(d)) continue;
     const isin =
       d.isin?.trim().toUpperCase() || (d.assetId ? isinByAsset.get(d.assetId) : undefined);
-    add(isin, quantitySign(d.activityType) * Math.abs(toNumber(d.quantity)));
+    add(isin, quantitySign(d.activityType, d.subtype) * Math.abs(toNumber(d.quantity)));
   }
 
   return balances

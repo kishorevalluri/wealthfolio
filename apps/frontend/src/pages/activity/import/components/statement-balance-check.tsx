@@ -118,6 +118,7 @@ function AccountBalanceCheck({
       laterActivities: laterQuery.data.map((a) => ({
         assetId: a.assetId,
         activityType: a.activityType,
+        subtype: a.subtype,
         quantity: a.quantity,
       })),
       drafts,
