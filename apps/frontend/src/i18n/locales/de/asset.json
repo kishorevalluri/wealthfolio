@@ -320,7 +320,7 @@
     "indian_tax_type_auto": "Automatisch",
     "indian_tax_type_hint": "Wie Gewinne aus diesem Wert in Indien besteuert werden. Automatisch leitet die Art aus dem Wertpapiertyp ab und behandelt jeden Fonds als Aktienfonds. Lege sie daher für Renten-, Gold- und internationale Fonds fest.",
     "fmv_2018": "Kurs am 31.01.2018",
-    "fmv_2018_hint": "Höchstkurs (bei Fonds der NAV) je Einheit am 31.01.2018. Dient dem Bestandsschutz für Einheiten, die vor dem 01.02.2018 gekauft wurden.",
+    "fmv_2018_hint": "Höchstkurs (bei Fonds der NAV) je Einheit am 31.01.2018, umgerechnet auf spätere Splits oder Fusionen (nach einem Split 2:1 der halbe Kurs). Dient dem Bestandsschutz für Einheiten, die vor dem 01.02.2018 gekauft wurden.",
     "indianTaxTypes": {
       "equity_listed": "Börsennotierte Aktien",
       "equity_mf": "Aktienfonds oder ETF",

@@ -320,7 +320,7 @@
     "indian_tax_type_auto": "Automático",
     "indian_tax_type_hint": "Cómo tributan en India las ganancias de este activo. Automático lo deduce del tipo de activo y trata todo fondo como fondo de renta variable, así que indícalo en fondos de deuda, oro e internacionales.",
     "fmv_2018": "Precio el 31 ene 2018",
-    "fmv_2018_hint": "Precio máximo (o valor liquidativo en fondos) por unidad el 31 ene 2018. Se usa para la cláusula de anterioridad de unidades compradas antes del 1 feb 2018.",
+    "fmv_2018_hint": "Precio máximo (o valor liquidativo en fondos) por unidad el 31 ene 2018, ajustado por cualquier split o fusión posterior (la mitad del precio tras un split 2 por 1). Se usa para la cláusula de anterioridad de unidades compradas antes del 1 feb 2018.",
     "indianTaxTypes": {
       "equity_listed": "Acciones cotizadas",
       "equity_mf": "Fondo de renta variable o ETF",
