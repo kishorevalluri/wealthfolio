@@ -377,6 +377,18 @@ pub fn buyback_dividend_start() -> NaiveDate {
     NaiveDate::from_ymd_opt(2024, 10, 1).expect("valid date")
 }
 
+/// Buybacks from this date are an ordinary transfer again, taxed as capital
+/// gains on the price less cost (Finance Act 2026). Promoters pay extra tax on
+/// top, which is not modelled here.
+pub fn buyback_capital_gains_start() -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, 4, 1).expect("valid date")
+}
+
+/// Whether a buyback on `date` is a deemed dividend (Section 2(22)(f)).
+pub fn is_deemed_dividend_buyback(date: NaiveDate) -> bool {
+    date >= buyback_dividend_start() && date < buyback_capital_gains_start()
+}
+
 /// A share bought and sold on the same day: intraday trading, which Section
 /// 43(5) treats as a speculative business, not a capital gain. Its charges,
 /// STT included, are business expenses, so the profit is the cash in less the
@@ -605,9 +617,11 @@ pub fn calculate_indian_capital_gains(
         let proceeds: Decimal =
             d.proceeds_base.parse().unwrap_or(Decimal::ZERO) + charge.sale_fee + charge.sale_tax;
         let mut transfer_expenses = charge.sale_fee;
-        // A buyback's payment is a dividend (in Schedule OS), so the sale
-        // value is nil and the cost is a capital loss.
-        let proceeds = if charge.buyback {
+        // From 1 Oct 2024 to 31 Mar 2026 a buyback's payment is a dividend
+        // (in Schedule OS), so the sale value is nil and the cost is a
+        // capital loss. From 1 Apr 2026 it is an ordinary sale again.
+        let deemed_dividend = charge.buyback && is_deemed_dividend_buyback(disp_date);
+        let proceeds = if deemed_dividend {
             transfer_expenses = Decimal::ZERO;
             Decimal::ZERO
         } else {
@@ -900,15 +914,15 @@ pub fn calculate_indian_capital_gains(
             exempt_buybacks
         ));
     }
-    if summary
-        .calculations
-        .iter()
-        .any(|c| charges.get(&c.disposal_id).is_some_and(|ch| ch.buyback))
-    {
+    if summary.calculations.iter().any(|c| {
+        charges.get(&c.disposal_id).is_some_and(|ch| ch.buyback)
+            && is_deemed_dividend_buyback(c.disposal_date)
+    }) {
         summary.warnings.push(
-            "Buybacks from 1 Oct 2024 are shown with a nil sale value: the payment is a \
-             dividend under Section 2(22)(f), included in Income from Other Sources, and the \
-             shares' cost is a capital loss."
+            "Buybacks from 1 Oct 2024 to 31 Mar 2026 are shown with a nil sale value: the \
+             payment is a dividend under Section 2(22)(f), included in Income from Other \
+             Sources, and the shares' cost is a capital loss. From 1 Apr 2026 a buyback is \
+             taxed as an ordinary sale."
                 .to_string(),
         );
     }
@@ -1593,6 +1607,30 @@ mod tests {
         assert_eq!(calc.gross_gain, dec!(-80000));
         assert_eq!(summary.ltcl_carried_forward, dec!(80000));
         assert!(summary.warnings.iter().any(|w| w.contains("10(34A)")));
+    }
+
+    #[test]
+    fn buybacks_from_april_2026_are_ordinary_sales() {
+        let s = sale(
+            "eq",
+            EquityListed,
+            date(2025, 5, 1),
+            date(2026, 6, 1),
+            dec!(80000),
+            dec!(90000),
+        );
+        let charges = HashMap::from([(
+            "disp-0".to_string(),
+            IndianDisposalCharges {
+                buyback: true,
+                ..Default::default()
+            },
+        )]);
+        let summary = run_with_charges(&[s], &charges, 2026);
+        let calc = &summary.calculations[0];
+        assert_eq!(calc.proceeds, dec!(90000));
+        assert_eq!(calc.gross_gain, dec!(10000));
+        assert!(!summary.warnings.iter().any(|w| w.contains("2(22)(f)")));
     }
 
     #[test]

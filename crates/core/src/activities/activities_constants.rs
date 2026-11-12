@@ -280,8 +280,9 @@ pub const ACTIVITY_SUBTYPE_CONVERSION_OUT: &str = "CONVERSION_OUT";
 pub const ACTIVITY_SUBTYPE_CONVERSION_IN: &str = "CONVERSION_IN";
 
 /// Buyback: a SELL of shares back to the company that issued them. In India,
-/// from 1 Oct 2024 the whole payment is a deemed dividend (Section 2(22)(f))
-/// and the shares' cost becomes a capital loss.
+/// from 1 Oct 2024 to 31 Mar 2026 the whole payment is a deemed dividend
+/// (Section 2(22)(f)) and the shares' cost becomes a capital loss; from 1 Apr
+/// 2026 it is an ordinary sale again.
 pub const ACTIVITY_SUBTYPE_BUYBACK: &str = "BUYBACK";
 
 /// Position-opening trade intent.
