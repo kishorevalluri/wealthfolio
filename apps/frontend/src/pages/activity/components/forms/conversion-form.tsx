@@ -42,6 +42,10 @@ const units = (t: MsgFn) =>
  * A conversion: units of one asset leave and units of another arrive, in one
  * account on one day, keeping their cost (engine rules R7.5). Saved as two
  * ADJUSTMENT rows, CONVERSION_OUT and CONVERSION_IN.
+ *
+ * With a cost share it is a demerger (rules R7.6): the "from" units stay, and
+ * that percentage of their cost moves to the "to" units. Saved as SPIN_OFF_OUT
+ * (unit price = the share, 0 to 1) and SPIN_OFF_IN.
  */
 export const createConversionFormSchema = (t?: TFunction) =>
   z
@@ -75,6 +79,35 @@ export const createConversionFormSchema = (t?: TFunction) =>
       toSymbolInstrumentType: z.string().nullable().optional(),
       toAssetMetadata: assetMetadataSchema,
       toQuoteMode: z.enum([QuoteMode.MARKET, QuoteMode.MANUAL]).optional(),
+      // Empty for a conversion; a percentage between 0 and 100 for a demerger.
+      costMovedPercent: z.preprocess(
+        (value) => (value === "" || value === null ? undefined : value),
+        z.coerce
+          .number({
+            error: invalidTypeError(
+              msg(
+                t,
+                "activity:form.err_demerger_cost_share",
+                "Enter a percentage between 0 and 100.",
+              ),
+            ),
+          })
+          .gt(0, {
+            message: msg(
+              t,
+              "activity:form.err_demerger_cost_share",
+              "Enter a percentage between 0 and 100.",
+            ),
+          })
+          .lt(100, {
+            message: msg(
+              t,
+              "activity:form.err_demerger_cost_share",
+              "Enter a percentage between 0 and 100.",
+            ),
+          })
+          .optional(),
+      ),
       comment: z.string().optional().nullable(),
     })
     .refine(
@@ -150,7 +183,10 @@ export function ConversionForm({
 
   // Today's holdings: a warning only, since the conversion may be dated in
   // the past. The engine decides when it folds, from the history.
-  const { holdings, isLoading: isHoldingsLoading } = useHoldings({ type: "account", accountId });
+  const { holdings, isLoading: isHoldingsLoading } = useHoldings({
+    type: "account",
+    accountId,
+  });
   const heldQuantity = useMemo(() => {
     // An existing asset is found by id: one symbol can name two listings.
     const holding = fromExistingAssetId
@@ -235,6 +271,12 @@ export function ConversionForm({
             assetMetadataName="toAssetMetadata"
           />
           <QuantityInput name="toQuantity" label={t("activity:form.label_quantity")} />
+          <QuantityInput
+            name="costMovedPercent"
+            label={t("activity:form.label_demerger_cost_share")}
+            maxDecimalPlaces={4}
+          />
+          <p className="text-muted-foreground text-sm">{t("activity:form.demerger_hint")}</p>
         </FormSection>
 
         <NotesInput

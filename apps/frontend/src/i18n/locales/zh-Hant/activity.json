@@ -50,6 +50,8 @@
   "subtype_notional_distribution": "名義分配",
   "subtype_conversion_out": "轉換（換出）",
   "subtype_conversion_in": "轉換（換入）",
+  "subtype_spin_off_out": "分拆（原股）",
+  "subtype_spin_off_in": "分拆（新股）",
   "type_buy_desc": "買入一項資產。這會增加你的持有部位數量並減少你的現金餘額。",
   "type_sell_desc": "賣出一項資產。這會減少你的持有部位數量並增加你的現金餘額。",
   "type_deposit_desc": "存入資金會增加你的帳戶餘額。",
@@ -485,6 +487,8 @@
     "section_conversion_from": "換出",
     "section_conversion_to": "換入",
     "conversion_hint": "一檔基金或資產的份額轉換為另一檔的份額，並保留原有成本，例如基金轉換、份額類別或系列變更、基金轉為 ETF 或代幣遷移。如果轉換需要繳稅，請記錄為一筆賣出和一筆買入。",
+    "label_demerger_cost_share": "分拆：轉入新股的成本（%）",
+    "demerger_hint": "如為轉換請留空。分拆時原股份保留，公司公布的這一比例成本轉入新股。兩者都保留原購買日期。",
     "button_add_conversion": "新增基金轉換",
     "warn_converting_more_than_held": "你要轉換 {{converting}} 份，但此帳戶目前持有 {{available}} 份。",
     "err_conversion_same_asset": "請選擇另一種目標資產。",
@@ -713,7 +717,8 @@
     "err_select_reward_asset": "請選取一項獎勵資產。",
     "err_enter_received_quantity": "請輸入收到數量。",
     "err_enter_income_or_fmv": "請輸入收入金額或每單位公允市值。",
-    "err_enter_sent_amount": "請輸入轉出金額。"
+    "err_enter_sent_amount": "請輸入轉出金額。",
+    "err_demerger_cost_share": "請輸入 0 到 100 之間的百分比。"
   },
   "datagrid": {
     "pagination": {

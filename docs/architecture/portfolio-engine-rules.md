@@ -445,6 +445,29 @@ and units that arrive.
   values on the day differ only by gain, which shows as unrealized P&L.
 - Fixtures: NOM-CONV-01, EDGE-CONV-01 to EDGE-CONV-06.
 
+**R7.6 Spin-offs.** A spin-off (a demerger) delivers units of a new asset to the
+holders of a parent asset, which keeps its units, and moves a share of the
+parent's cost to the new units, by the ratio the company announces. It is
+recorded as two ADJUSTMENT rows sharing a source group id, like a conversion
+(R7.5): subtype `SPIN_OFF_OUT` names the parent and the units the spin-off
+covers, with the share of cost that moves, between 0 and 1, as its unit price;
+`SPIN_OFF_IN` names the new asset and its units.
+
+- The rows pair, and are rejected, as a conversion's do (R7.5), with one rule
+  more: the `SPIN_OFF_OUT` row's unit price must lie strictly between 0 and 1. A
+  group that mixes a conversion subtype and a spin-off subtype is no pair.
+- The pair applies as a conversion does, and each relieved lot of the parent
+  opens a lot of the new asset as R7.5 opens it, with r = units in ÷ units out,
+  but with the share s of the lot's cost, price per unit, charges and book
+  costs. The relieved lot also reopens in the parent under the `SPIN_OFF_OUT`
+  row's id, with its units, split history, acquisition date and rates, and the
+  rest (1 − s) of each amount, so the two lots add up to the one relieved. Both
+  stay apart from a WAC pool (R7.2), as a delivered lot does.
+- Nothing is realized, and no cash, net contribution or flow moves. The parent's
+  market value falls on the day by about the new units' value, which shows as
+  unrealized P&L on each side.
+- Fixtures: NOM-SPIN-01; rejections in `fold_rejections.rs`.
+
 ## 8. Known limits
 
 - Holdings mode assumes trades and transfers happen at snapshot prices: a price
@@ -494,9 +517,8 @@ and units that arrive.
   that settle a switch over several days (a _traspaso_ takes two or three) are
   recorded on one day: units in transit are not valued (R4.2), so legs on two
   days would read as a loss and a gain. A switch between brokers is a transfer,
-  then a conversion. A spin-off (the first asset stays and part of its cost
-  moves) and cash in lieu of fractional units (a separate SELL) are other
-  activities.
+  then a conversion. A spin-off is its own pair (R7.6), and cash in lieu of
+  fractional units is a separate SELL.
 - The §5 trigger accepts some JSON the job's reader rejects: a lone surrogate
   escape, a number beyond a double, nesting deeper than 128 levels. A change
   elsewhere in an account's meta that adds one leaves no marker, and the account

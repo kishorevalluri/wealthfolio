@@ -438,6 +438,11 @@ export const ACTIVITY_SUBTYPES = {
   // Written together by the conversion form, never offered on their own.
   CONVERSION_OUT: "CONVERSION_OUT",
   CONVERSION_IN: "CONVERSION_IN",
+  // SPIN_OFF_OUT / SPIN_OFF_IN: a demerger written by the conversion form. The
+  // parent keeps its units; the OUT row's unitPrice is the share of its cost,
+  // between 0 and 1, that moves to the new shares on the IN row.
+  SPIN_OFF_OUT: "SPIN_OFF_OUT",
+  SPIN_OFF_IN: "SPIN_OFF_IN",
 
   // BUY/SELL position intent subtypes
   // POSITION_OPEN: opens or extends a long/short position
@@ -514,6 +519,8 @@ export const SUBTYPE_DISPLAY_NAMES: Record<string, string> = {
   [ACTIVITY_SUBTYPES.NOTIONAL_DISTRIBUTION]: "Notional Distribution",
   [ACTIVITY_SUBTYPES.CONVERSION_OUT]: "Conversion Out",
   [ACTIVITY_SUBTYPES.CONVERSION_IN]: "Conversion In",
+  [ACTIVITY_SUBTYPES.SPIN_OFF_OUT]: "Demerger Out",
+  [ACTIVITY_SUBTYPES.SPIN_OFF_IN]: "Demerger In",
   [ACTIVITY_SUBTYPES.POSITION_OPEN]: "Open Position",
   [ACTIVITY_SUBTYPES.POSITION_CLOSE]: "Close Position",
   [ACTIVITY_SUBTYPES.BUYBACK]: "Buyback",

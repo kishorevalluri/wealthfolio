@@ -46,7 +46,8 @@ use crate::activities::activities_constants::{
     requires_final_cash_amount, requires_symbol, ImportSymbolDisposition,
     ACTIVITY_SUBTYPE_CONVERSION_IN, ACTIVITY_SUBTYPE_CONVERSION_OUT,
     ACTIVITY_SUBTYPE_NOTIONAL_DISTRIBUTION, ACTIVITY_SUBTYPE_OPTION_EXPIRY,
-    ACTIVITY_SUBTYPE_RETURN_OF_CAPITAL, ACTIVITY_TYPE_ADJUSTMENT, ACTIVITY_TYPE_BUY,
+    ACTIVITY_SUBTYPE_RETURN_OF_CAPITAL, ACTIVITY_SUBTYPE_SPIN_OFF_IN,
+    ACTIVITY_SUBTYPE_SPIN_OFF_OUT, ACTIVITY_TYPE_ADJUSTMENT, ACTIVITY_TYPE_BUY,
     ACTIVITY_TYPE_CREDIT, ACTIVITY_TYPE_DEPOSIT, ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST,
     ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_SPLIT, ACTIVITY_TYPE_TAX, ACTIVITY_TYPE_TRANSFER_IN,
     ACTIVITY_TYPE_TRANSFER_OUT, ACTIVITY_TYPE_WITHDRAWAL, PRICE_BEARING_ACTIVITY_TYPES,
@@ -1151,6 +1152,8 @@ impl ActivityService {
                     ACTIVITY_SUBTYPE_NOTIONAL_DISTRIBUTION,
                     ACTIVITY_SUBTYPE_CONVERSION_OUT,
                     ACTIVITY_SUBTYPE_CONVERSION_IN,
+                    ACTIVITY_SUBTYPE_SPIN_OFF_OUT,
+                    ACTIVITY_SUBTYPE_SPIN_OFF_IN,
                 ]
                 .iter()
                 .any(|known| subtype.eq_ignore_ascii_case(known))
@@ -3433,6 +3436,8 @@ impl ActivityService {
             NewActivity::canonicalize_subtype(row.subtype.as_deref()).filter(|subtype| {
                 subtype == ACTIVITY_SUBTYPE_CONVERSION_OUT
                     || subtype == ACTIVITY_SUBTYPE_CONVERSION_IN
+                    || subtype == ACTIVITY_SUBTYPE_SPIN_OFF_OUT
+                    || subtype == ACTIVITY_SUBTYPE_SPIN_OFF_IN
             })
         };
         let group = |row: &ActivityImport| {
@@ -3455,15 +3460,18 @@ impl ActivityService {
             let paired = group(row)
                 .and_then(|group| directions.get(&group))
                 .is_some_and(|found| {
+                    let has = |subtype: &str| found.iter().any(|d| d == subtype);
                     found.len() == 2
-                        && found.iter().any(|d| d == ACTIVITY_SUBTYPE_CONVERSION_OUT)
-                        && found.iter().any(|d| d == ACTIVITY_SUBTYPE_CONVERSION_IN)
+                        && ((has(ACTIVITY_SUBTYPE_CONVERSION_OUT)
+                            && has(ACTIVITY_SUBTYPE_CONVERSION_IN))
+                            || (has(ACTIVITY_SUBTYPE_SPIN_OFF_OUT)
+                                && has(ACTIVITY_SUBTYPE_SPIN_OFF_IN)))
                 });
             if !paired {
                 Self::add_activity_error(
                     row,
                     "general",
-                    "A conversion is imported as its two rows, CONVERSION_OUT and CONVERSION_IN, sharing one sourceGroupId.",
+                    "A conversion is imported as its two rows, CONVERSION_OUT and CONVERSION_IN (or SPIN_OFF_OUT and SPIN_OFF_IN for a demerger), sharing one sourceGroupId.",
                 );
             }
         }

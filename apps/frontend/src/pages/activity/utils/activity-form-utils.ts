@@ -34,7 +34,9 @@ export function isConversionSubtype(subtype?: string | null): boolean {
   const normalized = subtype?.trim().toUpperCase().replace(/[\s-]/g, "_");
   return (
     normalized === ACTIVITY_SUBTYPES.CONVERSION_OUT ||
-    normalized === ACTIVITY_SUBTYPES.CONVERSION_IN
+    normalized === ACTIVITY_SUBTYPES.CONVERSION_IN ||
+    normalized === ACTIVITY_SUBTYPES.SPIN_OFF_OUT ||
+    normalized === ACTIVITY_SUBTYPES.SPIN_OFF_IN
   );
 }
 

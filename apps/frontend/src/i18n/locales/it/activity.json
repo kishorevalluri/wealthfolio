@@ -51,6 +51,8 @@
   "subtype_notional_distribution": "Distribuzione nozionale",
   "subtype_conversion_out": "Switch (uscita)",
   "subtype_conversion_in": "Switch (entrata)",
+  "subtype_spin_off_out": "Scissione (origine)",
+  "subtype_spin_off_in": "Scissione (nuove)",
   "type_buy_desc": "Acquista un asset. Questo aumenta la quantità della tua posizione e riduce il saldo disponibile.",
   "type_sell_desc": "Vendi un asset. Questo riduce la quantità della tua posizione e aumenta il saldo disponibile.",
   "type_deposit_desc": "Aumenta il saldo del tuo conto aggiungendo fondi.",
@@ -490,6 +492,8 @@
     "section_conversion_from": "Da",
     "section_conversion_to": "A",
     "conversion_hint": "Le quote di un fondo o di un titolo diventano quote di un altro e mantengono il loro costo: uno switch tra fondi, un cambio di classe o di serie, un fondo convertito in ETF o una migrazione di token. Se lo switch è stato tassato, registra una vendita e un acquisto.",
+    "label_demerger_cost_share": "Scissione: costo trasferito alle nuove azioni (%)",
+    "demerger_hint": "Lasciare vuoto per una conversione. In una scissione le azioni originali restano e questa percentuale del loro costo, come annunciato dalla società, passa alle nuove azioni. Entrambe mantengono le date di acquisto originali.",
     "button_add_conversion": "Aggiungi switch",
     "warn_converting_more_than_held": "Stai convertendo {{converting}} quote, ma oggi questo conto ne detiene {{available}}.",
     "err_conversion_same_asset": "Scegli un altro titolo di destinazione.",
@@ -721,7 +725,8 @@
     "err_select_reward_asset": "Seleziona un asset ricompensa.",
     "err_enter_received_quantity": "Inserisci la quantità ricevuta.",
     "err_enter_income_or_fmv": "Inserisci l'importo del reddito o il valore equo di mercato per unità.",
-    "err_enter_sent_amount": "Inserisci un importo inviato."
+    "err_enter_sent_amount": "Inserisci un importo inviato.",
+    "err_demerger_cost_share": "Inserisci una percentuale tra 0 e 100."
   },
   "datagrid": {
     "pagination": {

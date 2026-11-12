@@ -25,7 +25,11 @@ import { CreditForm, type CreditFormValues } from "../components/forms/credit-fo
 import { AdjustmentForm, type AdjustmentFormValues } from "../components/forms/adjustment-form";
 import type { AccountSelectOption } from "../components/forms/fields";
 import type { NewActivityFormValues } from "../components/forms/schemas";
-import { conversionFirstDate, isLeavingConversionRow } from "../utils/conversion-counterpart";
+import {
+  conversionFirstDate,
+  isLeavingConversionRow,
+  isSpinOffRow,
+} from "../utils/conversion-counterpart";
 
 // Picker activity types (TRANSFER_IN/OUT merged into TRANSFER)
 export type PickerActivityType =
@@ -691,6 +695,12 @@ export const ACTIVITY_FORM_CONFIG: Record<
       };
       const leaving = isLeavingConversionRow(activity);
       const [from, to] = leaving ? [own, other] : [other, own];
+      // A demerger's parent row holds the share of cost that moves (0 to 1).
+      const share = Number(leaving ? activity.unitPrice : activity.counterpartUnitPrice);
+      const costMovedPercent =
+        isSpinOffRow(activity) && Number.isFinite(share) && share > 0
+          ? Number((share * 100).toFixed(4))
+          : undefined;
       // The form shows when the pair folds: at its first row.
       const base = getBaseDefaults(activity, accounts);
       return {
@@ -704,6 +714,7 @@ export const ACTIVITY_FORM_CONFIG: Record<
         toExistingAssetId: to.existingAssetId,
         toQuantity: to.quantity,
         toCurrency: to.currency,
+        costMovedPercent,
       };
     },
     // Both rows are saved together by useActivityForm; this payload is the
@@ -715,7 +726,10 @@ export const ACTIVITY_FORM_CONFIG: Record<
         activityDate: d.activityDate,
         assetId: d.fromAssetId,
         quantity: d.fromQuantity,
-        subtype: ACTIVITY_SUBTYPES.CONVERSION_OUT,
+        subtype:
+          d.costMovedPercent !== undefined
+            ? ACTIVITY_SUBTYPES.SPIN_OFF_OUT
+            : ACTIVITY_SUBTYPES.CONVERSION_OUT,
         comment: d.comment,
       };
     },

@@ -50,6 +50,8 @@
   "subtype_notional_distribution": "Notional Distribution",
   "subtype_conversion_out": "Conversion Out",
   "subtype_conversion_in": "Conversion In",
+  "subtype_spin_off_out": "Demerger Out",
+  "subtype_spin_off_in": "Demerger In",
   "type_buy_desc": "Purchase an asset. This increases your holding quantity and decreases your cash balance.",
   "type_sell_desc": "Sell an asset. This decreases your holding quantity and increases your cash balance.",
   "type_deposit_desc": "Increase your account balance by adding funds.",
@@ -485,6 +487,8 @@
     "section_conversion_from": "From",
     "section_conversion_to": "To",
     "conversion_hint": "Units of one fund or asset become units of another and keep their cost: a fund switch, a share-class or series switch, a mutual fund converted to an ETF, or a token migration. If the switch was taxed, record a sell and a buy.",
+    "label_demerger_cost_share": "Demerger: cost moving to the new shares (%)",
+    "demerger_hint": "Leave empty for a conversion. For a demerger, the original shares stay and this percentage of their cost, as the company announced it, moves to the new shares. Both keep the original purchase dates.",
     "button_add_conversion": "Add Fund Conversion",
     "warn_converting_more_than_held": "You are converting {{converting}} units, but this account holds {{available}} today.",
     "err_conversion_same_asset": "Choose a different asset to convert into.",
@@ -713,7 +717,8 @@
     "err_select_reward_asset": "Please select a reward asset.",
     "err_enter_received_quantity": "Please enter the received quantity.",
     "err_enter_income_or_fmv": "Please enter the income amount or FMV per unit.",
-    "err_enter_sent_amount": "Please enter a sent amount."
+    "err_enter_sent_amount": "Please enter a sent amount.",
+    "err_demerger_cost_share": "Enter a percentage between 0 and 100."
   },
   "datagrid": {
     "pagination": {

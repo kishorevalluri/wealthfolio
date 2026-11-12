@@ -591,6 +591,24 @@ describe("useActivityForm conversions", () => {
     expect(leaving.activityDate).toEqual(arriving.activityDate);
   });
 
+  it("saves a demerger as spin-off rows with the share of cost on the parent row", async () => {
+    const { result } = renderHook(() => useActivityForm({ accounts, selectedType: "CONVERSION" }));
+    await act(async () => {
+      await result.current.handleSubmit({
+        ...(conversion as object),
+        toQuantity: 12.5,
+        costMovedPercent: 25,
+      } as unknown as ActivityFormValues);
+    });
+
+    const [request] = mutationMocks.saveMutateAsync.mock.calls[0];
+    const [leaving, arriving] = request.creates;
+    expect(leaving).toMatchObject({ subtype: "SPIN_OFF_OUT", quantity: 25, unitPrice: 0.25 });
+    expect(arriving).toMatchObject({ subtype: "SPIN_OFF_IN", quantity: 12.5 });
+    expect(arriving.unitPrice).toBeUndefined();
+    expect(arriving.sourceGroupId).toBe(leaving.sourceGroupId);
+  });
+
   it.each([
     ["CONVERSION_OUT", "row-out", "row-in"],
     ["CONVERSION_IN", "row-in", "row-out"],

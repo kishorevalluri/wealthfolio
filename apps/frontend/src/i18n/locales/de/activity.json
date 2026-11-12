@@ -46,6 +46,8 @@
   "subtype_notional_distribution": "Fiktive Ausschüttung",
   "subtype_conversion_out": "Umtausch (Abgang)",
   "subtype_conversion_in": "Umtausch (Zugang)",
+  "subtype_spin_off_out": "Abspaltung (Altaktie)",
+  "subtype_spin_off_in": "Abspaltung (neue Aktie)",
   "type_add_holding": "Bestand hinzufügen",
   "import_title": "Aktivitäten importieren",
   "import_complete": "Import abgeschlossen",
@@ -382,6 +384,8 @@
     "section_conversion_from": "Von",
     "section_conversion_to": "In",
     "conversion_hint": "Anteile eines Fonds oder Wertpapiers werden zu Anteilen eines anderen und behalten ihren Einstand: ein Fondswechsel, ein Wechsel der Anteilsklasse oder Serie, ein in einen ETF umgewandelter Fonds oder eine Token-Migration. Erfassen Sie einen steuerpflichtigen Wechsel als Verkauf und Kauf.",
+    "label_demerger_cost_share": "Abspaltung: auf die neuen Aktien übergehende Kosten (%)",
+    "demerger_hint": "Für eine Umwandlung leer lassen. Bei einer Abspaltung bleiben die ursprünglichen Aktien erhalten, und dieser vom Unternehmen angegebene Prozentsatz ihrer Kosten geht auf die neuen Aktien über. Beide behalten die ursprünglichen Kaufdaten.",
     "button_add_conversion": "Fondsumtausch hinzufügen",
     "warn_converting_more_than_held": "Sie tauschen {{converting}} Anteile, dieses Konto hält heute aber {{available}}.",
     "err_conversion_same_asset": "Wählen Sie ein anderes Zielwertpapier.",
@@ -610,7 +614,8 @@
     "err_select_reward_asset": "Bitte wählen Sie einen Prämienwert aus.",
     "err_enter_received_quantity": "Bitte geben Sie die erhaltene Menge ein.",
     "err_enter_income_or_fmv": "Bitte geben Sie den Ertragsbetrag oder den Marktwert pro Einheit ein.",
-    "err_enter_sent_amount": "Bitte geben Sie einen gesendeten Betrag ein."
+    "err_enter_sent_amount": "Bitte geben Sie einen gesendeten Betrag ein.",
+    "err_demerger_cost_share": "Geben Sie einen Prozentsatz zwischen 0 und 100 ein."
   },
   "datagrid": {
     "pagination": {

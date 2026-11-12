@@ -272,6 +272,8 @@ export interface ActivityDetails {
   counterpartAssetId?: string | null;
   counterpartAssetSymbol?: string | null;
   counterpartQuantity?: string | null;
+  /** A demerger's parent row: the share of cost that moves (0 to 1). */
+  counterpartUnitPrice?: string | number | null;
   counterpartDate?: string | null;
   subRows?: ActivityDetails[];
   /**

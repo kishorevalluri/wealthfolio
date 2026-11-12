@@ -1804,8 +1804,8 @@ baseline:
     - "compile/same-out: Error InvalidConversion: conversion row rejected: a conversion must exchange two different assets"
     - "compile/three-in: Error InvalidConversion: conversion row rejected: a conversion must be two rows, and its group has 3"
     - "compile/three-out: Error InvalidConversion: conversion row rejected: a conversion must be two rows, and its group has 3"
-    - "compile/twice-out-1: Error InvalidConversion: conversion row rejected: a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row"
-    - "compile/twice-out-2: Error InvalidConversion: conversion row rejected: a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row"
+    - "compile/twice-out-1: Error InvalidConversion: conversion row rejected: a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row, or one SPIN_OFF_OUT row and one SPIN_OFF_IN row"
+    - "compile/twice-out-2: Error InvalidConversion: conversion row rejected: a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row, or one SPIN_OFF_OUT row and one SPIN_OFF_IN row"
     - "project/accts-in: Error ActivityRejected: conversion row rejected: both rows of a conversion must be in one account"
     - "project/accts-out: Error ActivityRejected: conversion row rejected: both rows of a conversion must be in one account"
     - "project/days-in: Error ActivityRejected: conversion row rejected: both rows of a conversion must be on one day"
@@ -1818,8 +1818,8 @@ baseline:
     - "project/same-out: Error ActivityRejected: conversion row rejected: a conversion must exchange two different assets"
     - "project/three-in: Error ActivityRejected: conversion row rejected: a conversion must be two rows, and its group has 3"
     - "project/three-out: Error ActivityRejected: conversion row rejected: a conversion must be two rows, and its group has 3"
-    - "project/twice-out-1: Error ActivityRejected: conversion row rejected: a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row"
-    - "project/twice-out-2: Error ActivityRejected: conversion row rejected: a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row"
+    - "project/twice-out-1: Error ActivityRejected: conversion row rejected: a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row, or one SPIN_OFF_OUT row and one SPIN_OFF_IN row"
+    - "project/twice-out-2: Error ActivityRejected: conversion row rejected: a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row, or one SPIN_OFF_OUT row and one SPIN_OFF_IN row"
     - "value/acc-1:fund-a: Info CarriedQuote: quote for fund-a carried up to 27 days (last observation 2025-01-14, valued through 2025-02-10)"
   portfolio:
     all_time:

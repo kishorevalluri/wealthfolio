@@ -163,3 +163,59 @@ activities:
     assert!(bundle.disposals.is_empty(), "{:?}", bundle.disposals);
     assert!(bundle.closures.is_empty(), "{:?}", bundle.closures);
 }
+
+/// Rules R7.6: a spin-off whose cost share is not strictly between 0 and 1,
+/// or whose rows mix a conversion and a spin-off subtype, is rejected whole
+/// and the parent keeps its lots.
+#[test]
+fn a_spin_off_without_a_cost_share_between_0_and_1_is_rejected() {
+    let scenario: Scenario = serde_yaml::from_str(
+        r#"
+id: REJECT-SPIN-01
+policy: { base_currency: USD, timezone: UTC, as_of: 2025-01-06 }
+accounts:
+  - { id: acc-a, currency: USD }
+assets:
+  - { id: parent, quote_ccy: USD }
+  - { id: child, quote_ccy: USD }
+activities:
+  - { id: dep, account: acc-a, type: DEPOSIT, date: 2025-01-01T10:00:00Z, amount: 1000 }
+  - { id: buy, account: acc-a, type: BUY, date: 2025-01-01T11:00:00Z, asset: parent, quantity: 10, unit_price: 100, amount: 1000 }
+  - { id: none-out, account: acc-a, type: ADJUSTMENT, subtype: SPIN_OFF_OUT, date: 2025-01-02T10:00:00Z, asset: parent, quantity: 10, source_group_id: g-none }
+  - { id: none-in, account: acc-a, type: ADJUSTMENT, subtype: SPIN_OFF_IN, date: 2025-01-02T10:01:00Z, asset: child, quantity: 5, source_group_id: g-none }
+  - { id: all-out, account: acc-a, type: ADJUSTMENT, subtype: SPIN_OFF_OUT, date: 2025-01-03T10:00:00Z, asset: parent, quantity: 10, unit_price: 1, source_group_id: g-all }
+  - { id: all-in, account: acc-a, type: ADJUSTMENT, subtype: SPIN_OFF_IN, date: 2025-01-03T10:01:00Z, asset: child, quantity: 5, source_group_id: g-all }
+  - { id: mixed-out, account: acc-a, type: ADJUSTMENT, subtype: SPIN_OFF_OUT, date: 2025-01-04T10:00:00Z, asset: parent, quantity: 10, unit_price: 0.5, source_group_id: g-mixed }
+  - { id: mixed-in, account: acc-a, type: ADJUSTMENT, subtype: CONVERSION_IN, date: 2025-01-04T10:01:00Z, asset: child, quantity: 5, source_group_id: g-mixed }
+"#,
+    )
+    .expect("scenario");
+    let pipeline = Pipeline::from_scenario(&scenario);
+    let fx = pipeline.fx();
+    let range = pipeline.range();
+    let bundle = project(pipeline.ledger(), pipeline.facts(), &fx, None, range).expect("project");
+
+    let rejected = bundle.rejected_activities();
+    for id in [
+        "none-out",
+        "none-in",
+        "all-out",
+        "all-in",
+        "mixed-out",
+        "mixed-in",
+    ] {
+        assert!(
+            rejected.contains(&ActivityId::new(id)),
+            "{id}: {rejected:?}"
+        );
+    }
+    let account = &bundle.final_state.accounts[&AccountId::new("acc-a")];
+    let parent = &account.positions[&AssetId::new("parent")];
+    assert_eq!(parent.quantity, Decimal::from(10));
+    assert_eq!(parent.lots.len(), 1);
+    assert_eq!(parent.lots[0].cost_basis, Decimal::from(1000));
+    assert!(account
+        .positions
+        .get(&AssetId::new("child"))
+        .is_none_or(|position| position.quantity.is_zero()));
+}

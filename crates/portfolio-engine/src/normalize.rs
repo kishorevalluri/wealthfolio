@@ -679,6 +679,8 @@ fn canonical_subtype(
         "NOTIONAL_DISTRIBUTION" => Some(Subtype::NotionalDistribution),
         "CONVERSION_OUT" => Some(Subtype::ConversionOut),
         "CONVERSION_IN" => Some(Subtype::ConversionIn),
+        "SPIN_OFF_OUT" | "SPINOFF_OUT" | "DEMERGER_OUT" => Some(Subtype::SpinOffOut),
+        "SPIN_OFF_IN" | "SPINOFF_IN" | "DEMERGER_IN" => Some(Subtype::SpinOffIn),
         _ => None,
     };
     if shared.is_none() {
@@ -691,13 +693,25 @@ fn canonical_subtype(
     shared
 }
 
-/// Whether a posted activity is a conversion row (rules R7.5).
+/// Whether a posted activity is a conversion row (rules R7.5), a spin-off's
+/// included (rules R7.6).
 pub(crate) fn is_conversion_row(activity: &Activity) -> bool {
     activity.kind == ActivityKind::Adjustment
         && matches!(
             activity.subtype,
-            Some(Subtype::ConversionOut | Subtype::ConversionIn)
+            Some(
+                Subtype::ConversionOut
+                    | Subtype::ConversionIn
+                    | Subtype::SpinOffOut
+                    | Subtype::SpinOffIn
+            )
         )
+}
+
+/// A spin-off's share of the parent's cost that moves to the new shares: the
+/// `SPIN_OFF_OUT` row's `unit_price` (rules R7.6). `None` for a conversion.
+pub(crate) fn spin_off_cost_share(out_leg: &Activity) -> Option<Decimal> {
+    (out_leg.subtype == Some(Subtype::SpinOffOut)).then_some(out_leg.unit_price)
 }
 
 /// Pairs conversion rows by `source_group_id` (rules R7.5). A group with a
@@ -755,9 +769,11 @@ fn build_conversion(group: &str, rows: &[&Activity]) -> Result<ConversionPair, S
         [first, second] => match (first.subtype, second.subtype) {
             (Some(Subtype::ConversionOut), Some(Subtype::ConversionIn)) => (*first, *second),
             (Some(Subtype::ConversionIn), Some(Subtype::ConversionOut)) => (*second, *first),
+            (Some(Subtype::SpinOffOut), Some(Subtype::SpinOffIn)) => (*first, *second),
+            (Some(Subtype::SpinOffIn), Some(Subtype::SpinOffOut)) => (*second, *first),
             _ => {
                 return Err(
-                    "a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row".into(),
+                    "a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row, or one SPIN_OFF_OUT row and one SPIN_OFF_IN row".into(),
                 )
             }
         },
@@ -795,6 +811,13 @@ fn build_conversion(group: &str, rows: &[&Activity]) -> Result<ConversionPair, S
         .any(|leg| !leg.fee.is_zero() || !leg.tax.is_zero())
     {
         return Err("a conversion must not have a fee or tax".into());
+    }
+    if let Some(share) = spin_off_cost_share(out_leg) {
+        if share <= Decimal::ZERO || share >= Decimal::ONE {
+            return Err(
+                "a spin-off's SPIN_OFF_OUT row must give the share of cost that moves, between 0 and 1, as its unit price".into(),
+            );
+        }
     }
     Ok(ConversionPair {
         group_id: group.to_string(),

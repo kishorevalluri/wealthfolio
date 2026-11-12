@@ -51,6 +51,8 @@
   "subtype_notional_distribution": "Distribuição nocional",
   "subtype_conversion_out": "Conversão (saída)",
   "subtype_conversion_in": "Conversão (entrada)",
+  "subtype_spin_off_out": "Cisão (origem)",
+  "subtype_spin_off_in": "Cisão (novas)",
   "type_buy_desc": "Compra um ativo. Isso aumenta a quantidade da sua posição e reduz seu saldo em caixa.",
   "type_sell_desc": "Vende um ativo. Isso reduz a quantidade da sua posição e aumenta seu saldo em caixa.",
   "type_deposit_desc": "Aumenta o saldo da sua conta adicionando fundos.",
@@ -490,6 +492,8 @@
     "section_conversion_from": "De",
     "section_conversion_to": "Para",
     "conversion_hint": "As cotas de um fundo ou ativo passam a ser de outro e mantêm o seu custo: uma troca entre fundos, uma mudança de classe ou série, um fundo convertido em ETF ou uma migração de token. Se a troca foi tributada, registre uma venda e uma compra.",
+    "label_demerger_cost_share": "Cisão: custo transferido para as novas ações (%)",
+    "demerger_hint": "Deixe vazio para uma conversão. Numa cisão, as ações originais permanecem e esta percentagem do seu custo, conforme anunciado pela empresa, passa para as novas ações. Ambas mantêm as datas de compra originais.",
     "button_add_conversion": "Adicionar conversão de fundos",
     "warn_converting_more_than_held": "Você está convertendo {{converting}} cotas, mas esta conta tem {{available}} hoje.",
     "err_conversion_same_asset": "Escolha outro ativo de destino.",
@@ -721,7 +725,8 @@
     "err_select_reward_asset": "Selecione um ativo de recompensa.",
     "err_enter_received_quantity": "Insira a quantidade recebida.",
     "err_enter_income_or_fmv": "Insira o valor do rendimento ou o valor justo de mercado por unidade.",
-    "err_enter_sent_amount": "Insira um valor enviado."
+    "err_enter_sent_amount": "Insira um valor enviado.",
+    "err_demerger_cost_share": "Introduza uma percentagem entre 0 e 100."
   },
   "datagrid": {
     "pagination": {

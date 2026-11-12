@@ -49,6 +49,8 @@
   "subtype_notional_distribution": "名义分配",
   "subtype_conversion_out": "转换（换出）",
   "subtype_conversion_in": "转换（换入）",
+  "subtype_spin_off_out": "分拆（原股）",
+  "subtype_spin_off_in": "分拆（新股）",
   "type_buy_desc": "买入一项资产。这会增加您的持仓数量并减少您的现金余额。",
   "type_sell_desc": "卖出一项资产。这会减少您的持仓数量并增加您的现金余额。",
   "type_deposit_desc": "通过存入资金增加您的账户余额。",
@@ -482,6 +484,8 @@
     "section_conversion_from": "换出",
     "section_conversion_to": "换入",
     "conversion_hint": "一只基金或资产的份额转换为另一只的份额，并保留原有成本，例如基金转换、份额类别或系列变更、基金转为 ETF 或代币迁移。如果转换需要缴税，请记录为一笔卖出和一笔买入。",
+    "label_demerger_cost_share": "分拆：转入新股的成本（%）",
+    "demerger_hint": "如为转换请留空。分拆时原股份保留，公司公布的这一比例成本转入新股。两者都保留原购买日期。",
     "button_add_conversion": "添加基金转换",
     "warn_converting_more_than_held": "您要转换 {{converting}} 份，但该账户当前持有 {{available}} 份。",
     "err_conversion_same_asset": "请选择另一种目标资产。",
@@ -710,7 +714,8 @@
     "err_select_reward_asset": "请选择一项奖励资产。",
     "err_enter_received_quantity": "请输入收到数量。",
     "err_enter_income_or_fmv": "请输入收入金额或每单位公允市值。",
-    "err_enter_sent_amount": "请输入转出金额。"
+    "err_enter_sent_amount": "请输入转出金额。",
+    "err_demerger_cost_share": "请输入 0 到 100 之间的百分比。"
   },
   "datagrid": {
     "pagination": {

@@ -12,7 +12,8 @@ use rust_decimal::Decimal;
 
 use super::{
     is_cash_symbol, Activity, ActivityStatus, NewActivity, ACTIVITY_SUBTYPE_CONVERSION_IN,
-    ACTIVITY_SUBTYPE_CONVERSION_OUT, ACTIVITY_TYPE_ADJUSTMENT,
+    ACTIVITY_SUBTYPE_CONVERSION_OUT, ACTIVITY_SUBTYPE_SPIN_OFF_IN, ACTIVITY_SUBTYPE_SPIN_OFF_OUT,
+    ACTIVITY_TYPE_ADJUSTMENT,
 };
 
 /// One conversion: the row whose units leave and the row whose units arrive.
@@ -40,6 +41,10 @@ impl ConversionPair {
 enum Direction {
     Leaving,
     Arriving,
+    /// A spin-off's parent row (engine rules R7.6).
+    SpinOffLeaving,
+    /// A spin-off's new-shares row.
+    SpinOffArriving,
 }
 
 /// The direction of a conversion row: an adjustment, by its effective type
@@ -54,9 +59,21 @@ fn conversion_direction(activity: &Activity) -> Option<Direction> {
         Some(Direction::Leaving)
     } else if subtype == ACTIVITY_SUBTYPE_CONVERSION_IN {
         Some(Direction::Arriving)
+    } else if subtype == ACTIVITY_SUBTYPE_SPIN_OFF_OUT {
+        Some(Direction::SpinOffLeaving)
+    } else if subtype == ACTIVITY_SUBTYPE_SPIN_OFF_IN {
+        Some(Direction::SpinOffArriving)
     } else {
         None
     }
+}
+
+/// A spin-off's share of the parent's cost that moves to the new shares: the
+/// `SPIN_OFF_OUT` row's unit price, as the engine reads it (a missing one is
+/// zero). `None` for any other row.
+pub fn spin_off_cost_share(activity: &Activity) -> Option<Decimal> {
+    (conversion_direction(activity) == Some(Direction::SpinOffLeaving))
+        .then(|| activity.unit_price.unwrap_or_default().abs())
 }
 
 /// Whether an activity is a row of a conversion.
@@ -160,9 +177,15 @@ fn build_conversion_pair(
         [first, second] => match (conversion_direction(first), conversion_direction(second)) {
             (Some(Direction::Leaving), Some(Direction::Arriving)) => (*first, *second),
             (Some(Direction::Arriving), Some(Direction::Leaving)) => (*second, *first),
+            (Some(Direction::SpinOffLeaving), Some(Direction::SpinOffArriving)) => {
+                (*first, *second)
+            }
+            (Some(Direction::SpinOffArriving), Some(Direction::SpinOffLeaving)) => {
+                (*second, *first)
+            }
             _ => {
                 return Err(
-                    "a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row".into(),
+                    "a conversion must be one CONVERSION_OUT row and one CONVERSION_IN row, or one SPIN_OFF_OUT row and one SPIN_OFF_IN row".into(),
                 )
             }
         },
@@ -203,6 +226,13 @@ fn build_conversion_pair(
     };
     if charged(leaving) || charged(arriving) {
         return Err("a conversion must not have a fee or tax".into());
+    }
+    if let Some(share) = spin_off_cost_share(leaving) {
+        if share <= Decimal::ZERO || share >= Decimal::ONE {
+            return Err(
+                "a spin-off's SPIN_OFF_OUT row must give the share of cost that moves, between 0 and 1, as its unit price".into(),
+            );
+        }
     }
     Ok(ConversionPair {
         group_id: group.to_string(),
@@ -477,5 +507,72 @@ mod tests {
             }
         }
         assert_eq!(compared, 2 * 3 * 3 * 2 * 3 * 3 * 3 * 4);
+    }
+
+    /// Spin-offs (engine rules R7.6): core and the engine agree on which
+    /// subtype mixes pair and on the cost share a parent row must carry.
+    #[test]
+    fn core_and_engine_agree_on_spin_offs() {
+        let timezone = chrono_tz::UTC;
+        let mut compared = 0;
+        for out_subtype in ["SPIN_OFF_OUT", "demerger-out", "CONVERSION_OUT"] {
+            for in_subtype in ["SPIN_OFF_IN", "spinoff_in", "CONVERSION_IN"] {
+                for share in [
+                    None,
+                    Some(Decimal::ZERO),
+                    Some(Decimal::new(3, 1)),
+                    Some(Decimal::new(-3, 1)),
+                    Some(Decimal::ONE),
+                    Some(Decimal::new(15, 1)),
+                ] {
+                    let mut leaving = row("out", out_subtype, "a1", "PARENT", at(2, 10), Some("g"));
+                    leaving.unit_price = share;
+                    let arriving = row("in", in_subtype, "a1", "CHILD", at(2, 11), Some("g"));
+                    let rows = vec![leaving, arriving];
+                    let core = ConversionPairResolution::from_activities(&rows, timezone)
+                        .pair_for_activity("out")
+                        .is_some();
+                    let raw = RawFacts {
+                        policy: Policy::new(
+                            Currency::parse("USD").expect("currency"),
+                            timezone,
+                            NaiveDate::from_ymd_opt(2026, 4, 30).expect("as-of date"),
+                        ),
+                        accounts: vec![RawAccount {
+                            id: "a1".into(),
+                            currency: "USD".into(),
+                            account_type: "SECURITIES".into(),
+                            tracking_mode: "TRANSACTIONS".into(),
+                            is_archived: false,
+                            cost_basis_method: None,
+                        }],
+                        assets: Vec::new(),
+                        activities: rows.iter().map(raw_activity).collect(),
+                        quotes: Vec::new(),
+                        fx_rates: Vec::new(),
+                        observed_snapshots: Vec::new(),
+                    };
+                    let engine = wealthfolio_portfolio_engine::normalize(raw)
+                        .expect("normalize")
+                        .facts
+                        .conversions()
+                        .pair_for(&wealthfolio_portfolio_engine::model::ActivityId::new("out"))
+                        .is_some();
+                    assert_eq!(core, engine, "{out_subtype} {in_subtype} {share:?}");
+                    let spin_off = out_subtype != "CONVERSION_OUT" && in_subtype != "CONVERSION_IN";
+                    let conversion =
+                        out_subtype == "CONVERSION_OUT" && in_subtype == "CONVERSION_IN";
+                    let valid_share =
+                        share == Some(Decimal::new(3, 1)) || share == Some(Decimal::new(-3, 1));
+                    assert_eq!(
+                        core,
+                        conversion || (spin_off && valid_share),
+                        "{out_subtype} {in_subtype} {share:?}"
+                    );
+                    compared += 1;
+                }
+            }
+        }
+        assert_eq!(compared, 54);
     }
 }

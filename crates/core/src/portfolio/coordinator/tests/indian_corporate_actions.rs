@@ -1,6 +1,7 @@
 //! Corporate actions through the engine and into Indian capital gains: the
 //! lots a split, a bonus issue and an amalgamation leave behind must carry
-//! the purchase date and cost the Income-tax Act gives them.
+//! the purchase date and cost the Income-tax Act gives them, a demerger's
+//! split of cost between the two companies included.
 
 use std::collections::HashMap;
 
@@ -208,4 +209,63 @@ quotes:
     assert_eq!(sale.actual_cost, dec!(50000));
     assert_eq!(sale.tax_section, IndianTaxSection::Sec112a);
     assert_eq!(sale.gross_gain, dec!(25000));
+}
+
+const DEMERGER: &str = r#"
+id: IN-CA-03
+title: Demerger, then both companies sold
+policy: { base_currency: INR, timezone: Asia/Kolkata, as_of: 2025-06-30 }
+accounts:
+  - { id: demat, name: Demat, currency: INR }
+assets:
+  - { id: parent, quote_ccy: INR }
+  - { id: child, quote_ccy: INR }
+activities:
+  - { id: dep, account: demat, type: DEPOSIT, date: 2022-05-31, amount: 100000 }
+  - { id: buy, account: demat, type: BUY, date: 2022-06-01, asset: parent, quantity: 100, unit_price: 1000, amount: 100000 }
+  - { id: out, account: demat, type: ADJUSTMENT, subtype: SPIN_OFF_OUT, date: 2024-05-02, asset: parent, quantity: 100, unit_price: 0.25, source_group_id: demerger }
+  - { id: in, account: demat, type: ADJUSTMENT, subtype: SPIN_OFF_IN, date: 2024-05-02, asset: child, quantity: 50, source_group_id: demerger }
+  - { id: sell-child, account: demat, type: SELL, date: 2025-06-02, asset: child, quantity: 50, unit_price: 800, amount: 40000 }
+  - { id: sell-parent, account: demat, type: SELL, date: 2025-06-03, asset: parent, quantity: 100, unit_price: 900, amount: 90000 }
+quotes:
+  - { asset: parent, day: 2022-06-01, close: 1000 }
+  - { asset: parent, day: 2024-05-02, close: 750 }
+  - { asset: child, day: 2024-05-02, close: 500 }
+  - { asset: child, day: 2025-06-02, close: 800 }
+  - { asset: parent, day: 2025-06-03, close: 900 }
+"#;
+
+/// 100 shares of a parent bought in June 2022 for ₹1,00,000. In May 2024 the
+/// company demerges a unit: one new share for every two held, with 25% of
+/// the cost apportioned to the new shares. Sections 49(2C) and 49(2D) split
+/// the cost ₹25,000 to the 50 new shares and ₹75,000 kept by the parent, and
+/// Section 2(42A) runs both holdings from the 2022 purchase. The demerger is
+/// no transfer (Section 47(vib)), so it is no sale in its own year; in June
+/// 2025 both sales are long-term.
+#[tokio::test]
+async fn a_demerger_splits_cost_and_keeps_the_purchase_date() {
+    let demerged = tax_year(DEMERGER, &[], 2024).await;
+    assert!(
+        demerged.calculations.is_empty(),
+        "{:#?}",
+        demerged.calculations
+    );
+
+    let sold = tax_year(DEMERGER, &[], 2025).await;
+    assert_eq!(sold.calculations.len(), 2, "{:#?}", sold.calculations);
+    let child = &sold.calculations[0];
+    assert_eq!(child.quantity, dec!(50));
+    assert_eq!(child.acquisition_date, date(2022, 6, 1));
+    assert_eq!(child.actual_cost, dec!(25000));
+    assert_eq!(child.tax_section, IndianTaxSection::Sec112a);
+    assert_eq!(child.gross_gain, dec!(15000));
+
+    let parent = &sold.calculations[1];
+    assert_eq!(parent.quantity, dec!(100));
+    assert_eq!(parent.acquisition_date, date(2022, 6, 1));
+    assert_eq!(parent.actual_cost, dec!(75000));
+    assert_eq!(parent.tax_section, IndianTaxSection::Sec112a);
+    assert_eq!(parent.gross_gain, dec!(15000));
+
+    assert_eq!(sold.sec_112a_ltcg_gross, dec!(30000));
 }
