@@ -6,10 +6,11 @@ use crate::activities::activities_constants::{
     ACTIVITY_SUBTYPE_NOTIONAL_DISTRIBUTION, ACTIVITY_SUBTYPE_OPTION_EXPIRY,
     ACTIVITY_SUBTYPE_POSITION_CLOSE, ACTIVITY_SUBTYPE_POSITION_OPEN, ACTIVITY_SUBTYPE_REBATE,
     ACTIVITY_SUBTYPE_REFUND, ACTIVITY_SUBTYPE_REIMBURSEMENT, ACTIVITY_SUBTYPE_RETURN_OF_CAPITAL,
-    ACTIVITY_SUBTYPE_STAKING_REWARD, ACTIVITY_TYPE_ADJUSTMENT, ACTIVITY_TYPE_BUY,
-    ACTIVITY_TYPE_CREDIT, ACTIVITY_TYPE_DEPOSIT, ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_FEE,
-    ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_SPLIT, ACTIVITY_TYPE_TAX,
-    ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT, ACTIVITY_TYPE_WITHDRAWAL,
+    ACTIVITY_SUBTYPE_SPIN_OFF_IN, ACTIVITY_SUBTYPE_SPIN_OFF_OUT, ACTIVITY_SUBTYPE_STAKING_REWARD,
+    ACTIVITY_TYPE_ADJUSTMENT, ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_CREDIT, ACTIVITY_TYPE_DEPOSIT,
+    ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL,
+    ACTIVITY_TYPE_SPLIT, ACTIVITY_TYPE_TAX, ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT,
+    ACTIVITY_TYPE_WITHDRAWAL,
 };
 use crate::activities::csv_parser::ParseConfig;
 use crate::activities::TransferLinkState;
@@ -463,6 +464,16 @@ impl NewActivity {
             ACTIVITY_SUBTYPE_CONVERSION_OUT
         } else if normalized.eq_ignore_ascii_case(ACTIVITY_SUBTYPE_CONVERSION_IN) {
             ACTIVITY_SUBTYPE_CONVERSION_IN
+        } else if ["SPIN_OFF_OUT", "SPINOFF_OUT", "DEMERGER_OUT"]
+            .iter()
+            .any(|known| normalized.eq_ignore_ascii_case(known))
+        {
+            ACTIVITY_SUBTYPE_SPIN_OFF_OUT
+        } else if ["SPIN_OFF_IN", "SPINOFF_IN", "DEMERGER_IN"]
+            .iter()
+            .any(|known| normalized.eq_ignore_ascii_case(known))
+        {
+            ACTIVITY_SUBTYPE_SPIN_OFF_IN
         } else {
             subtype
         };
@@ -2187,7 +2198,12 @@ impl From<ActivityImport> for NewActivity {
             .eq_ignore_ascii_case(ACTIVITY_TYPE_ADJUSTMENT)
             && matches!(
                 NewActivity::canonicalize_subtype(import.subtype.as_deref()).as_deref(),
-                Some(ACTIVITY_SUBTYPE_CONVERSION_OUT | ACTIVITY_SUBTYPE_CONVERSION_IN)
+                Some(
+                    ACTIVITY_SUBTYPE_CONVERSION_OUT
+                        | ACTIVITY_SUBTYPE_CONVERSION_IN
+                        | ACTIVITY_SUBTYPE_SPIN_OFF_OUT
+                        | ACTIVITY_SUBTYPE_SPIN_OFF_IN
+                )
             );
         let source_group_id = import
             .source_group_id

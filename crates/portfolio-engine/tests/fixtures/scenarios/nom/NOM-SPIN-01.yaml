@@ -1,0 +1,47 @@
+id: NOM-SPIN-01
+title: A spin-off moves part of each lot's cost to the new shares and keeps the parent's units
+intent: >
+  Rules R7.6. A demerger: an account holds two lots of parent, bought at
+  different prices with fees, and the company spins off one child share for
+  every two parent shares, apportioning 30% of the parent's cost to the
+  child. Each parent lot reopens with 70% of its cost and its units; each
+  child lot opens with 30% of its cost at half the units, both with the
+  lot's purchase date. Nothing is realized, and cash, net contribution and
+  flows do not move. A later FIFO sale of 5 child takes the first lot whole.
+policy:
+  base_currency: USD
+  timezone: UTC
+  as_of: 2025-03-05
+accounts:
+  - id: acc-1
+    name: Brokerage
+    currency: USD
+assets:
+  - { id: parent, quote_ccy: USD }
+  - { id: child, quote_ccy: USD }
+activities:
+  - { id: dep-1, account: acc-1, type: DEPOSIT, date: 2025-01-02T10:00:00Z, amount: 5000 }
+  - { id: buy-1, account: acc-1, type: BUY, date: 2025-01-03T10:00:00Z, asset: parent, quantity: 10, unit_price: 100, amount: 1002, fee: 2 }
+  - { id: buy-2, account: acc-1, type: BUY, date: 2025-01-06T10:00:00Z, asset: parent, quantity: 10, unit_price: 200, amount: 2003, fee: 3 }
+  - { id: spin-out, account: acc-1, type: ADJUSTMENT, subtype: SPIN_OFF_OUT, date: 2025-02-03T10:00:00Z, asset: parent, quantity: 20, unit_price: 0.3, source_group_id: g1 }
+  - { id: spin-in, account: acc-1, type: ADJUSTMENT, subtype: SPIN_OFF_IN, date: 2025-02-03T10:01:00Z, asset: child, quantity: 10, source_group_id: g1 }
+  - { id: sell-1, account: acc-1, type: SELL, date: 2025-03-03T10:00:00Z, asset: child, quantity: 5, unit_price: 80, amount: 400, fee: 0 }
+quotes:
+  - { asset: parent, day: 2025-01-03, close: 100 }
+  - { asset: parent, day: 2025-01-06, close: 200 }
+  - { asset: parent, day: 2025-02-03, close: 105 }
+  - { asset: parent, day: 2025-03-05, close: 110 }
+  - { asset: child, day: 2025-02-03, close: 90 }
+  - { asset: child, day: 2025-03-03, close: 80 }
+  - { asset: child, day: 2025-03-05, close: 80 }
+expected_notes: >
+  Before the spin-off: parent lots buy-1 (10, cost 1002, fee 2, 2025-01-03)
+  and buy-2 (10, cost 2003, fee 3, 2025-01-06); cash 5000 - 3005 = 1995.
+  The spin-off relieves both lots at cost (realized 0). Parent reopens as
+  spin-out_lot0 (10, cost 701.4, fee 1.4, 2025-01-03) and spin-out_lot1
+  (10, cost 1402.1, fee 2.1, 2025-01-06). Child opens at 0.5 a parent unit
+  as spin-in_lot0 (5, cost 300.6, fee 0.6, 2025-01-03) and spin-in_lot1
+  (5, cost 600.9, fee 0.9, 2025-01-06). Total cost stays 3005. Cash 1995, net
+  contribution 5000, no flow. sell-1 (FIFO) takes spin-in_lot0 whole:
+  proceeds 400, cost 300.6, realized 99.4. Left: 20 parent (cost 2103.5) and
+  5 child (cost 600.9). Cash 2395.

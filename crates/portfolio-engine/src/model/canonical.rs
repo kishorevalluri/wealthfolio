@@ -198,6 +198,12 @@ pub enum Subtype {
     ConversionOut,
     /// On an ADJUSTMENT: the asset and units that arrive in a conversion.
     ConversionIn,
+    /// On an ADJUSTMENT: the parent's units covered by a spin-off (a
+    /// demerger), whose `unit_price` is the share of their cost, between 0
+    /// and 1, that moves to the new shares (rules R7.6). The units stay.
+    SpinOffOut,
+    /// On an ADJUSTMENT: the new shares a spin-off delivers.
+    SpinOffIn,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

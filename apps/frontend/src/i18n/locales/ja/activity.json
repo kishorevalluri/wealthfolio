@@ -49,6 +49,8 @@
   "subtype_notional_distribution": "みなし分配",
   "subtype_conversion_out": "スイッチング（払出）",
   "subtype_conversion_in": "スイッチング（受入）",
+  "subtype_spin_off_out": "会社分割（元株）",
+  "subtype_spin_off_in": "会社分割（新株）",
   "type_buy_desc": "資産を購入します。保有数量が増加し、現金残高が減少します。",
   "type_sell_desc": "資産を売却します。保有数量が減少し、現金残高が増加します。",
   "type_deposit_desc": "資金を追加して口座残高を増やします。",
@@ -482,6 +484,8 @@
     "section_conversion_from": "転換元",
     "section_conversion_to": "転換先",
     "conversion_hint": "ある資産の口数を別の資産の口数に替え、取得原価を引き継ぎます（ファンドのスイッチング、クラスやシリーズの変更、投資信託からETFへの転換、トークンの移行など）。課税対象の乗り換えは、売却と購入として記録してください。",
+    "label_demerger_cost_share": "会社分割：新株に移る取得費（%）",
+    "demerger_hint": "転換の場合は空欄のままにします。会社分割では元の株式は残り、会社が公表したこの割合の取得費が新株に移ります。どちらも元の取得日を引き継ぎます。",
     "button_add_conversion": "スイッチングを追加",
     "warn_converting_more_than_held": "{{converting}} 口を転換しようとしていますが、この口座の現在の保有は {{available}} です。",
     "err_conversion_same_asset": "転換先には別の資産を選んでください。",
@@ -710,7 +714,8 @@
     "err_select_reward_asset": "報酬資産を選択してください。",
     "err_enter_received_quantity": "受取数量を入力してください。",
     "err_enter_income_or_fmv": "収入額または単位あたりFMVを入力してください。",
-    "err_enter_sent_amount": "送金額を入力してください。"
+    "err_enter_sent_amount": "送金額を入力してください。",
+    "err_demerger_cost_share": "0 から 100 の間の割合を入力してください。"
   },
   "datagrid": {
     "pagination": {

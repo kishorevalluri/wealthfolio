@@ -116,7 +116,9 @@ export const isAssetIdentityRequired = (activityType: string, subtype?: string |
       canonical === ACTIVITY_SUBTYPES.RETURN_OF_CAPITAL ||
       canonical === ACTIVITY_SUBTYPES.NOTIONAL_DISTRIBUTION ||
       canonical === ACTIVITY_SUBTYPES.CONVERSION_OUT ||
-      canonical === ACTIVITY_SUBTYPES.CONVERSION_IN
+      canonical === ACTIVITY_SUBTYPES.CONVERSION_IN ||
+      canonical === ACTIVITY_SUBTYPES.SPIN_OFF_OUT ||
+      canonical === ACTIVITY_SUBTYPES.SPIN_OFF_IN
     );
   }
   return isSymbolRequired(activityType) || isAssetBackedIncomeSubtype(activityType, subtype);
@@ -196,7 +198,9 @@ export const canonicalizeActivitySubtype = (
     knownSubtype === ACTIVITY_SUBTYPES.NOTIONAL_DISTRIBUTION ||
     knownSubtype === ACTIVITY_SUBTYPES.OPTION_EXPIRY ||
     knownSubtype === ACTIVITY_SUBTYPES.CONVERSION_OUT ||
-    knownSubtype === ACTIVITY_SUBTYPES.CONVERSION_IN
+    knownSubtype === ACTIVITY_SUBTYPES.CONVERSION_IN ||
+    knownSubtype === ACTIVITY_SUBTYPES.SPIN_OFF_OUT ||
+    knownSubtype === ACTIVITY_SUBTYPES.SPIN_OFF_IN
   ) {
     return knownSubtype;
   }
@@ -213,7 +217,10 @@ export const isConversionRow = (
   const subtype = canonicalizeActivitySubtype(ActivityType.ADJUSTMENT, activity.subtype);
   return (
     activity.activityType === ActivityType.ADJUSTMENT &&
-    (subtype === ACTIVITY_SUBTYPES.CONVERSION_OUT || subtype === ACTIVITY_SUBTYPES.CONVERSION_IN)
+    (subtype === ACTIVITY_SUBTYPES.CONVERSION_OUT ||
+      subtype === ACTIVITY_SUBTYPES.CONVERSION_IN ||
+      subtype === ACTIVITY_SUBTYPES.SPIN_OFF_OUT ||
+      subtype === ACTIVITY_SUBTYPES.SPIN_OFF_IN)
   );
 };
 

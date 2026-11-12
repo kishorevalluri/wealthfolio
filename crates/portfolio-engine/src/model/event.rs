@@ -172,6 +172,15 @@ pub enum Action {
         #[serde(with = "crate::model::decimal_serde")]
         to_quantity: Decimal,
         arriving: ActivityId,
+        /// A spin-off (rules R7.6): the share of each relieved lot's cost
+        /// that opens as `to_asset`; the rest reopens as `from_asset`, so the
+        /// parent's units stay. `None` for a conversion.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            with = "crate::model::decimal_serde::option"
+        )]
+        cost_share: Option<Decimal>,
     },
 }
 

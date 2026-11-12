@@ -30,6 +30,13 @@ function generateSourceGroupId(): string {
  * one day, with no cash.
  */
 function conversionRows(data: ConversionFormValues, accountCurrency: string | undefined) {
+  // A cost share makes it a demerger (rules R7.6): the parent row carries the
+  // share of cost that moves, 0 to 1, as its unit price.
+  const costShare =
+    data.costMovedPercent !== undefined && data.costMovedPercent !== null
+      ? Number(data.costMovedPercent) / 100
+      : undefined;
+  const spinOff = costShare !== undefined;
   const side = (
     subtype: string,
     asset: {
@@ -67,36 +74,36 @@ function conversionRows(data: ConversionFormValues, accountCurrency: string | un
           providerSymbol: asset.metadata?.providerSymbol,
         }),
   });
-  return {
-    leaving: side(
-      ACTIVITY_SUBTYPES.CONVERSION_OUT,
-      {
-        id: data.fromExistingAssetId,
-        symbol: data.fromAssetId,
-        exchangeMic: data.fromExchangeMic,
-        quoteCcy: data.fromSymbolQuoteCcy,
-        instrumentType: data.fromSymbolInstrumentType,
-        quoteMode: data.fromQuoteMode,
-        metadata: data.fromAssetMetadata,
-      },
-      data.fromQuantity,
-      data.fromCurrency,
-    ),
-    arriving: side(
-      ACTIVITY_SUBTYPES.CONVERSION_IN,
-      {
-        id: data.toExistingAssetId,
-        symbol: data.toAssetId,
-        exchangeMic: data.toExchangeMic,
-        quoteCcy: data.toSymbolQuoteCcy,
-        instrumentType: data.toSymbolInstrumentType,
-        quoteMode: data.toQuoteMode,
-        metadata: data.toAssetMetadata,
-      },
-      data.toQuantity,
-      data.toCurrency,
-    ),
-  };
+  const leavingRow = side(
+    spinOff ? ACTIVITY_SUBTYPES.SPIN_OFF_OUT : ACTIVITY_SUBTYPES.CONVERSION_OUT,
+    {
+      id: data.fromExistingAssetId,
+      symbol: data.fromAssetId,
+      exchangeMic: data.fromExchangeMic,
+      quoteCcy: data.fromSymbolQuoteCcy,
+      instrumentType: data.fromSymbolInstrumentType,
+      quoteMode: data.fromQuoteMode,
+      metadata: data.fromAssetMetadata,
+    },
+    data.fromQuantity,
+    data.fromCurrency,
+  );
+  const arriving = side(
+    spinOff ? ACTIVITY_SUBTYPES.SPIN_OFF_IN : ACTIVITY_SUBTYPES.CONVERSION_IN,
+    {
+      id: data.toExistingAssetId,
+      symbol: data.toAssetId,
+      exchangeMic: data.toExchangeMic,
+      quoteCcy: data.toSymbolQuoteCcy,
+      instrumentType: data.toSymbolInstrumentType,
+      quoteMode: data.toQuoteMode,
+      metadata: data.toAssetMetadata,
+    },
+    data.toQuantity,
+    data.toCurrency,
+  );
+  const leaving = spinOff ? { ...leavingRow, unitPrice: costShare } : leavingRow;
+  return { leaving, arriving };
 }
 
 function extractErrorMessage(error: unknown): string {
@@ -222,8 +229,16 @@ export function useActivityForm({
               : [activity.counterpartDate, activity.date];
             const result = await saveActivitiesMutation.mutateAsync({
               updates: [
-                { ...leaving, id: leavingId, ...ownTime(leavingTime) } as ActivityUpdate,
-                { ...arriving, id: arrivingId, ...ownTime(arrivingTime) } as ActivityUpdate,
+                {
+                  ...leaving,
+                  id: leavingId,
+                  ...ownTime(leavingTime),
+                } as ActivityUpdate,
+                {
+                  ...arriving,
+                  id: arrivingId,
+                  ...ownTime(arrivingTime),
+                } as ActivityUpdate,
               ],
             });
             // The bulk save closes the sheet after a create; an edit closes it here.
@@ -502,7 +517,9 @@ export function useActivityForm({
       } catch (err) {
         if (isActivityEditCancelled(err)) return;
         const message = extractErrorMessage(err);
-        toast.error(i18n.t("activity:mobile_form.save_failed"), { description: message });
+        toast.error(i18n.t("activity:mobile_form.save_failed"), {
+          description: message,
+        });
         logger.error(`Activity Form Submit Error: ${JSON.stringify({ error: err, formData })}`);
       }
     },

@@ -26,10 +26,14 @@ export function conversionFirstDate(activity: Partial<ActivityDetails>): Date | 
 
 /** Whether a conversion row is the one whose units leave. */
 export function isLeavingConversionRow(activity: Partial<ActivityDetails> | undefined): boolean {
-  return (
-    activity?.subtype?.trim().toUpperCase().replace(/[\s-]/g, "_") ===
-    ACTIVITY_SUBTYPES.CONVERSION_OUT
-  );
+  const subtype = activity?.subtype?.trim().toUpperCase().replace(/[\s-]/g, "_");
+  return subtype === ACTIVITY_SUBTYPES.CONVERSION_OUT || subtype === ACTIVITY_SUBTYPES.SPIN_OFF_OUT;
+}
+
+/** Whether a conversion row is a demerger's (a spin-off). */
+export function isSpinOffRow(activity: Partial<ActivityDetails> | undefined): boolean {
+  const subtype = activity?.subtype?.trim().toUpperCase().replace(/[\s-]/g, "_");
+  return subtype === ACTIVITY_SUBTYPES.SPIN_OFF_OUT || subtype === ACTIVITY_SUBTYPES.SPIN_OFF_IN;
 }
 
 /**
@@ -58,6 +62,7 @@ export async function attachConversionCounterpart(
       counterpartAssetId: counterpart.assetId ?? null,
       counterpartAssetSymbol: details?.assetSymbol ?? counterpart.assetId ?? null,
       counterpartQuantity: counterpart.quantity ?? null,
+      counterpartUnitPrice: counterpart.unitPrice ?? null,
       counterpartCurrency: counterpart.currency,
       counterpartDate: counterpart.activityDate,
     };
@@ -90,6 +95,7 @@ export async function buildConversionDuplicate(
         subtype: row.subtype,
         activityDate,
         quantity: row.quantity,
+        unitPrice: row.unitPrice,
         currency: row.currency,
         comment: row.notes,
         asset: row.assetId ? { id: row.assetId } : undefined,

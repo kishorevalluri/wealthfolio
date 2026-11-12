@@ -90,14 +90,25 @@ pub fn project_accounts(
         transfers_in: ledger
             .events
             .iter()
-            .filter_map(|e| match &e.action {
+            .flat_map(|e| match &e.action {
                 Action::SecurityTransfer {
                     direction: Direction::In,
                     ..
-                } => Some(e.id.clone()),
-                // The lots a conversion opens belong to its arriving row.
-                Action::Conversion { arriving, .. } => Some(EventId::new(arriving.as_str())),
-                _ => None,
+                } => vec![e.id.clone()],
+                // The lots a conversion opens belong to its arriving row; a
+                // spin-off also reopens the parent's lots under its own id.
+                Action::Conversion {
+                    arriving,
+                    cost_share,
+                    ..
+                } => {
+                    let mut ids = vec![EventId::new(arriving.as_str())];
+                    if cost_share.is_some() {
+                        ids.push(e.id.clone());
+                    }
+                    ids
+                }
+                _ => Vec::new(),
             })
             .collect(),
     };
@@ -943,14 +954,18 @@ impl Projector<'_> {
                 to_asset,
                 to_quantity,
                 arriving,
+                cost_share,
             } => self.convert(
                 event,
                 state,
-                from_asset,
-                *from_quantity,
-                to_asset,
-                *to_quantity,
-                arriving,
+                ConversionLegs {
+                    from_asset,
+                    from_quantity: *from_quantity,
+                    to_asset,
+                    to_quantity: *to_quantity,
+                    arriving,
+                    cost_share: *cost_share,
+                },
                 effects,
                 run,
             ),
@@ -1934,14 +1949,18 @@ impl Projector<'_> {
         &self,
         event: &EconomicEvent,
         state: &mut AccountState,
-        from_asset: &AssetId,
-        from_quantity: Decimal,
-        to_asset: &AssetId,
-        to_quantity: Decimal,
-        arriving: &ActivityId,
+        legs: ConversionLegs<'_>,
         effects: &mut SideEffects,
         run: &mut RunLog,
     ) -> Result<(), String> {
+        let ConversionLegs {
+            from_asset,
+            from_quantity,
+            to_asset,
+            to_quantity,
+            arriving,
+            cost_share,
+        } = legs;
         let account_id = state.account.clone();
         let account_currency = state.currency.clone();
         for asset in [from_asset, to_asset] {
@@ -2030,6 +2049,7 @@ impl Projector<'_> {
         let count = reduction.removed_lots.len();
         let mut opened = Decimal::ZERO;
         let mut lots = Vec::with_capacity(count);
+        let mut kept = Vec::new();
         for (index, lot) in reduction.removed_lots.iter().enumerate() {
             let factor = checked(arith::mul(lot.split_ratio, ratio), "conversion factor")?;
             let units = if index + 1 == count {
@@ -2043,7 +2063,7 @@ impl Projector<'_> {
                 ));
             }
             opened += units;
-            lots.push(Lot {
+            let converted = Lot {
                 quantity: units,
                 original_quantity: units,
                 acquisition_price: checked(
@@ -2052,7 +2072,39 @@ impl Projector<'_> {
                 )?,
                 split_ratio: Decimal::ONE,
                 ..lot.clone()
-            });
+            };
+            match cost_share {
+                // A spin-off (rules R7.6): the new shares take the share of
+                // the lot's cost and the parent keeps the rest, each with the
+                // lot's purchase date.
+                Some(share) => {
+                    let (child, parent) = share_lot_cost(&converted, lot, share)?;
+                    lots.push(child);
+                    kept.push(parent);
+                }
+                None => lots.push(converted),
+            }
+        }
+        if !kept.is_empty() {
+            let kept_base: Vec<_> = kept
+                .iter()
+                .map(|lot| self.lot_book_cost(lot, from_currency.as_str(), self.base()))
+                .collect();
+            let from_position = state
+                .positions
+                .get_mut(from_asset)
+                .ok_or_else(|| format!("the account holds no {from_asset} to keep"))?;
+            let allows_negative = from_position
+                .lots
+                .iter()
+                .any(|lot| lot.quantity < Decimal::ZERO);
+            add_transferred_lots(
+                from_position,
+                event.id.as_str(),
+                &kept,
+                &kept_base,
+                allows_negative,
+            )?;
         }
         let opening_base: Vec<_> = lots
             .iter()
@@ -3479,6 +3531,67 @@ fn open_lot_signed(
 }
 
 /// Legacy `add_transferred_lots` (no FX re-rating: same asset, same currency).
+/// A conversion's or spin-off's two sides (rules R7.5, R7.6).
+struct ConversionLegs<'a> {
+    from_asset: &'a AssetId,
+    from_quantity: Decimal,
+    to_asset: &'a AssetId,
+    to_quantity: Decimal,
+    arriving: &'a ActivityId,
+    cost_share: Option<Decimal>,
+}
+
+/// Splits a relieved lot's cost between a spin-off's new shares (`child`,
+/// already in the new asset's units) and the parent (`parent`, as relieved):
+/// the child takes `share` of each amount and the parent the rest, so the
+/// two add up to the lot (rules R7.6).
+fn share_lot_cost(child: &Lot, parent: &Lot, share: Decimal) -> Result<(Lot, Lot), String> {
+    let part = |amount: Decimal| -> Result<(Decimal, Decimal), String> {
+        let moved = checked(arith::mul(amount, share), "spin-off cost share")?;
+        Ok((moved, amount - moved))
+    };
+    let part_option =
+        |amount: Option<Decimal>| -> Result<(Option<Decimal>, Option<Decimal>), String> {
+            Ok(match amount {
+                Some(amount) => {
+                    let (moved, kept) = part(amount)?;
+                    (Some(moved), Some(kept))
+                }
+                None => (None, None),
+            })
+        };
+    let (cost_moved, cost_kept) = part(parent.cost_basis)?;
+    let (fees_moved, fees_kept) = part(parent.fees)?;
+    let (taxes_moved, taxes_kept) = part(parent.taxes)?;
+    let (account_moved, account_kept) = part_option(parent.book_cost_account)?;
+    let (base_moved, base_kept) = part_option(parent.book_cost_base)?;
+    let (child_price, _) = part(child.acquisition_price)?;
+    let (_, parent_price) = part(parent.acquisition_price)?;
+    let child = Lot {
+        cost_basis: cost_moved,
+        acquisition_price: child_price,
+        fees: fees_moved,
+        original_fees: fees_moved,
+        taxes: taxes_moved,
+        original_taxes: taxes_moved,
+        book_cost_account: account_moved,
+        book_cost_base: base_moved,
+        ..child.clone()
+    };
+    let parent = Lot {
+        cost_basis: cost_kept,
+        acquisition_price: parent_price,
+        fees: fees_kept,
+        original_fees: fees_kept,
+        taxes: taxes_kept,
+        original_taxes: taxes_kept,
+        book_cost_account: account_kept,
+        book_cost_base: base_kept,
+        ..parent.clone()
+    };
+    Ok((child, parent))
+}
+
 fn add_transferred_lots(
     position: &mut Position,
     prefix: &str,

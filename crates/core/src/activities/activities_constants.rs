@@ -279,6 +279,17 @@ pub const ACTIVITY_SUBTYPE_CONVERSION_OUT: &str = "CONVERSION_OUT";
 /// conversion, paired with a `CONVERSION_OUT` row.
 pub const ACTIVITY_SUBTYPE_CONVERSION_IN: &str = "CONVERSION_IN";
 
+/// Spin-off out: on an ADJUSTMENT, the parent's units covered by a spin-off
+/// (a demerger). Its `unit_price` is the share of their cost, between 0 and
+/// 1, that moves to the new shares; the parent keeps its units and the rest
+/// of the cost, with every lot's purchase date (engine rules R7.6). Paired
+/// like a conversion with a `SPIN_OFF_IN` row.
+pub const ACTIVITY_SUBTYPE_SPIN_OFF_OUT: &str = "SPIN_OFF_OUT";
+
+/// Spin-off in: on an ADJUSTMENT, the new shares a spin-off delivers, paired
+/// with a `SPIN_OFF_OUT` row.
+pub const ACTIVITY_SUBTYPE_SPIN_OFF_IN: &str = "SPIN_OFF_IN";
+
 /// Buyback: a SELL of shares back to the company that issued them. In India,
 /// from 1 Oct 2024 to 31 Mar 2026 the whole payment is a deemed dividend
 /// (Section 2(22)(f)) and the shares' cost becomes a capital loss; from 1 Apr

@@ -51,6 +51,8 @@
   "subtype_notional_distribution": "Distribución nocional",
   "subtype_conversion_out": "Traspaso (salida)",
   "subtype_conversion_in": "Traspaso (entrada)",
+  "subtype_spin_off_out": "Escisión (origen)",
+  "subtype_spin_off_in": "Escisión (nuevas)",
   "type_buy_desc": "Compra un activo. Esto aumenta la cantidad de tu posición y reduce tu saldo de efectivo.",
   "type_sell_desc": "Vende un activo. Esto reduce la cantidad de tu posición y aumenta tu saldo de efectivo.",
   "type_deposit_desc": "Aumenta el saldo de tu cuenta añadiendo fondos.",
@@ -490,6 +492,8 @@
     "section_conversion_from": "Desde",
     "section_conversion_to": "Hacia",
     "conversion_hint": "Las participaciones de un fondo o activo pasan a ser de otro y conservan su coste: un traspaso entre fondos, un cambio de clase o de serie, un fondo convertido en ETF o una migración de token. Si el cambio tributó, registra una venta y una compra.",
+    "label_demerger_cost_share": "Escisión: coste que pasa a las nuevas acciones (%)",
+    "demerger_hint": "Déjelo vacío para una conversión. En una escisión, las acciones originales se mantienen y este porcentaje de su coste, según lo anunció la empresa, pasa a las nuevas acciones. Ambas conservan las fechas de compra originales.",
     "button_add_conversion": "Añadir traspaso",
     "warn_converting_more_than_held": "Vas a traspasar {{converting}} participaciones, pero esta cuenta tiene {{available}} hoy.",
     "err_conversion_same_asset": "Elige otro activo de destino.",
@@ -721,7 +725,8 @@
     "err_select_reward_asset": "Selecciona un activo de recompensa.",
     "err_enter_received_quantity": "Introduce la cantidad recibida.",
     "err_enter_income_or_fmv": "Introduce el importe del ingreso o el valor justo de mercado por unidad.",
-    "err_enter_sent_amount": "Introduce un importe enviado."
+    "err_enter_sent_amount": "Introduce un importe enviado.",
+    "err_demerger_cost_share": "Introduzca un porcentaje entre 0 y 100."
   },
   "datagrid": {
     "pagination": {

@@ -481,6 +481,10 @@ mod tests {
             "ADJUSTMENT",
             Some("CONVERSION_OUT")
         )));
+        assert!(is_lot_carried_on(&activity(
+            "ADJUSTMENT",
+            Some("SPIN_OFF_OUT")
+        )));
         assert!(!is_lot_carried_on(&activity("SELL", None)));
         assert!(!is_lot_carried_on(&activity("SELL", Some("BUYBACK"))));
         assert!(!is_lot_carried_on(&activity("ADJUSTMENT", None)));

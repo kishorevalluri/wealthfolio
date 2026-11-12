@@ -150,7 +150,7 @@ describe("hasActivityForm", () => {
   });
 });
 describe("conversion defaults", () => {
-  it.each(["CONVERSION_OUT", "CONVERSION_IN"])(
+  it.each(["CONVERSION_OUT", "CONVERSION_IN", "SPIN_OFF_OUT", "SPIN_OFF_IN"])(
     "maps an ADJUSTMENT %s row to the conversion form",
     (subtype) => {
       expect(mapActivityTypeToPicker(ActivityType.ADJUSTMENT, subtype)).toBe("CONVERSION");
@@ -199,6 +199,50 @@ describe("conversion defaults", () => {
       toExistingAssetId: "asset-FUNDB",
       toQuantity: 40,
     });
+  });
+
+  it.each([
+    ["SPIN_OFF_OUT", "0.25", null],
+    ["SPIN_OFF_IN", null, "0.25"],
+  ])("reads a demerger's cost share when editing the %s row", (subtype, own, other) => {
+    const defaults = ACTIVITY_FORM_CONFIG.CONVERSION.getDefaults(
+      {
+        id: "row",
+        accountId: "acc-1",
+        activityType: ActivityType.ADJUSTMENT,
+        subtype,
+        assetId: "asset-own",
+        assetSymbol: "OWN",
+        quantity: "10",
+        unitPrice: own,
+        currency: "INR",
+        counterpartAssetId: "asset-other",
+        counterpartAssetSymbol: "OTHER",
+        counterpartQuantity: "5",
+        counterpartUnitPrice: other,
+        counterpartCurrency: "INR",
+      } as never,
+      [],
+    );
+    expect(defaults).toMatchObject({ costMovedPercent: 25 });
+  });
+
+  it("leaves the cost share empty for a conversion", () => {
+    const defaults = ACTIVITY_FORM_CONFIG.CONVERSION.getDefaults(
+      {
+        id: "row",
+        accountId: "acc-1",
+        activityType: ActivityType.ADJUSTMENT,
+        subtype: "CONVERSION_OUT",
+        assetId: "asset-a",
+        quantity: "10",
+        unitPrice: "0.25",
+        counterpartAssetId: "asset-b",
+        counterpartQuantity: "5",
+      } as never,
+      [],
+    );
+    expect((defaults as { costMovedPercent?: number }).costMovedPercent).toBeUndefined();
   });
 
   it.each([

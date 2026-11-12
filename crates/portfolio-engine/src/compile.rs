@@ -106,6 +106,7 @@ fn conversion_event(out_leg: &Activity, in_leg: &Activity, first: &Activity) -> 
             to_asset: asset(in_leg),
             to_quantity: in_leg.quantity,
             arriving: in_leg.id.clone(),
+            cost_share: crate::normalize::spin_off_cost_share(out_leg),
         },
         contribution: Contribution::None,
         flow: Flow::NONE,

@@ -51,6 +51,8 @@
   "subtype_notional_distribution": "Distribution théorique",
   "subtype_conversion_out": "Arbitrage (sortie)",
   "subtype_conversion_in": "Arbitrage (entrée)",
+  "subtype_spin_off_out": "Scission (origine)",
+  "subtype_spin_off_in": "Scission (nouvelles)",
   "type_buy_desc": "Achetez un actif. Cela augmente la quantité de vos positions et diminue votre solde de liquidités.",
   "type_sell_desc": "Vendez un actif. Cela diminue la quantité de vos positions et augmente votre solde de liquidités.",
   "type_deposit_desc": "Augmentez le solde de votre compte en ajoutant des fonds.",
@@ -490,6 +492,8 @@
     "section_conversion_from": "De",
     "section_conversion_to": "Vers",
     "conversion_hint": "Les parts d'un fonds ou d'un actif deviennent des parts d'un autre et gardent leur coût : un arbitrage entre fonds, un changement de catégorie ou de série de parts, un fonds converti en ETF ou une migration de jeton. Si l'arbitrage a été imposé, enregistrez une vente et un achat.",
+    "label_demerger_cost_share": "Scission : coût transféré aux nouvelles actions (%)",
+    "demerger_hint": "Laissez vide pour une conversion. Lors d'une scission, les actions d'origine restent et ce pourcentage de leur coût, tel qu'annoncé par la société, passe aux nouvelles actions. Les deux gardent les dates d'achat d'origine.",
     "button_add_conversion": "Ajouter un arbitrage",
     "warn_converting_more_than_held": "Vous convertissez {{converting}} parts, mais ce compte en détient {{available}} aujourd'hui.",
     "err_conversion_same_asset": "Choisissez un autre actif de destination.",
@@ -721,7 +725,8 @@
     "err_select_reward_asset": "Veuillez sélectionner un actif de récompense.",
     "err_enter_received_quantity": "Veuillez saisir la quantité reçue.",
     "err_enter_income_or_fmv": "Veuillez saisir le montant du revenu ou la JVM par unité.",
-    "err_enter_sent_amount": "Veuillez saisir un montant envoyé."
+    "err_enter_sent_amount": "Veuillez saisir un montant envoyé.",
+    "err_demerger_cost_share": "Saisissez un pourcentage entre 0 et 100."
   },
   "datagrid": {
     "pagination": {
