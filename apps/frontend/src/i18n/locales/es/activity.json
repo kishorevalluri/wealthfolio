@@ -909,7 +909,10 @@
       "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
       "statementAccount": "Cuenta del extracto",
       "statementAccountHelp": "Este extracto incluye más de una cuenta demat o grupo de folios. Elija la que corresponde a esta cuenta; sus posiciones reemplazan las de la cuenta. «Todas» las suma.",
-      "statementAccountAll": "Todas las cuentas del extracto"
+      "statementAccountAll": "Todas las cuentas del extracto",
+      "notAllContractNotes": "{{file}} no es una nota de contrato del bróker. Solo se pueden importar varios archivos juntos si todos son notas de contrato.",
+      "onlyPdfsTogether": "Elija solo notas de contrato en PDF para importar varios archivos juntos.",
+      "filesSelected": "{{count}} archivos PDF"
     },
     "parseSettings": {
       "title": "Configuración de análisis",

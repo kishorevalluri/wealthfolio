@@ -893,7 +893,10 @@
       "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
       "statementAccount": "對帳單帳戶",
       "statementAccountHelp": "此對帳單包含多個證券帳戶或基金帳戶組。請選擇與此帳戶對應的一個；其持倉將取代此帳戶的持倉。「全部」會將它們合併。",
-      "statementAccountAll": "對帳單中的所有帳戶"
+      "statementAccountAll": "對帳單中的所有帳戶",
+      "notAllContractNotes": "{{file}} 不是券商成交單。只有全部是成交單時才能一起匯入多個檔案。",
+      "onlyPdfsTogether": "要一起匯入多個檔案，請只選擇 PDF 成交單。",
+      "filesSelected": "{{count}} 個 PDF 檔案"
     },
     "parseSettings": {
       "title": "解析設定",

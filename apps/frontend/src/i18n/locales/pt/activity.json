@@ -909,7 +909,10 @@
       "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
       "statementAccount": "Conta do extrato",
       "statementAccountHelp": "Este extrato inclui mais de uma conta demat ou grupo de fólios. Escolha a que corresponde a esta conta; as posições dela substituem as da conta. «Todas» soma-as.",
-      "statementAccountAll": "Todas as contas do extrato"
+      "statementAccountAll": "Todas as contas do extrato",
+      "notAllContractNotes": "{{file}} não é uma nota de corretagem. Vários ficheiros só podem ser importados juntos se forem todos notas de corretagem.",
+      "onlyPdfsTogether": "Escolha apenas notas de corretagem em PDF para importar vários ficheiros juntos.",
+      "filesSelected": "{{count}} ficheiros PDF"
     },
     "parseSettings": {
       "title": "Configurações de análise",

@@ -886,7 +886,10 @@
       "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
       "statementAccount": "명세서 계좌",
       "statementAccountHelp": "이 명세서에는 둘 이상의 계좌 또는 폴리오 그룹이 포함되어 있습니다. 이 계좌에 해당하는 것을 선택하세요. 선택한 보유 내역이 이 계좌의 보유 내역을 대체합니다. '전체'는 합산합니다.",
-      "statementAccountAll": "명세서의 모든 계좌"
+      "statementAccountAll": "명세서의 모든 계좌",
+      "notAllContractNotes": "{{file}} 은(는) 증권사 거래확인서가 아닙니다. 여러 파일은 모두 거래확인서일 때만 함께 가져올 수 있습니다.",
+      "onlyPdfsTogether": "여러 파일을 함께 가져오려면 PDF 거래확인서만 선택하세요.",
+      "filesSelected": "PDF 파일 {{count}}개"
     },
     "parseSettings": {
       "title": "분석 설정",

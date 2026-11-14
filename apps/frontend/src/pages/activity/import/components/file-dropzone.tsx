@@ -12,6 +12,10 @@ interface FileDropzoneProps {
   accept?: string;
   isValid?: boolean;
   error?: string | null;
+  /** Called instead of `onFileChange` when several files are dropped or picked. */
+  onFilesChange?: (files: File[]) => void;
+  /** Shown in place of the file's name, e.g. for several files read as one. */
+  fileLabel?: string | null;
 }
 
 export const FileDropzone = ({
@@ -21,6 +25,8 @@ export const FileDropzone = ({
   accept = "*",
   isValid = true,
   error = null,
+  onFilesChange,
+  fileLabel = null,
 }: FileDropzoneProps) => {
   const { t } = useTranslation();
   const numbers = useNumberFormatting();
@@ -45,13 +51,21 @@ export const FileDropzone = ({
     setIsDragging(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onFileChange(e.dataTransfer.files[0]);
+      pick(e.dataTransfer.files);
     }
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      onFileChange(e.target.files[0]);
+      pick(e.target.files);
+    }
+  };
+
+  const pick = (files: FileList) => {
+    if (files.length > 1 && onFilesChange) {
+      onFilesChange(Array.from(files));
+    } else {
+      onFileChange(files[0]);
     }
   };
 
@@ -140,6 +154,7 @@ export const FileDropzone = ({
         onChange={handleFileInputChange}
         className="hidden"
         accept={accept}
+        multiple={!!onFilesChange}
         disabled={isLoading}
       />
 
@@ -240,7 +255,7 @@ export const FileDropzone = ({
                 transition={{ duration: 0.2 }}
                 className="space-y-0"
               >
-                <p className="text-destructive font-medium">{file.name}</p>
+                <p className="text-destructive font-medium">{fileLabel ?? file.name}</p>
                 <p className="text-destructive text-xs">
                   {numbers.formatDecimal(file.size / 1024, {
                     minimumFractionDigits: 2,
@@ -258,7 +273,7 @@ export const FileDropzone = ({
                 transition={{ duration: 0.2 }}
                 className="space-y-0"
               >
-                <p className="text-xs font-medium">{file.name}</p>
+                <p className="text-xs font-medium">{fileLabel ?? file.name}</p>
                 <p className="text-muted-foreground text-xs">
                   {numbers.formatDecimal(file.size / 1024, {
                     minimumFractionDigits: 2,

@@ -893,7 +893,10 @@
       "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
       "statementAccount": "Konto auf dem Auszug",
       "statementAccountHelp": "Dieser Auszug umfasst mehr als ein Depot oder eine Foliogruppe. Wählen Sie das, das dieses Konto abbildet; seine Bestände ersetzen die des Kontos. „Alle“ fasst sie zusammen.",
-      "statementAccountAll": "Alle Konten auf dem Auszug"
+      "statementAccountAll": "Alle Konten auf dem Auszug",
+      "notAllContractNotes": "{{file}} ist keine Broker-Abrechnung (Contract Note). Mehrere Dateien lassen sich nur gemeinsam importieren, wenn alle Contract Notes sind.",
+      "onlyPdfsTogether": "Wählen Sie nur PDF-Contract-Notes, um mehrere Dateien gemeinsam zu importieren.",
+      "filesSelected": "{{count}} PDF-Dateien"
     },
     "parseSettings": {
       "title": "Analyseeinstellungen",

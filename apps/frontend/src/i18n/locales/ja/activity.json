@@ -886,7 +886,10 @@
       "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
       "statementAccount": "明細書の口座",
       "statementAccountHelp": "この明細書には複数の口座またはフォリオグループが含まれています。この口座に対応するものを選択してください。その保有がこの口座の保有を置き換えます。「すべて」は合算します。",
-      "statementAccountAll": "明細書のすべての口座"
+      "statementAccountAll": "明細書のすべての口座",
+      "notAllContractNotes": "{{file}} は証券会社の取引報告書ではありません。複数ファイルをまとめて取り込めるのは、すべて取引報告書の場合のみです。",
+      "onlyPdfsTogether": "複数ファイルをまとめて取り込むには、PDF の取引報告書だけを選んでください。",
+      "filesSelected": "PDF ファイル {{count}} 件"
     },
     "parseSettings": {
       "title": "解析設定",

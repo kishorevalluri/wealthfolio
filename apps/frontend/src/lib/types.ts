@@ -578,6 +578,7 @@ export type StatementType =
   | "CDSL_CAS"
   | "NSDL_CAS"
   | "UPSTOX_TRADEBOOK"
+  | "CONTRACT_NOTE"
   | "UNKNOWN";
 
 export interface ParsedPdfResult {
