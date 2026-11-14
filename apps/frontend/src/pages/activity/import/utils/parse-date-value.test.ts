@@ -148,3 +148,10 @@ describe("validateDraft — activity dates", () => {
     expect(dateErrors("")).toEqual(["Date is required"]);
   });
 });
+
+describe("parseDateValue — contract note trade times", () => {
+  it("reads a date with a 24-hour time", () => {
+    const parsed = local(parseDateValue("2020-12-30 14:54:17", "auto"));
+    expect(parsed).toEqual({ y: 2020, mo: 12, day: 30, h: 14 });
+  });
+});

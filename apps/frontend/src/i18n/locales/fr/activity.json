@@ -909,7 +909,10 @@
       "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
       "statementAccount": "Compte du relevé",
       "statementAccountHelp": "Ce relevé couvre plusieurs comptes-titres ou groupes de folios. Choisissez celui que ce compte représente ; ses positions remplacent celles du compte. « Tous » les additionne.",
-      "statementAccountAll": "Tous les comptes du relevé"
+      "statementAccountAll": "Tous les comptes du relevé",
+      "notAllContractNotes": "{{file}} n'est pas un avis d'opéré du courtier. Plusieurs fichiers ne peuvent être importés ensemble que s'ils sont tous des avis d'opéré.",
+      "onlyPdfsTogether": "Choisissez uniquement des avis d'opéré PDF pour importer plusieurs fichiers ensemble.",
+      "filesSelected": "{{count}} fichiers PDF"
     },
     "parseSettings": {
       "title": "Paramètres d'analyse",

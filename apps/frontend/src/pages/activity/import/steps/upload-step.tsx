@@ -43,6 +43,7 @@ import { CSVFileViewer, type CSVLine } from "../components/csv-file-viewer";
 import { FileDropzone } from "../components/file-dropzone";
 import { HelpTooltip } from "../components/help-tooltip";
 import { PdfPasswordDialog } from "../components/pdf-password-dialog";
+import { combineContractNotes, NotAllContractNotesError } from "../utils/contract-notes";
 import {
   setAccountId,
   setFile,
@@ -858,7 +859,9 @@ export function UploadStep() {
 
   const [isPdfPasswordOpen, setIsPdfPasswordOpen] = useState(false);
   const [pdfPasswordError, setPdfPasswordError] = useState<string | null>(null);
-  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
+  const [pendingPdfFiles, setPendingPdfFiles] = useState<File[] | null>(null);
+  // Several contract notes read as one import: shown as their count.
+  const [fileLabel, setFileLabel] = useState<string | null>(null);
   const [isPdfParsing, setIsPdfParsing] = useState(false);
   // Holdings import of a depository statement that covers several accounts.
   const { statementHoldingRows, statementAccount } = state;
@@ -868,13 +871,18 @@ export function UploadStep() {
   );
 
   const handlePdfParse = useCallback(
-    async (file: File, password?: string) => {
+    async (files: File[], password?: string) => {
       setIsPdfParsing(true);
       setPdfPasswordError(null);
       try {
-        const result = await parsePdf(file, password);
+        // Contract notes from one broker share a password (the PAN).
+        const results = [];
+        for (const file of files) {
+          results.push({ fileName: file.name, result: await parsePdf(file, password) });
+        }
+        const result = combineContractNotes(results);
         setIsPdfPasswordOpen(false);
-        setPendingPdfFile(null);
+        setPendingPdfFiles(null);
         setParseError(null);
         let rows = result.parsed.rows;
         let statementBalances: StatementBalance[] = [];
@@ -907,12 +915,14 @@ export function UploadStep() {
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (
+        if (err instanceof NotAllContractNotesError) {
+          setParseError(t("activity:import.upload.notAllContractNotes", { file: err.fileName }));
+        } else if (
           msg.toLowerCase().includes("encrypted") ||
           msg.toLowerCase().includes("password") ||
           msg.toLowerCase().includes("decrypt")
         ) {
-          setPendingPdfFile(file);
+          setPendingPdfFiles(files);
           setPdfPasswordError(
             password ? msg || t("activity:import.upload.pdfDecryptionFailed") : null,
           );
@@ -943,33 +953,51 @@ export function UploadStep() {
 
   const handleFileSelect = useCallback(
     (file: File | null) => {
+      setFileLabel(null);
       if (file) {
         dispatch(setFile(file));
         if (isStatementFile(file.name)) {
-          setPendingPdfFile(file);
-          void handlePdfParse(file);
+          setPendingPdfFiles([file]);
+          void handlePdfParse([file]);
         } else {
-          setPendingPdfFile(null);
+          setPendingPdfFiles(null);
           parseFile(file);
         }
       } else {
         dispatch(setFile(null as unknown as File));
         dispatch(setParsedData([], []));
         dispatch(setStatementHoldings([], ""));
-        setPendingPdfFile(null);
+        setPendingPdfFiles(null);
         setIsPdfPasswordOpen(false);
       }
     },
     [dispatch, handlePdfParse, parseFile],
   );
 
+  // Several PDFs at once: contract notes, read together into one import.
+  const handleFilesSelect = useCallback(
+    (files: File[]) => {
+      const pdfs = files.filter((file) => file.name.toLowerCase().endsWith(".pdf"));
+      if (pdfs.length !== files.length) {
+        setFileLabel(null);
+        setParseError(t("activity:import.upload.onlyPdfsTogether"));
+        return;
+      }
+      dispatch(setFile(pdfs[0]));
+      setFileLabel(t("activity:import.upload.filesSelected", { count: pdfs.length }));
+      setPendingPdfFiles(pdfs);
+      void handlePdfParse(pdfs);
+    },
+    [dispatch, handlePdfParse, t],
+  );
+
   const handlePdfPasswordSubmit = useCallback(
     (password: string) => {
-      if (pendingPdfFile) {
-        void handlePdfParse(pendingPdfFile, password);
+      if (pendingPdfFiles) {
+        void handlePdfParse(pendingPdfFiles, password);
       }
     },
-    [handlePdfParse, pendingPdfFile],
+    [handlePdfParse, pendingPdfFiles],
   );
 
   const handleConfigChange = useCallback(
@@ -1080,6 +1108,8 @@ export function UploadStep() {
             <FileDropzone
               file={state.file}
               onFileChange={handleFileSelect}
+              onFilesChange={handleFilesSelect}
+              fileLabel={fileLabel}
               isLoading={isPending || isPdfParsing}
               accept=".csv,.pdf,.xlsx,.xls,.ods"
               isValid={!hasParseErrors}

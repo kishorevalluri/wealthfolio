@@ -909,7 +909,10 @@
       "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
       "statementAccount": "Conto dell'estratto",
       "statementAccountHelp": "Questo estratto comprende più di un conto titoli o gruppo di folio. Scegli quello che corrisponde a questo conto; le sue posizioni sostituiscono quelle del conto. «Tutti» le somma.",
-      "statementAccountAll": "Tutti i conti dell'estratto"
+      "statementAccountAll": "Tutti i conti dell'estratto",
+      "notAllContractNotes": "{{file}} non è una nota di eseguito del broker. Più file si possono importare insieme solo se sono tutti note di eseguito.",
+      "onlyPdfsTogether": "Scegli solo note di eseguito in PDF per importare più file insieme.",
+      "filesSelected": "{{count}} file PDF"
     },
     "parseSettings": {
       "title": "Impostazioni di analisi",

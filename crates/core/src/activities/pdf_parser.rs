@@ -20,6 +20,8 @@ pub enum StatementType {
     NsdlCas,
     /// Upstox tradebook (.xlsx).
     UpstoxTradebook,
+    /// A broker's contract note (Zerodha, Upstox, Dhan).
+    ContractNote,
     Unknown,
 }
 
@@ -30,10 +32,14 @@ impl StatementType {
             StatementType::CdslCas => Some("system_cdsl_cas"),
             StatementType::NsdlCas => Some("system_nsdl_cas"),
             StatementType::UpstoxTradebook => Some(super::spreadsheet_parser::UPSTOX_TEMPLATE_ID),
+            StatementType::ContractNote => Some(CONTRACT_NOTE_TEMPLATE_ID),
             StatementType::Unknown => None,
         }
     }
 }
+
+/// Import template for broker contract notes.
+pub const CONTRACT_NOTE_TEMPLATE_ID: &str = "system_contract_note";
 
 /// Result of parsing a PDF statement.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -429,6 +435,7 @@ pub fn parse_pdf(content: &[u8], password: Option<&str>) -> Result<ParsedPdfResu
         }
         StatementType::CdslCas => crate::activities::parsers::parse_cdsl_cas(&full_text),
         StatementType::NsdlCas => crate::activities::parsers::parse_nsdl_cas(&full_text),
+        StatementType::ContractNote => crate::activities::parsers::parse_contract_note(&full_text),
         StatementType::UpstoxTradebook | StatementType::Unknown => {
             crate::activities::parsers::parse_generic_pdf_table(&full_text)
         }
@@ -460,6 +467,12 @@ pub fn parse_pdf(content: &[u8], password: Option<&str>) -> Result<ParsedPdfResu
 /// Detect the Indian statement type from the extracted text.
 fn detect_statement_type(text: &str) -> StatementType {
     let lower = text.to_lowercase();
+
+    // A contract note can name its depository (Dhan's says CDSL), so it is
+    // recognised before the depository statements.
+    if crate::activities::parsers::is_contract_note(text) {
+        return StatementType::ContractNote;
+    }
 
     // CDSL e-CAS often lists MF holdings with "RTA : CAMS" or "RTA : KFINTECH",
     // so CDSL and NSDL headers must take precedence over CAMS/KFintech!
@@ -522,5 +535,17 @@ e-CAS Statement";
 Client ID: 10023456
 Transaction Statement";
         assert_eq!(detect_statement_type(nsdl_text), StatementType::NsdlCas);
+
+        // Dhan's contract notes name its CDSL depository participant.
+        let note_text = "Contract Note No: 4300001 Trade Date: 18-05-2026
+Depository Participant of CDSL.: IN-DP-289-2016";
+        assert_eq!(
+            detect_statement_type(note_text),
+            StatementType::ContractNote
+        );
+        assert_eq!(
+            StatementType::ContractNote.default_template_id(),
+            Some(CONTRACT_NOTE_TEMPLATE_ID)
+        );
     }
 }

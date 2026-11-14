@@ -1179,7 +1179,10 @@
       "pdfDecryptionFailed": "تعذّر فك تشفير ملف PDF. يُرجى التحقق من كلمة المرور.",
       "statementAccount": "حساب الكشف",
       "statementAccountHelp": "يشمل هذا الكشف أكثر من حساب أوراق مالية أو مجموعة حسابات صناديق. اختر الحساب الذي يمثله هذا الحساب؛ تحل مقتنياته محل مقتنيات الحساب. «الكل» يجمعها معًا.",
-      "statementAccountAll": "كل الحسابات في الكشف"
+      "statementAccountAll": "كل الحسابات في الكشف",
+      "notAllContractNotes": "{{file}} ليس إشعار عقد من الوسيط. لا يمكن استيراد عدة ملفات معًا إلا إذا كانت كلها إشعارات عقود.",
+      "onlyPdfsTogether": "اختر إشعارات عقود بصيغة PDF فقط لاستيراد عدة ملفات معًا.",
+      "filesSelected": "{{count}} ملفات PDF"
     },
     "validationAlert": {
       "allValidDescriptionPrefix": "انقر ",

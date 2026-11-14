@@ -886,7 +886,10 @@
       "pdfDecryptionFailed": "Failed to decrypt PDF. Please verify your password.",
       "statementAccount": "对账单账户",
       "statementAccountHelp": "此对账单包含多个证券账户或基金账户组。请选择与此账户对应的一个；其持仓将替换此账户的持仓。“全部”会将它们合并。",
-      "statementAccountAll": "对账单中的所有账户"
+      "statementAccountAll": "对账单中的所有账户",
+      "notAllContractNotes": "{{file}} 不是券商成交单。只有全部是成交单时才能一起导入多个文件。",
+      "onlyPdfsTogether": "要一起导入多个文件，请只选择 PDF 成交单。",
+      "filesSelected": "{{count}} 个 PDF 文件"
     },
     "parseSettings": {
       "title": "解析设置",
