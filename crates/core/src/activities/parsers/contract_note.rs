@@ -182,12 +182,75 @@ fn isin_regex() -> Regex {
     Regex::new(r"\bIN[A-Z0-9]{9}[0-9]\b").expect("hard-coded regex is valid")
 }
 
+/// `HH:MM:SS`, or `HH:MM:S` as Dhan prints a clipped order time.
 fn is_time(token: &str) -> bool {
     let b = token.as_bytes();
-    b.len() == 8
+    (b.len() == 8 || b.len() == 7)
         && b[2] == b':'
         && b[5] == b':'
-        && [0, 1, 3, 4, 6, 7].iter().all(|&i| b[i].is_ascii_digit())
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| i == 2 || i == 5 || c.is_ascii_digit())
+}
+
+fn is_trade_number(token: &str) -> bool {
+    !token.is_empty() && token.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Puts each trade in the order the reader expects. Dhan's 2025 annexure
+/// prints the description before the times (`order SYM-Name time trade time
+/// side ...`); this moves it after them.
+fn normalise_trade_order<'a>(tokens: &[&'a str]) -> Vec<&'a str> {
+    let mut out = Vec::with_capacity(tokens.len());
+    let mut i = 0;
+    while i < tokens.len() {
+        if is_order_number(tokens[i]) && tokens.get(i + 1).is_some_and(|t| !is_time(t)) {
+            let found = (i + 2..(i + 16).min(tokens.len().saturating_sub(2))).find(|&k| {
+                is_time(tokens[k]) && is_trade_number(tokens[k + 1]) && is_time(tokens[k + 2])
+            });
+            if let Some(k) = found {
+                let words = &tokens[i + 1..k];
+                if words.iter().all(|w| !is_number(w) && !is_time(w)) {
+                    out.push(tokens[i]);
+                    out.extend_from_slice(&tokens[k..k + 3]);
+                    out.extend_from_slice(words);
+                    i = k + 3;
+                    continue;
+                }
+            }
+        }
+        out.push(tokens[i]);
+        i += 1;
+    }
+    out
+}
+
+/// Trades printed without order or trade numbers, as in some Upstox notes
+/// for auction or close-out sales: `EQ-CASH NAME [ISIN] S -2 rates...`.
+/// Each is returned as tokens in the usual shape, with zero numbers.
+fn unnumbered_trades<'a>(tokens: &[&'a str], isin_re: &Regex) -> Vec<Vec<&'a str>> {
+    let mut found = Vec::new();
+    for i in 0..tokens.len().saturating_sub(2) {
+        let bare = tokens[i].trim_matches(|c| c == '[' || c == ']');
+        if !(isin_re.is_match(bare) && bare.len() == 12) {
+            continue;
+        }
+        if side_of(tokens[i + 1]).is_none() || !is_number(tokens[i + 2]) {
+            continue;
+        }
+        let mut from = i;
+        while from > 0
+            && i - from < 8
+            && !is_number(tokens[from - 1])
+            && !matches!(tokens[from - 1], "EQ-CASH" | "*" | "Remarks" | "arks")
+        {
+            from -= 1;
+        }
+        let mut trade = vec!["0", "00:00:00", "0", "00:00:00"];
+        trade.extend_from_slice(&tokens[from..(i + 40).min(tokens.len())]);
+        found.push(trade);
+    }
+    found
 }
 
 fn is_order_number(token: &str) -> bool {
@@ -200,8 +263,7 @@ fn trade_starts(tokens: &[&str]) -> Vec<usize> {
         .filter(|&i| {
             is_order_number(tokens[i])
                 && is_time(tokens[i + 1])
-                && tokens[i + 2].chars().all(|c| c.is_ascii_digit())
-                && !tokens[i + 2].is_empty()
+                && is_trade_number(tokens[i + 2])
                 && is_time(tokens[i + 3])
         })
         .collect()
@@ -291,7 +353,74 @@ fn price_and_value(quantity: Decimal, run: &[Decimal]) -> Option<(Decimal, Decim
             return Some((total / quantity, total));
         }
     }
-    None
+    // Some 2019 notes lose their right-hand columns in extraction and keep
+    // only the gross rate: take the value as quantity times that rate.
+    match run {
+        [rate] if *rate > Decimal::ZERO => Some((*rate, (quantity * *rate).round_dp(2))),
+        _ => None,
+    }
+}
+
+/// An option or future (ABCLTD19MAR300CE, NIFTY2412621000PE,
+/// NIFTY24DECFUT): the import covers equity delivery only.
+fn is_derivative(symbol: &str) -> bool {
+    Regex::new(r"^[A-Z][A-Z&-]*\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|[1-9OND]\d{2})\d*(\.\d+)?(CE|PE|FUT)$")
+        .expect("valid")
+        .is_match(symbol)
+}
+
+/// Each run of amounts printed after `label` (one per segment column, then
+/// the total).
+fn labelled_runs(tokens: &[&str], stream_lower: &str, label: &Regex) -> Vec<Vec<Decimal>> {
+    let mut starts = Vec::with_capacity(tokens.len());
+    let mut offset = 0;
+    for token in tokens {
+        starts.push(offset);
+        offset += token.len() + 1;
+    }
+    label
+        .find_iter(stream_lower)
+        .map(|m| amount_run(tokens, starts.partition_point(|&s| s < m.end())))
+        .filter(|run| !run.is_empty())
+        .collect()
+}
+
+/// The charges and STT of the F&O segment, read from the summary columns: the
+/// column whose pay-in equals the F&O trades' value.
+fn derivative_charges(
+    tokens: &[&str],
+    stream_lower: &str,
+    derivative_value: Decimal,
+    stt_label: &Regex,
+) -> Option<(Decimal, Decimal)> {
+    let pay_in = labelled_runs(
+        tokens,
+        stream_lower,
+        &Regex::new(r"pay in\s*/\s*pay out obligation").expect("valid"),
+    )
+    .into_iter()
+    .next()?;
+    let columns = pay_in.len();
+    if columns < 2 {
+        return None;
+    }
+    let column = pay_in[..columns - 1]
+        .iter()
+        .position(|v| (v.abs() - derivative_value.abs()).abs() <= Decimal::new(1, 2))?;
+    let net = labelled_runs(
+        tokens,
+        stream_lower,
+        &Regex::new(r"net amount[^()\d]*(\([^)]*\))?").expect("valid"),
+    )
+    .into_iter()
+    .find(|run| run.len() == columns)?;
+    let stt = labelled_runs(tokens, stream_lower, stt_label)
+        .into_iter()
+        .find(|run| run.len() == columns)
+        .map(|run| run[column].abs())
+        .unwrap_or(Decimal::ZERO);
+    let charges = (net[column].abs() - pay_in[column].abs()).abs();
+    Some((charges, stt))
 }
 
 /// The symbol and name from a trade's description, in each layout:
@@ -467,8 +596,14 @@ fn net_amount(tokens: &[&str]) -> Option<Decimal> {
 /// Reads a contract note from its extracted text.
 pub fn read_contract_note(text: &str) -> ContractNote {
     let stream = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Upstox 2025 splits times across tokens: "09:34: 35".
+    let stream = Regex::new(r"\b(\d{2}:\d{2}:) (\d{2})\b")
+        .expect("valid")
+        .replace_all(&stream, "$1$2")
+        .into_owned();
     let lower = stream.to_lowercase();
-    let tokens: Vec<&str> = stream.split(' ').collect();
+    let raw_tokens: Vec<&str> = stream.split(' ').collect();
+    let tokens = normalise_trade_order(&raw_tokens);
     let isin_re = isin_regex();
     let mut warnings = Vec::new();
 
@@ -489,12 +624,31 @@ pub fn read_contract_note(text: &str) -> ContractNote {
             )),
         }
     }
+    if starts.is_empty() {
+        for trade_tokens in unnumbered_trades(&tokens, &isin_re) {
+            if let Some(trade) = read_trade(&trade_tokens, &isin_re) {
+                trades.push(trade);
+            }
+        }
+    }
     let by_symbol = isins_by_symbol(&stream, &isin_re);
     for trade in &mut trades {
         if trade.isin.is_none() && !trade.symbol.is_empty() {
             trade.isin = by_symbol.get(&trade.symbol).cloned();
         }
-        if trade.isin.is_none() {
+    }
+    // Dhan's older notes print the ISIN once, after a security's last fill.
+    for i in 0..trades.len() {
+        if trades[i].isin.is_none() {
+            let (symbol, name) = (trades[i].symbol.clone(), trades[i].name.clone());
+            trades[i].isin = trades
+                .iter()
+                .filter(|t| t.symbol == symbol && t.name == name)
+                .find_map(|t| t.isin.clone());
+        }
+    }
+    for trade in &trades {
+        if trade.isin.is_none() && !is_derivative(&trade.symbol) {
             warnings.push(format!("No ISIN found for {} {}", trade.symbol, trade.name));
         }
     }
@@ -541,6 +695,46 @@ pub fn read_contract_note(text: &str) -> ContractNote {
             stt
         }
     };
+    // Leave F&O trades out, with their share of the charges.
+    let (derivatives, equity): (Vec<_>, Vec<_>) = trades
+        .into_iter()
+        .partition(|t| t.isin.is_none() && is_derivative(&t.symbol));
+    let trades = equity;
+    let (mut charges, mut stt) = (charges, stt);
+    if !derivatives.is_empty() {
+        for t in &derivatives {
+            warnings.push(format!(
+                "Left out the F&O trade {} {} {} @ {}",
+                t.symbol,
+                match t.side {
+                    Side::Buy => "B",
+                    Side::Sell => "S",
+                },
+                t.quantity,
+                t.price
+            ));
+        }
+        if trades.is_empty() {
+            charges = Decimal::ZERO;
+            stt = Decimal::ZERO;
+        } else {
+            let value: Decimal = derivatives
+                .iter()
+                .map(|t| match t.side {
+                    Side::Buy => t.value,
+                    Side::Sell => -t.value,
+                })
+                .sum();
+            match derivative_charges(&tokens, &lower, value, &stt_label) {
+                Some((fo_charges, fo_stt)) => {
+                    charges -= fo_charges;
+                    stt -= fo_stt;
+                }
+                None => warnings
+                    .push("Could not separate the F&O charges; the charges include them".into()),
+            }
+        }
+    }
     let fees = (charges - stt).max(Decimal::ZERO);
 
     ContractNote {
@@ -679,6 +873,24 @@ Securities transaction tax ( ₹ ) (3.00) (3.00) Stamp duty ( ₹ )
 Net amount receivable/(payable by client) ( ₹ ) 2891.31 0.00 2891.31
 Remarks 1100000000000009 12:21:12 206900001 12:21:12 PQR-EQ/INE000C01013 S NSE 1 0.0000 964.85 964.85
 1100000000000009 12:21:12 206900002 12:21:12 PQR-EQ/INE000C01013 S NSE 2 0.0000 964.775 1929.55";
+
+    const ZERODHA_2019_FO: &str = "CONTRACT NOTE CUM TAX INVOICE ZERODHA BROKING LIMITED
+CONTRACT NOTE NO.: CNT-18/19-100000003 TRADE DATE 05/03/2019 NSE-EQ NSE-F&O NSE-CFX BSE-EQ BSE-F&O
+BSE-EQ 1000000000000011 10:20:01 2900011 10:20:01 ABCLTD / INE000A01011 B 5 900.00 900.0000 (4500.00)
+Sub Total: 5 (4500.00) Net Total: (4500.00) NSE-EQ 1000000000000012 10:49:05 2900012 10:49:05 XYZCO / INE000B01012 B 20 60.00 60.0000 (1200.00)
+Sub Total: 20 (1200.00) Net Total: (1200.00) NSE-F&O 1000000000000013 13:22:02 2900013 13:22:02 ABCLTD19MAR300CE B 1500 7.00 7.0000 (10500.00)
+Sub Total: 1500 (10500.00) Net Total: (10500.00) Date: Place: TEST NSE-EQ NSE-F&O NSE-CFX BSE-EQ BSE-F&O NET TOTAL
+PAY IN/ PAY OUT OBLIGATION (1200.00) (10500.00) (4500.00) (16200.00)
+Taxable value of Supply (Brokerage) 3 (0.01) (20.00) (0.01) (20.02) Exchange Transaction Charges (0.04) (5.40) (0.14) (5.58)
+IGST (@18% of Brok, Trans & Clearing Charges) 4 (0.01) (4.61) (0.03) (4.65) UTT 4 Securities Transaction Tax (1.00) (2.00) (5.00) (8.0)
+Stamp Duty (0.06) (0.54) (0.23) (0.83) Net amount receivable by Client / (payable by Client) (1201.12) (10532.55) (4505.41) (16239.08) 1 Applicable only";
+
+    const ZERODHA_2019_CLIPPED: &str = "CONTRACT NOTE CUM TAX INVOICE ZERODHA BROKING LIMITED
+CONTRACT NOTE NO.: CNT-18/19-100000004 TRADE DATE 21/02/2019 NSE-EQ
+NSE-EQ 1000000000000021 09:40:11 2900021 09:40:11 ABCLTD / INE000A01011 B 5 300.80
+Sub Total: 5 NSE-EQ 1000000000000022 09:41:12 2900022 09:41:12 XYZCO / INE000B01012 B 3 100.00
+Sub Total: 3 PAY IN/ PAY OUT OBLIGATION (1804.00) (1804.00) Securities Transaction Tax (2.00) (2.0)
+Net amount receivable by Client / (payable by Client) (1808.50) (1808.50) 1 Applicable only";
 
     const UPSTOX_2020: &str = "CONTRACT NOTE CUM TAX INVOICE RKSV SECURITIES INDIA PVT. LTD.
 Contract Note No. : 17000001 Trade Date : 22/12/2020 Trading Code : TEST0001
@@ -874,5 +1086,40 @@ Quantity Price Net Rate Net Amount Remark NCL-NSE-Equity-M 1000000031100001 10:5
     fn a_note_without_trades_gives_no_rows() {
         let (_, rows) = parse_contract_note("Contract note Trade date: 01/01/2024 nothing traded");
         assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn zerodha_2019_leaves_out_fo_trades_and_their_charges() {
+        let note = read_contract_note(ZERODHA_2019_FO);
+        assert_eq!(note.trades.len(), 2);
+        assert!(note.trades.iter().all(|t| t.symbol != "ABCLTD19MAR300CE"));
+        // Equity columns: 1.12 + 5.41 of charges, 1.00 + 5.00 of STT.
+        assert_eq!(note.stt, dec!(6.0));
+        assert_eq!(note.fees, dec!(0.53));
+        assert!(note
+            .warnings
+            .iter()
+            .any(|w| w.contains("F&O trade ABCLTD19MAR300CE")));
+    }
+
+    #[test]
+    fn zerodha_2019_reads_trades_with_only_a_gross_rate() {
+        let note = read_contract_note(ZERODHA_2019_CLIPPED);
+        assert_eq!(note.trades.len(), 2);
+        assert_eq!(note.trades[0].value, dec!(1504.00));
+        assert_eq!(note.trades[1].price, dec!(100.00));
+        assert_eq!(note.stt, dec!(2.0));
+        assert_eq!(note.fees, dec!(2.50));
+        assert!(note.warnings.is_empty(), "{:?}", note.warnings);
+    }
+
+    #[test]
+    fn recognises_option_and_future_symbols() {
+        assert!(is_derivative("ABCLTD19MAR300CE"));
+        assert!(is_derivative("NIFTY2412621000PE"));
+        assert!(is_derivative("NIFTY24DECFUT"));
+        assert!(!is_derivative("RELIANCE"));
+        assert!(!is_derivative("M&M"));
+        assert!(!is_derivative("3MINDIA"));
     }
 }
