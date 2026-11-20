@@ -179,10 +179,18 @@ pub(crate) mod tests {
 
         async fn update_asset_profile(
             &self,
-            _asset_id: &str,
-            _payload: UpdateAssetProfile,
+            asset_id: &str,
+            payload: UpdateAssetProfile,
         ) -> Result<Asset> {
-            unimplemented!()
+            let mut assets = self.assets.lock().unwrap();
+            let asset = assets
+                .iter_mut()
+                .find(|a| a.id == asset_id)
+                .ok_or_else(|| Error::Unexpected(format!("Asset not found: {asset_id}")))?;
+            if let Some(metadata) = payload.metadata {
+                asset.metadata = Some(metadata);
+            }
+            Ok(asset.clone())
         }
 
         async fn update_quote_mode(&self, _asset_id: &str, _quote_mode: &str) -> Result<Asset> {
@@ -19797,5 +19805,62 @@ pub(crate) mod tests {
         forced.force_import = true;
         let result = service.import_activities(vec![forced]).await.unwrap();
         assert_eq!(result.summary.imported, 1);
+    }
+
+    #[tokio::test]
+    async fn imported_rows_store_their_isin_on_the_asset() {
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        account_service.add_account(create_test_account("acc-in", "INR"));
+        for (id, symbol) in [("asset-split", "ABCLTD"), ("asset-known", "XYZCO")] {
+            asset_service.add_asset(create_test_asset_with_instrument(
+                id,
+                symbol,
+                None,
+                Some(InstrumentType::Equity),
+                "INR",
+            ));
+        }
+        // An ISIN already on the asset is left as it is.
+        {
+            let mut assets = asset_service.assets.lock().unwrap();
+            let known = assets.iter_mut().find(|a| a.id == "asset-known").unwrap();
+            known.metadata = Some(json!({"identifiers": {"isin": "INE002A01018"}}));
+        }
+        let activity_service = ActivityService::new(
+            activity_repository,
+            account_service,
+            asset_service.clone(),
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        );
+        let row = |asset_id: &str, symbol: &str, date: &str, isin: &str| -> ActivityImport {
+            serde_json::from_value(json!({
+                "date": date, "symbol": symbol, "activityType": "BUY",
+                "quantity": "10", "unitPrice": "100", "currency": "INR", "fee": "0",
+                "accountId": "acc-in", "isDraft": false, "isValid": true,
+                "assetId": asset_id, "isin": isin
+            }))
+            .unwrap()
+        };
+        // A split gave ABCLTD a new ISIN: the later row's is kept.
+        let result = activity_service
+            .import_activities(vec![
+                row("asset-split", "ABCLTD", "2024-03-01", "INE009A01021"),
+                row("asset-split", "ABCLTD", "2022-01-03", "INE009A01013"),
+                row("asset-known", "XYZCO", "2024-03-01", "INE040A01034"),
+                row("asset-known", "XYZCO", "2024-03-02", "not-an-isin"),
+            ])
+            .await
+            .expect("import should succeed");
+        assert_eq!(result.summary.imported, 4);
+        let isin_of = |id: &str| {
+            asset_service.get_asset_by_id(id).unwrap().metadata.unwrap()["identifiers"]["isin"]
+                .as_str()
+                .map(str::to_string)
+        };
+        assert_eq!(isin_of("asset-split").as_deref(), Some("INE009A01021"));
+        assert_eq!(isin_of("asset-known").as_deref(), Some("INE002A01018"));
     }
 }
