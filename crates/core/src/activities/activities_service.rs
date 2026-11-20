@@ -107,6 +107,19 @@ use wealthfolio_market_data::mic_to_currency;
 /// A complete trade is identified by quantity and unit price. Its final cash
 /// amount is derived accounting data and may legitimately change when charges
 /// are corrected, so it must not create a different duplicate fingerprint.
+/// The valid ISIN stored on an asset, if any.
+fn asset_isin(asset: &crate::assets::Asset) -> Option<String> {
+    asset
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("identifiers"))
+        .and_then(|ids| ids.get("isin"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|isin| crate::utils::isin::parse_isin(isin).is_ok())
+        .map(str::to_string)
+}
+
 fn normalize_isin_key(isin: Option<&str>) -> Option<String> {
     isin.map(str::trim)
         .filter(|isin| !isin.is_empty())
@@ -8069,6 +8082,10 @@ impl ActivityServiceTrait for ActivityService {
         // Link only rows that will be inserted so a duplicate-skipped leg cannot
         // leave its counterpart with an orphan source_group_id.
         self.link_imported_transfer_pairs(&insertable_source_slice, &mut insertable_new_activities);
+        // Keep the ISIN a row brought on its asset: the Indian tax report and
+        // the ClearTax file read it from there (Schedule 112A needs it).
+        self.record_import_isins(&insertable_source_slice, &insertable_new_activities)
+            .await;
         // A conversion's two rows are imported together (rules R7.5). A
         // refusal fails the import as validation errors do, on the rows of
         // the conversion it concerns.
@@ -9196,6 +9213,77 @@ impl ActivityService {
     /// Links matching TRANSFER_IN and TRANSFER_OUT activities by setting a shared source_group_id.
     /// Standard transfers match on same date, currency, symbol, and amount.
     /// Same-account cash FX conversions match on same date/account with different currencies.
+    /// Stores on each imported asset the ISIN its rows carry, when the asset
+    /// has none yet. Of rows that disagree (a face-value change gives a new
+    /// ISIN) the latest row's wins. Bonds keep their own identity rules.
+    async fn record_import_isins(&self, sources: &[ActivityImport], prepared: &[NewActivity]) {
+        let mut latest: HashMap<String, (String, String)> = HashMap::new();
+        for (source, activity) in sources.iter().zip(prepared) {
+            let Some(isin) = normalize_isin_key(source.isin.as_deref())
+                .filter(|isin| crate::utils::isin::parse_isin(isin).is_ok())
+            else {
+                continue;
+            };
+            let Some(asset_id) = activity
+                .asset
+                .as_ref()
+                .and_then(|asset| asset.id.clone())
+                .filter(|id| !id.trim().is_empty())
+            else {
+                continue;
+            };
+            let date = activity.activity_date.clone();
+            match latest.get(&asset_id) {
+                Some((seen, _)) if *seen > date => {}
+                _ => {
+                    latest.insert(asset_id, (date, isin));
+                }
+            }
+        }
+        for (asset_id, (_, isin)) in latest {
+            let asset = match self.asset_service.get_asset_by_id(&asset_id) {
+                Ok(asset) => asset,
+                Err(err) => {
+                    warn!(
+                        "Could not read asset {} to store its ISIN: {}",
+                        asset_id, err
+                    );
+                    continue;
+                }
+            };
+            if asset.is_bond() || asset_isin(&asset).is_some() {
+                continue;
+            }
+            let mut metadata = asset
+                .metadata
+                .clone()
+                .filter(|m| m.is_object())
+                .unwrap_or_else(|| serde_json::json!({}));
+            let Some(root) = metadata.as_object_mut() else {
+                continue;
+            };
+            let identifiers = root
+                .entry("identifiers")
+                .or_insert_with(|| serde_json::json!({}));
+            if !identifiers.is_object() {
+                *identifiers = serde_json::json!({});
+            }
+            if let Some(identifiers) = identifiers.as_object_mut() {
+                identifiers.insert("isin".into(), serde_json::json!(isin));
+            }
+            if let Err(err) = self
+                .asset_service
+                .update_asset_metadata(&asset_id, metadata)
+                .await
+            {
+                warn!(
+                    "Could not store ISIN {} on asset {}: {}",
+                    isin, asset_id, err
+                );
+            }
+        }
+    }
+
     fn link_imported_transfer_pairs(
         &self,
         validated_activities: &[ActivityImport],
