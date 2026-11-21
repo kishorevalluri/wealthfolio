@@ -123,7 +123,7 @@ describe("AccountForm cost basis method", () => {
     const options = within(screen.getByLabelText(METHOD_LABEL))
       .getAllByRole("option")
       .map((option) => (option as HTMLOptionElement).value);
-    expect(options).toEqual(["FIFO", "LIFO", "HIFO", "WAC"]);
+    expect(options).toEqual(["FIFO", "LIFO", "HIFO", "WAC", "FIFO_SAME_DAY"]);
   });
 
   it.each([["LIFO"], ["HIFO"]])("stores %s", async (method) => {

@@ -619,7 +619,10 @@ pub fn calculate_indian_capital_gains(
         let Some(disp_date) = parse_date(&d.disposal_date) else {
             continue;
         };
-        if !d.cost_basis_method.eq_ignore_ascii_case("FIFO") {
+        // FIFO same-day is FIFO with the exchange's same-day netting first.
+        if !d.cost_basis_method.eq_ignore_ascii_case("FIFO")
+            && !d.cost_basis_method.eq_ignore_ascii_case("FIFO_SAME_DAY")
+        {
             non_fifo = true;
         }
         let acq_date = match lot_open_dates.get(&d.lot_id) {
@@ -1613,6 +1616,20 @@ mod tests {
             2025,
         );
         assert!(summary.warnings.iter().any(|w| w.contains("FIFO")));
+
+        // FIFO same-day is FIFO with same-day netting: no warning.
+        disposals[0].cost_basis_method = "FIFO_SAME_DAY".into();
+        let summary = calculate_indian_capital_gains(
+            &disposals,
+            &HashMap::from([("l".to_string(), date(2025, 5, 1))]),
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            IndianLossesBroughtForward::default(),
+            2025,
+        );
+        assert!(summary.warnings.is_empty());
     }
 
     // Bought for 1,00,000 + 100 STT, sold for 1,50,000 less 40 brokerage and

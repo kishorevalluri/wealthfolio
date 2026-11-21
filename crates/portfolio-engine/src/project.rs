@@ -560,7 +560,7 @@ impl Projector<'_> {
         if method == CostBasisMethod::Wac {
             self.pool_lots(account, account_currency, event, position, negative)?;
         }
-        relieve(position, requested, negative, method)
+        relieve(position, requested, negative, method, event.date)
     }
 
     /// A WAC position's lots on one side are one pool (rules R7.2). Before a
@@ -3709,6 +3709,7 @@ fn relieve(
     requested: Decimal,
     negative: bool,
     method: CostBasisMethod,
+    on: NaiveDate,
 ) -> Result<Reduction, String> {
     if !requested.is_sign_positive() || requested.is_zero() {
         return Err("quantity to reduce must be positive".to_string());
@@ -3736,7 +3737,7 @@ fn relieve(
     }
     sort_lots(position);
     let to_reduce = requested.min(available);
-    let taken = units_taken(&position.lots, side_ok, to_reduce, method)?;
+    let taken = units_taken(&position.lots, side_ok, to_reduce, method, Some(on))?;
     // A lot left with less than the dust closes. Under WAC every lot keeps a
     // share, so dust is the side's: its lots close only when what the side
     // keeps is dust.
@@ -3848,7 +3849,7 @@ fn split_for_cover(
     cover_abs: Decimal,
     method: CostBasisMethod,
 ) -> Result<(Vec<Lot>, Vec<Lot>), String> {
-    let taken = units_taken(lots, |_| true, cover_abs, method)?;
+    let taken = units_taken(lots, |_| true, cover_abs, method, None)?;
     split_lots_by_cover(lots, &taken)
 }
 
@@ -3857,8 +3858,9 @@ fn split_for_cover(
 /// `eligible` rejects give none. `units` never exceeds what the eligible
 /// lots hold.
 ///
-/// - FIFO, LIFO, HIFO: whole lots in the method's order (`relief_order`)
-///   until the units run out.
+/// - FIFO, LIFO, HIFO, FIFO same-day: whole lots in the method's order
+///   (`relief_order`) until the units run out. `on` is the disposal's
+///   business date, when it has one.
 /// - WAC: the same share of every lot. The last lot that gives any takes
 ///   what rounding left, so the units taken sum to `units` exactly.
 fn units_taken(
@@ -3866,6 +3868,7 @@ fn units_taken(
     eligible: impl Fn(&Lot) -> bool,
     units: Decimal,
     method: CostBasisMethod,
+    on: Option<NaiveDate>,
 ) -> Result<Vec<Decimal>, String> {
     let held = |lot: &Lot| {
         if eligible(lot) {
@@ -3875,10 +3878,13 @@ fn units_taken(
         }
     };
     match method {
-        CostBasisMethod::Fifo | CostBasisMethod::Lifo | CostBasisMethod::Hifo => {
+        CostBasisMethod::Fifo
+        | CostBasisMethod::Lifo
+        | CostBasisMethod::Hifo
+        | CostBasisMethod::FifoSameDay => {
             let mut takes = vec![Decimal::ZERO; lots.len()];
             let mut remaining = units;
-            for index in relief_order(lots, method)? {
+            for index in relief_order(lots, method, on)? {
                 let take = held(&lots[index]).min(remaining).max(Decimal::ZERO);
                 remaining -= take;
                 takes[index] = take;
@@ -3919,10 +3925,22 @@ fn units_taken(
 /// ties go to the earliest acquisition, then the order given. Costs per unit
 /// compare at `UNIT_COST_DIGITS` significant digits: equal costs reached by
 /// different divisions differ in their last digits, and that must not reorder
-/// them.
-fn relief_order(lots: &[Lot], method: CostBasisMethod) -> Result<Vec<usize>, String> {
+/// them. FIFO same-day takes the lots acquired on the disposal's date `on`
+/// first, then the rest, each group in FIFO's order; with no date (a cover
+/// by delivered units) it is FIFO.
+fn relief_order(
+    lots: &[Lot],
+    method: CostBasisMethod,
+    on: Option<NaiveDate>,
+) -> Result<Vec<usize>, String> {
     let mut order: Vec<usize> = (0..lots.len()).collect();
     match method {
+        CostBasisMethod::FifoSameDay => {
+            if let Some(day) = on {
+                // A stable sort: same-day lots first, FIFO order kept within.
+                order.sort_by_key(|&index| lots[index].acquisition_date != day);
+            }
+        }
         CostBasisMethod::Lifo => {
             order.reverse();
             order.sort_by(|&a, &b| lots[b].acquisition.cmp(&lots[a].acquisition));

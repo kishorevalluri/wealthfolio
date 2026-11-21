@@ -53,11 +53,22 @@ pub enum CostBasisMethod {
     /// Lots with the highest cost per unit after splits first, charges
     /// included; ties go oldest first, as FIFO takes them.
     Hifo,
+    /// FIFO with same-day trades netted first, as Indian exchanges settle
+    /// them: on each business date an asset's purchases fold before its
+    /// sales, and a sale relieves the lots bought that day before older
+    /// ones. The part a same-day purchase covers is an intraday trade.
+    FifoSameDay,
 }
 
 impl CostBasisMethod {
     /// Every method the engine computes.
-    pub const ALL: &'static [Self] = &[Self::Fifo, Self::Wac, Self::Lifo, Self::Hifo];
+    pub const ALL: &'static [Self] = &[
+        Self::Fifo,
+        Self::Wac,
+        Self::Lifo,
+        Self::Hifo,
+        Self::FifoSameDay,
+    ];
 
     /// The code account settings store.
     pub fn as_str(self) -> &'static str {
@@ -66,6 +77,7 @@ impl CostBasisMethod {
             Self::Wac => "WAC",
             Self::Lifo => "LIFO",
             Self::Hifo => "HIFO",
+            Self::FifoSameDay => "FIFO_SAME_DAY",
         }
     }
 

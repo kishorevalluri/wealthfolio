@@ -100,6 +100,42 @@ fn hifo_relieves_the_dearest_lots_first() {
 }
 
 #[test]
+fn fifo_same_day_matches_a_sale_with_that_days_purchases_first() {
+    let pipeline = fixture("NOM-CB-04");
+    // sell-1 came before buy-2 in the day, and still takes buy-2's units.
+    assert_eq!(
+        relieved(&pipeline, "sell-1"),
+        vec![lot("buy-2", "5", "550")]
+    );
+    // All of buy-3, then the oldest lot for the rest (listed in lot order).
+    assert_eq!(
+        relieved(&pipeline, "sell-2"),
+        vec![lot("buy-1", "2", "200"), lot("buy-3", "10", "1300")]
+    );
+    assert_eq!(
+        lots_held(&pipeline, "acc-1", "aapl"),
+        vec![(d("5"), d("550")), (d("8"), d("800"))]
+    );
+}
+
+#[test]
+fn fifo_same_day_without_same_day_trades_is_fifo() {
+    let yaml = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/scenarios/nom/NOM-CB-03.yaml"),
+    )
+    .unwrap();
+    let as_fifo = inline(&yaml.replace("cost_basis_method: HIFO", "cost_basis_method: FIFO"));
+    let as_same_day = inline(&yaml.replace(
+        "cost_basis_method: HIFO",
+        "cost_basis_method: FIFO_SAME_DAY",
+    ));
+    for event in ["sell-1", "sell-2"] {
+        assert_eq!(relieved(&as_same_day, event), relieved(&as_fifo, event));
+    }
+}
+
+#[test]
 fn hifo_ranks_by_cost_per_unit_with_charges_and_breaks_ties_oldest_first() {
     let pipeline = fixture("EDGE-CB-06");
     assert_eq!(
