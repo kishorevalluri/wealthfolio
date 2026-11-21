@@ -250,6 +250,15 @@ rates and its source, so realized P&L in base follows from the lots relieved
   reached by different divisions tie. Ties go to the earliest acquisition, then
   in the order FIFO takes them. Delivered units cover a short in the same order.
   Fixtures: NOM-CB-03, EDGE-CB-06, EDGE-CB-07.
+- FIFO same-day: FIFO with a business date's trades netted first, as Indian
+  exchanges settle a client's same-day trades in a scrip (the matched part is an
+  intraday trade, Section 43(5)). On each business date an asset's purchases in
+  the account fold before its sales, whatever their times; the day's buys and
+  sales swap places among the slots they hold, so every other activity keeps its
+  place. A disposal then relieves the lots acquired on its own date first and
+  the rest oldest first, each group in FIFO's order. Delivered units cover a
+  short as under FIFO. This reorders within a day only: a disposal still depends
+  on nothing after its date (R7.3). Fixture: NOM-CB-04.
 - WAC (moving weighted average), as a pool, the way the UK's section 104 holding
   and Italy's _costo medio_ are kept:
   - Before a disposal, or a return of capital (a disposal of no units, R7.4), a

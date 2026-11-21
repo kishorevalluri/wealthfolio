@@ -30,6 +30,8 @@ pub enum CostBasisMethod {
     Lifo,
     Hifo,
     Wac,
+    /// FIFO with same-day trades netted first (India).
+    FifoSameDay,
 }
 
 impl CostBasisMethod {
@@ -39,6 +41,7 @@ impl CostBasisMethod {
             Self::Lifo => "LIFO",
             Self::Hifo => "HIFO",
             Self::Wac => "WAC",
+            Self::FifoSameDay => "FIFO_SAME_DAY",
         }
     }
 
@@ -48,6 +51,7 @@ impl CostBasisMethod {
             "LIFO" => Ok(Self::Lifo),
             "HIFO" => Ok(Self::Hifo),
             "WAC" => Ok(Self::Wac),
+            "FIFO_SAME_DAY" => Ok(Self::FifoSameDay),
             other => Err(Error::Validation(ValidationError::InvalidInput(format!(
                 "Unknown cost basis method '{}'",
                 other

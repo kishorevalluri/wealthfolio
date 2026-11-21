@@ -22,6 +22,59 @@ pub struct Normalized {
 /// Quantity tolerance for pairing the two legs of a security transfer.
 const TRANSFER_PAIR_TOLERANCE: Decimal = Decimal::from_parts(1, 0, 0, false, 6);
 
+/// Under FIFO same-day (rules R7.2), an account's purchases of an asset on a
+/// business date fold before its sales of it that day, wherever they fall in
+/// the day: an exchange that settles a client's same-day trades in a scrip
+/// net (India's) matches a sale with a purchase made after it. The day's
+/// buys and sales of the asset swap places among the slots they hold, each
+/// keeping its own order, so every other activity keeps its place.
+fn buys_before_same_day_sales(
+    activities: &mut [Activity],
+    accounts: &BTreeMap<AccountId, AccountFacts>,
+) {
+    let netted = |activity: &Activity| {
+        matches!(activity.kind, ActivityKind::Buy | ActivityKind::Sell)
+            && activity.asset.is_some()
+            && accounts
+                .get(&activity.account)
+                .is_some_and(|facts| facts.cost_basis_method == CostBasisMethod::FifoSameDay)
+    };
+    if !activities.iter().any(netted) {
+        return;
+    }
+    let mut groups: BTreeMap<(AccountId, AssetId, NaiveDate), Vec<usize>> = BTreeMap::new();
+    for (index, activity) in activities.iter().enumerate() {
+        if let (true, Some(asset)) = (netted(activity), activity.asset.as_ref()) {
+            groups
+                .entry((activity.account.clone(), asset.clone(), activity.date))
+                .or_default()
+                .push(index);
+        }
+    }
+    for slots in groups.values() {
+        let sale_before_buy = slots.windows(2).any(|pair| {
+            activities[pair[0]].kind == ActivityKind::Sell
+                && activities[pair[1]].kind == ActivityKind::Buy
+        });
+        if !sale_before_buy {
+            continue;
+        }
+        let mut ordered: Vec<Activity> = slots
+            .iter()
+            .filter(|&&index| activities[index].kind == ActivityKind::Buy)
+            .chain(
+                slots
+                    .iter()
+                    .filter(|&&index| activities[index].kind == ActivityKind::Sell),
+            )
+            .map(|&index| activities[index].clone())
+            .collect();
+        for (&slot, activity) in slots.iter().zip(ordered.drain(..)) {
+            activities[slot] = activity;
+        }
+    }
+}
+
 pub fn normalize(raw: RawFacts) -> Result<Normalized, EngineError> {
     raw.policy.validate()?;
     let policy = raw.policy;
@@ -110,6 +163,7 @@ pub fn normalize(raw: RawFacts) -> Result<Normalized, EngineError> {
             .then_with(|| a.created_at.cmp(&b.created_at))
             .then_with(|| a.id.cmp(&b.id))
     });
+    buys_before_same_day_sales(&mut activities, &accounts);
 
     let transfer_pairs = resolve_transfer_pairs(&activities, &mut diagnostics);
     let conversions = resolve_conversions(&activities);

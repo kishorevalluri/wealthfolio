@@ -268,6 +268,44 @@ fn carry_losses_forward(losses: &mut Vec<LossYear>, summary: &IndianTaxYearSumma
     }
 }
 
+/// Disposals, under a method other than FIFO same-day, that relieved a lot
+/// bought before the sale date while the account bought the same asset that
+/// day: the exchange netted those trades, the lot engine did not.
+fn same_day_sales_not_netted(disposals: &[LotDisposal], lots: &[LotRecord]) -> usize {
+    let day = |date: &str| date.get(..10).map(str::to_string);
+    let bought_on: std::collections::HashSet<(&str, &str, String)> = lots
+        .iter()
+        .filter(|lot| lot.open_activity_id.is_some())
+        .filter_map(|lot| {
+            Some((
+                lot.account_id.as_str(),
+                lot.asset_id.as_str(),
+                day(&lot.open_date)?,
+            ))
+        })
+        .collect();
+    let opened: HashMap<&str, String> = lots
+        .iter()
+        .filter_map(|lot| Some((lot.id.as_str(), day(&lot.open_date)?)))
+        .collect();
+    let mut sales = std::collections::HashSet::new();
+    for d in disposals {
+        if d.cost_basis_method.eq_ignore_ascii_case("FIFO_SAME_DAY") {
+            continue;
+        }
+        let Some(sold_on) = day(&d.disposal_date) else {
+            continue;
+        };
+        let older = opened
+            .get(d.lot_id.as_str())
+            .is_some_and(|open| *open < sold_on);
+        if older && bought_on.contains(&(d.account_id.as_str(), d.asset_id.as_str(), sold_on)) {
+            sales.insert(d.disposal_activity_id.as_str());
+        }
+    }
+    sales.len()
+}
+
 /// Financial year `fy_start_year` (e.g. 2024 for FY 2024-25) runs from April 1 of `fy_start_year`
 /// to March 31 of `fy_start_year + 1`.
 pub async fn compute_indian_tax_summary(
@@ -444,6 +482,16 @@ pub async fn compute_indian_tax_summary(
         ));
     }
 
+    let unnetted = same_day_sales_not_netted(&disposals, &all_lots);
+    if unnetted > 0 {
+        summary.warnings.push(format!(
+            "{unnetted} sale(s) were made on a day you also bought the same share, but were \
+             matched with older shares. Indian exchanges net same-day trades, so the matched \
+             part is an intraday trade: set the account's cost basis to \
+             \"FIFO, same-day trades first (India)\" to treat it that way."
+        ));
+    }
+
     let excluded = super::cleartax_excluded_count(&summary);
     if excluded > 0 {
         summary.warnings.push(format!(
@@ -462,6 +510,60 @@ mod tests {
     use crate::assets::{AssetKind, QuoteMode};
     use chrono::Utc;
     use rust_decimal_macros::dec;
+
+    fn lot(id: &str, open_date: &str) -> LotRecord {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "accountId": "acc", "assetId": "infy", "openDate": open_date,
+            "openActivityId": format!("buy-{id}"), "originalQuantity": "10",
+            "remainingQuantity": "0", "costPerUnit": "100", "originalCostBasis": "1000",
+            "remainingCostBasis": "0", "originalCostBasisBase": "1000",
+            "remainingCostBasisBase": "0", "feeAllocated": "0", "feeAllocatedBase": "0",
+            "taxAllocated": "0", "taxAllocatedBase": "0", "currency": "INR",
+            "baseCurrency": "INR", "fxRateToBase": "1", "fxRateToAccount": null,
+            "accountCurrency": null, "costBasisMethod": "FIFO", "splitRatio": "1",
+            "isClosed": true, "closeDate": null, "closeActivityId": null,
+            "createdAt": "", "updatedAt": ""
+        }))
+        .unwrap()
+    }
+
+    fn sale(lot_id: &str, date: &str, method: &str) -> LotDisposal {
+        serde_json::from_value(serde_json::json!({
+            "id": format!("{lot_id}-{date}"), "lotId": lot_id, "accountId": "acc",
+            "assetId": "infy", "disposalActivityId": format!("sell-{date}"),
+            "disposalDate": date, "quantity": "10", "proceeds": "1100", "costBasis": "1000",
+            "realizedPnl": "100", "proceedsBase": "1100", "costBasisBase": "1000",
+            "realizedPnlBase": "100", "currency": "INR", "baseCurrency": "INR",
+            "fxRateToBase": "1", "costBasisMethod": method, "createdAt": ""
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_sale_matched_with_older_shares_on_a_buying_day_is_flagged() {
+        let lots = vec![lot("old", "2024-01-10"), lot("today", "2025-06-02")];
+        // FIFO took the old lot although the account bought that day.
+        assert_eq!(
+            same_day_sales_not_netted(&[sale("old", "2025-06-02", "FIFO")], &lots),
+            1
+        );
+        // FIFO same-day nets them, whatever else it relieves.
+        assert_eq!(
+            same_day_sales_not_netted(&[sale("old", "2025-06-02", "FIFO_SAME_DAY")], &lots),
+            0
+        );
+        // The same-day lot itself, or a day without a purchase, is fine.
+        assert_eq!(
+            same_day_sales_not_netted(
+                &[
+                    sale("today", "2025-06-02", "FIFO"),
+                    sale("old", "2025-06-03", "FIFO")
+                ],
+                &lots
+            ),
+            0
+        );
+    }
 
     #[test]
     fn test_classify_asset_for_indian_tax() {

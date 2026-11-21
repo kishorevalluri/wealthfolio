@@ -1,0 +1,41 @@
+id: NOM-CB-04
+title: A FIFO same-day account matches a sale with that day's purchases first
+intent: >
+  Rules R7.2, FIFO same-day. On 6 Jan a sale comes before a purchase in the
+  day; on 7 Jan a purchase comes first and the sale is larger than it. Each
+  day's purchase folds before its sale, and each sale relieves the lots bought
+  that day before older ones, as Indian exchanges net a client's same-day
+  trades in a scrip. The notes give FIFO too.
+policy:
+  base_currency: USD
+  timezone: UTC
+  as_of: 2025-01-08
+accounts:
+  - id: acc-1
+    name: Brokerage
+    currency: USD
+    cost_basis_method: FIFO_SAME_DAY
+assets:
+  - id: aapl
+    quote_ccy: USD
+activities:
+  - { id: dep-1, account: acc-1, type: DEPOSIT, date: 2025-01-02T10:00:00Z, amount: 5000 }
+  - { id: buy-1, account: acc-1, type: BUY, date: 2025-01-03T10:00:00Z, asset: aapl, quantity: 10, unit_price: 100, amount: 1000, fee: 0 }
+  - { id: sell-1, account: acc-1, type: SELL, date: 2025-01-06T10:00:00Z, asset: aapl, quantity: 5, unit_price: 120, amount: 600, fee: 0 }
+  - { id: buy-2, account: acc-1, type: BUY, date: 2025-01-06T11:00:00Z, asset: aapl, quantity: 10, unit_price: 110, amount: 1100, fee: 0 }
+  - { id: buy-3, account: acc-1, type: BUY, date: 2025-01-07T10:00:00Z, asset: aapl, quantity: 10, unit_price: 130, amount: 1300, fee: 0 }
+  - { id: sell-2, account: acc-1, type: SELL, date: 2025-01-07T14:00:00Z, asset: aapl, quantity: 12, unit_price: 140, amount: 1680, fee: 0 }
+quotes:
+  - { asset: aapl, day: 2025-01-03, close: 100 }
+  - { asset: aapl, day: 2025-01-06, close: 110 }
+  - { asset: aapl, day: 2025-01-07, close: 140 }
+  - { asset: aapl, day: 2025-01-08, close: 140 }
+expected_notes: >
+  6 Jan: buy-2 (10 at 110) folds before sell-1, which takes 5 of buy-2: cost
+  550, proceeds 600, P&L 50. 7 Jan: sell-2 takes buy-3's 10 (1300), then 2 of
+  buy-1, the oldest (200): cost 1500, proceeds 1680, P&L 180, two disposals.
+  Realized 230. Left: buy-1 8 (800) and buy-2 5 (550): 13 units, 1350. At
+  140: value 1820, unrealized 470, total gain 700. Under FIFO: sell-1 takes 5
+  of buy-1 (P&L 100), sell-2 the other 5 of buy-1 and 7 of buy-2 (P&L 410);
+  realized 510, left 3 of buy-2 and buy-3's 10 (1630). Cash 5000 - 3400 +
+  2280 = 3880 under every method.
