@@ -15,7 +15,7 @@ pub mod generic_pdf;
 pub mod nsdl_cas;
 pub mod zerodha_kite;
 
-pub use cams_kfin_cas::parse_cams_kfin_cas;
+pub use cams_kfin_cas::{is_cams_kfin_cas, parse_cams_kfin_cas};
 pub use cdsl_cas::parse_cdsl_cas;
 pub use contract_note::{is_contract_note, parse_contract_note};
 pub use generic_pdf::parse_generic_pdf_table;
