@@ -149,6 +149,170 @@ fn parse_to_unicode_cmap(content: &[u8]) -> std::collections::HashMap<u32, Strin
 }
 
 /// Extract text from a lopdf Document, recursing into Form XObjects and decoding Identity-H / ToUnicode fonts.
+/// A 2-D affine transform `[a b c d e f]`, as PDF writes it.
+type Matrix = [f64; 6];
+
+const IDENTITY: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+
+/// `m` then `n`: a point maps by `m` first.
+fn multiply(m: &Matrix, n: &Matrix) -> Matrix {
+    [
+        m[0] * n[0] + m[1] * n[2],
+        m[0] * n[1] + m[1] * n[3],
+        m[2] * n[0] + m[3] * n[2],
+        m[2] * n[1] + m[3] * n[3],
+        m[4] * n[0] + m[5] * n[2] + n[4],
+        m[4] * n[1] + m[5] * n[3] + n[5],
+    ]
+}
+
+fn operand_f64(operands: &[lopdf::Object], index: usize) -> f64 {
+    match operands.get(index) {
+        Some(lopdf::Object::Integer(i)) => *i as f64,
+        Some(lopdf::Object::Real(r)) => f64::from(*r),
+        _ => 0.0,
+    }
+}
+
+fn shown_text(encoding: &lopdf::Encoding, operands: &[lopdf::Object], out: &mut String) {
+    for operand in operands {
+        match operand {
+            lopdf::Object::String(bytes, _) => {
+                if let Ok(text) = Document::decode_text(encoding, bytes) {
+                    out.push_str(&text);
+                }
+            }
+            lopdf::Object::Array(items) => shown_text(encoding, items, out),
+            lopdf::Object::Integer(i) if *i < -100 => out.push(' '),
+            lopdf::Object::Real(r) if *r < -100.0 => out.push(' '),
+            _ => {}
+        }
+    }
+}
+
+/// Text of each page in reading order: every piece of text where the page
+/// draws it, grouped into lines from the top of the page down and left to
+/// right within a line. Some statements (KFintech's CAS) draw a page's
+/// transaction table before the headings above it, so the order the content
+/// stream gives does not say which scheme a row belongs to.
+fn extract_positioned_text(doc: &Document) -> String {
+    let mut out = String::new();
+    for &page_id in doc.get_pages().values() {
+        let encodings: std::collections::BTreeMap<Vec<u8>, lopdf::Encoding> = doc
+            .get_page_fonts(page_id)
+            .map(|fonts| {
+                fonts
+                    .into_iter()
+                    .filter_map(|(name, font)| font.get_font_encoding(doc).ok().map(|e| (name, e)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let Ok(content) = lopdf::content::Content::decode(&doc.get_page_content(page_id)) else {
+            continue;
+        };
+        let mut pieces: Vec<(f64, f64, String)> = Vec::new();
+        let mut ctm = IDENTITY;
+        let mut stack: Vec<Matrix> = Vec::new();
+        let mut tm = IDENTITY;
+        let mut tlm = IDENTITY;
+        let mut leading = 0.0;
+        let mut font: Option<Vec<u8>> = None;
+        for op in &content.operations {
+            let ops = &op.operands;
+            match op.operator.as_str() {
+                "q" => stack.push(ctm),
+                "Q" => ctm = stack.pop().unwrap_or(IDENTITY),
+                "cm" => {
+                    let m = [
+                        operand_f64(ops, 0),
+                        operand_f64(ops, 1),
+                        operand_f64(ops, 2),
+                        operand_f64(ops, 3),
+                        operand_f64(ops, 4),
+                        operand_f64(ops, 5),
+                    ];
+                    ctm = multiply(&m, &ctm);
+                }
+                "BT" => {
+                    tm = IDENTITY;
+                    tlm = IDENTITY;
+                }
+                "Tm" => {
+                    tlm = [
+                        operand_f64(ops, 0),
+                        operand_f64(ops, 1),
+                        operand_f64(ops, 2),
+                        operand_f64(ops, 3),
+                        operand_f64(ops, 4),
+                        operand_f64(ops, 5),
+                    ];
+                    tm = tlm;
+                }
+                "Td" | "TD" => {
+                    let (tx, ty) = (operand_f64(ops, 0), operand_f64(ops, 1));
+                    if op.operator == "TD" {
+                        leading = -ty;
+                    }
+                    tlm = multiply(&[1.0, 0.0, 0.0, 1.0, tx, ty], &tlm);
+                    tm = tlm;
+                }
+                "TL" => leading = operand_f64(ops, 0),
+                "T*" => {
+                    tlm = multiply(&[1.0, 0.0, 0.0, 1.0, 0.0, -leading], &tlm);
+                    tm = tlm;
+                }
+                "Tf" => {
+                    font = ops
+                        .first()
+                        .and_then(|o| o.as_name().ok())
+                        .map(<[u8]>::to_vec)
+                }
+                "Tj" | "TJ" | "'" | "\"" => {
+                    if op.operator != "Tj" && op.operator != "TJ" {
+                        tlm = multiply(&[1.0, 0.0, 0.0, 1.0, 0.0, -leading], &tlm);
+                        tm = tlm;
+                    }
+                    let Some(encoding) = font.as_ref().and_then(|f| encodings.get(f)) else {
+                        continue;
+                    };
+                    let shown = if op.operator == "\"" {
+                        ops.get(2).map(std::slice::from_ref).unwrap_or(&[])
+                    } else {
+                        ops.as_slice()
+                    };
+                    let mut text = String::new();
+                    shown_text(encoding, shown, &mut text);
+                    if text.trim().is_empty() {
+                        continue;
+                    }
+                    let at = multiply(&tm, &ctm);
+                    pieces.push((at[5], at[4], text));
+                }
+                _ => {}
+            }
+        }
+        // Top of the page first, then left to right.
+        pieces.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.total_cmp(&b.1)));
+        let mut lines: Vec<(f64, Vec<(f64, String)>)> = Vec::new();
+        for (y, x, text) in pieces {
+            match lines.last_mut() {
+                Some((line_y, cells)) if (*line_y - y).abs() <= 2.5 => cells.push((x, text)),
+                _ => lines.push((y, vec![(x, text)])),
+            }
+        }
+        for (_, mut cells) in lines {
+            cells.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let line: Vec<String> = cells
+                .into_iter()
+                .map(|(_, t)| t.trim().to_string())
+                .collect();
+            out.push_str(&line.join(" "));
+            out.push('\n');
+        }
+    }
+    out
+}
+
 fn extract_text_from_document(doc: &Document) -> String {
     let mut full_text = String::new();
     let pages = doc.get_pages();
@@ -428,6 +592,18 @@ pub fn parse_pdf(content: &[u8], password: Option<&str>) -> Result<ParsedPdfResu
     }
 
     let statement_type = detect_statement_type(&full_text);
+    // CAMS / KFintech statements are read in page order, by position.
+    let full_text = match statement_type {
+        StatementType::CamsCas | StatementType::KfintechCas => {
+            let positioned = extract_positioned_text(&doc);
+            if positioned.trim().is_empty() {
+                full_text
+            } else {
+                positioned
+            }
+        }
+        _ => full_text,
+    };
 
     let (headers, rows) = match statement_type {
         StatementType::CamsCas | StatementType::KfintechCas => {
@@ -472,6 +648,16 @@ fn detect_statement_type(text: &str) -> StatementType {
     // recognised before the depository statements.
     if crate::activities::parsers::is_contract_note(text) {
         return StatementType::ContractNote;
+    }
+
+    // A CAMS / KFintech CAS names the depositories too (demat folios), but
+    // only it lists each scheme's opening unit balance.
+    if crate::activities::parsers::is_cams_kfin_cas(text) {
+        return if lower.contains("cams") {
+            StatementType::CamsCas
+        } else {
+            StatementType::KfintechCas
+        };
     }
 
     // CDSL e-CAS often lists MF holdings with "RTA : CAMS" or "RTA : KFINTECH",

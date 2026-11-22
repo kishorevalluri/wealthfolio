@@ -1,0 +1,4 @@
+UPDATE import_templates
+SET config = '{"fieldMappings":{"date":"Date","activityType":"Transaction Description","symbol":"Scheme Name","isin":"ISIN","quantity":"Units","unitPrice":"NAV","amount":"Amount","account":"Folio No"},"activityMappings":{"BUY":["PURCHASE","SIP","ADDITIONAL PURCHASE","SWITCH IN","SWITCH_IN","SYSTEMATIC INVESTMENT","REINVESTMENT","REINVEST SHARES","DRIP"],"SELL":["REDEMPTION","SWITCH OUT","SWITCH_OUT","SWP","SYSTEMATIC WITHDRAWAL"],"DIVIDEND":["DIVIDEND PAYOUT","DIVIDEND REINVESTMENT","DIVIDEND","DIV"],"TAX":["STAMP DUTY","STAMP_DUTY","STT","SECURITIES TRANSACTION TAX","TDS","WITHHOLDING TAX"],"FEE":["BROKERAGE","TRANSACTION CHARGES","CHARGES"]},"symbolMappings":{},"accountMappings":{},"symbolMappingMeta":{},"parseConfig":{"delimiter":",","dateFormat":"auto","decimalSeparator":"auto","thousandsSeparator":"auto","hasHeaderRow":true,"skipTopRows":0,"skipBottomRows":0}}',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = 'system_cams_cas';
