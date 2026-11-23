@@ -1505,5 +1505,27 @@
     "external": "Transferência externa",
     "direction": "Direção da transferência",
     "mode": "Modo de transferência"
+  },
+  "corporate_actions": {
+    "menu": "Eventos corporativos da NSE",
+    "title": "Eventos corporativos da NSE",
+    "description": "Bonificações e desdobramentos que a NSE publica para as suas ações, comparados com as suas atividades. Escolha quais adicionar.",
+    "loading": "Consultando a NSE sobre as suas ações…",
+    "failed_all": "A NSE recusou o pedido. Às vezes bloqueia pedidos automáticos; tente de novo em alguns minutos.",
+    "failed_some": "A NSE não respondeu para {{symbols}}.",
+    "none": "Nada a adicionar: todas as bonificações e desdobramentos já estão nas suas atividades.",
+    "already_recorded_one": "{{count}} evento já registrado.",
+    "already_recorded_other": "{{count}} eventos já registrados.",
+    "already_recorded_many": "{{count}} eventos já registrados.",
+    "kind_bonus": "Bonificação",
+    "kind_split": "Desdobramento",
+    "kind_review": "Revisar",
+    "bonus_detail": "{{quantity}} ações bonificadas sobre {{held}} detidas",
+    "split_detail": "{{held}} ações passam a {{after}}",
+    "review_detail": "Registre à mão: a NSE não informa a divisão do custo.",
+    "add_selected_one": "Adicionar {{count}} atividade",
+    "add_selected_other": "Adicionar {{count}} atividades",
+    "add_selected_many": "Adicionar {{count}} atividades",
+    "retry": "Verificar de novo"
   }
 }

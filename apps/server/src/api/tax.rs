@@ -9,6 +9,9 @@ use axum::{
 use chrono::Datelike;
 use wealthfolio_core::{
     accounts::AccountServiceTrait,
+    corporate_actions::{
+        nse_corporate_action_proposals_for_active_accounts, CorporateActionProposals,
+    },
     exports::{format_records, ExportFileFormat},
     lots::{
         build_cleartax_workbook, cleartax_file_name, compute_indian_tax_summary,
@@ -246,8 +249,28 @@ async fn export_cleartax_post(
         .into_response())
 }
 
+/// POST /corporate-actions/nse/proposals
+///
+/// Asks NSE for the corporate actions of every share the active accounts
+/// hold and returns the bonuses and splits still missing from them.
+async fn get_nse_corporate_action_proposals(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+) -> ApiResult<Json<CorporateActionProposals>> {
+    let proposals = nse_corporate_action_proposals_for_active_accounts(
+        state.account_service.as_ref(),
+        state.asset_service.as_ref(),
+        state.activity_service.as_ref(),
+    )
+    .await?;
+    Ok(Json(proposals))
+}
+
 pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new()
+        .route(
+            "/corporate-actions/nse/proposals",
+            post(get_nse_corporate_action_proposals),
+        )
         .route("/tax/indian/summary", get(get_indian_tax_summary_get))
         .route(
             "/tax/indian/summary/query",

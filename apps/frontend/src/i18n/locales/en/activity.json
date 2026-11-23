@@ -1456,5 +1456,25 @@
     "external": "External Transfer",
     "direction": "Transfer Direction",
     "mode": "Transfer Mode"
+  },
+  "corporate_actions": {
+    "menu": "Corporate actions from NSE",
+    "title": "Corporate actions from NSE",
+    "description": "Bonuses and splits that NSE lists for the shares you hold, checked against your activities. Pick the ones to add.",
+    "loading": "Asking NSE about the shares you hold…",
+    "failed_all": "NSE refused the request. It blocks automated requests at times, so try again in a few minutes.",
+    "failed_some": "NSE didn't answer for {{symbols}}.",
+    "none": "Nothing to add: every bonus and split NSE lists for your shares is already in your activities.",
+    "already_recorded_one": "{{count}} action already recorded.",
+    "already_recorded_other": "{{count}} actions already recorded.",
+    "kind_bonus": "Bonus",
+    "kind_split": "Split",
+    "kind_review": "Needs review",
+    "bonus_detail": "{{quantity}} bonus shares on {{held}} held",
+    "split_detail": "{{held}} shares become {{after}}",
+    "review_detail": "Add this one by hand: NSE doesn't give the cost split.",
+    "add_selected_one": "Add {{count}} activity",
+    "add_selected_other": "Add {{count}} activities",
+    "retry": "Check again"
   }
 }

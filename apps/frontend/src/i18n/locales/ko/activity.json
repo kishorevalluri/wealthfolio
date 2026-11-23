@@ -1437,5 +1437,23 @@
     "external": "외부 이체",
     "direction": "이체 방향",
     "mode": "이체 모드"
+  },
+  "corporate_actions": {
+    "menu": "NSE 기업 행동",
+    "title": "NSE 기업 행동",
+    "description": "보유 주식에 대해 NSE가 공시한 무상증자와 액면분할을 거래 내역과 대조했습니다. 추가할 항목을 선택하세요.",
+    "loading": "보유 주식에 대해 NSE에 조회 중…",
+    "failed_all": "NSE가 요청을 거부했습니다. 자동 요청을 차단할 때가 있으니 몇 분 후 다시 시도하세요.",
+    "failed_some": "{{symbols}}에 대해 NSE가 응답하지 않았습니다.",
+    "none": "추가할 항목이 없습니다. 무상증자와 액면분할이 모두 기록되어 있습니다.",
+    "already_recorded_other": "{{count}}건은 이미 기록되어 있습니다.",
+    "kind_bonus": "무상증자",
+    "kind_split": "액면분할",
+    "kind_review": "검토 필요",
+    "bonus_detail": "보유 {{held}}주에 무상 {{quantity}}주",
+    "split_detail": "{{held}}주가 {{after}}주로",
+    "review_detail": "직접 추가하세요. NSE는 취득가 배분을 제공하지 않습니다.",
+    "add_selected_other": "거래 {{count}}건 추가",
+    "retry": "다시 확인"
   }
 }

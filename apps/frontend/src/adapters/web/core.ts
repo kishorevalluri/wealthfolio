@@ -67,6 +67,7 @@ export const COMMANDS: CommandMap = {
   get_performance_summaries: { method: "POST", path: "/performance/summaries" },
   get_income_summary: { method: "POST", path: "/income/summary/query" },
   get_indian_tax_summary: { method: "POST", path: "/tax/indian/summary/query" },
+  get_nse_corporate_action_proposals: { method: "POST", path: "/corporate-actions/nse/proposals" },
   // Goals
   get_goals: { method: "GET", path: "/goals" },
   get_goal: { method: "GET", path: "/goals" },

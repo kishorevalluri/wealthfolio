@@ -410,6 +410,7 @@ pub fn run() {
             commands::portfolio::get_holdings_by_allocation,
             commands::portfolio::get_income_summary,
             commands::portfolio::get_indian_tax_summary,
+            commands::portfolio::get_nse_corporate_action_proposals,
             commands::portfolio::export_indian_schedule_cg,
             commands::portfolio::export_indian_cleartax,
             commands::portfolio::get_historical_valuations,

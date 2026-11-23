@@ -1505,5 +1505,27 @@
     "external": "Transferencia externa",
     "direction": "Dirección de transferencia",
     "mode": "Modo de transferencia"
+  },
+  "corporate_actions": {
+    "menu": "Eventos corporativos de la NSE",
+    "title": "Eventos corporativos de la NSE",
+    "description": "Acciones liberadas y splits que la NSE publica para tus acciones, comparados con tus actividades. Elige cuáles añadir.",
+    "loading": "Consultando a la NSE sobre tus acciones…",
+    "failed_all": "La NSE rechazó la solicitud. A veces bloquea las solicitudes automáticas; vuelve a intentarlo en unos minutos.",
+    "failed_some": "La NSE no respondió para {{symbols}}.",
+    "none": "Nada que añadir: todas las acciones liberadas y splits ya están en tus actividades.",
+    "already_recorded_one": "{{count}} evento ya registrado.",
+    "already_recorded_other": "{{count}} eventos ya registrados.",
+    "already_recorded_many": "{{count}} eventos ya registrados.",
+    "kind_bonus": "Liberadas",
+    "kind_split": "Split",
+    "kind_review": "Revisar",
+    "bonus_detail": "{{quantity}} acciones liberadas sobre {{held}} en cartera",
+    "split_detail": "{{held}} acciones pasan a {{after}}",
+    "review_detail": "Regístralo a mano: la NSE no indica el reparto del coste.",
+    "add_selected_one": "Añadir {{count}} actividad",
+    "add_selected_other": "Añadir {{count}} actividades",
+    "add_selected_many": "Añadir {{count}} actividades",
+    "retry": "Volver a comprobar"
   }
 }

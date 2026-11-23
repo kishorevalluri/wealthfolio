@@ -3220,3 +3220,28 @@ export interface IndianTaxYearSummary {
   cleartaxFiles: number;
   calculations: IndianCapitalGainCalculation[];
 }
+
+/** A corporate action NSE lists for a share an account held on its ex-date. */
+export interface CorporateActionProposal {
+  kind: "BONUS" | "SPLIT" | "REVIEW";
+  accountId: string;
+  accountName: string;
+  assetId: string;
+  symbol: string;
+  name?: string | null;
+  subject: string;
+  exDate: string;
+  recordDate?: string | null;
+  activityDate: string;
+  heldQuantity: string;
+  bonusQuantity?: string | null;
+  splitRatio?: string | null;
+}
+
+export interface CorporateActionProposals {
+  proposals: CorporateActionProposal[];
+  alreadyRecorded: number;
+  symbolsChecked: string[];
+  /** [symbol, reason] */
+  failedSymbols: [string, string][];
+}

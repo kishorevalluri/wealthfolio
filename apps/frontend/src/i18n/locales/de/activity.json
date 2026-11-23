@@ -1456,5 +1456,25 @@
     "external": "Externer Transfer",
     "direction": "Transferrichtung",
     "mode": "Transfermodus"
+  },
+  "corporate_actions": {
+    "menu": "Kapitalmaßnahmen von der NSE",
+    "title": "Kapitalmaßnahmen von der NSE",
+    "description": "Bonusaktien und Splits, die die NSE für Ihre Aktien meldet, abgeglichen mit Ihren Aktivitäten. Wählen Sie aus, was hinzugefügt werden soll.",
+    "loading": "NSE wird zu Ihren Aktien abgefragt…",
+    "failed_all": "Die NSE hat die Anfrage abgelehnt. Sie blockiert zeitweise automatische Anfragen; versuchen Sie es in ein paar Minuten erneut.",
+    "failed_some": "Keine Antwort der NSE für {{symbols}}.",
+    "none": "Nichts hinzuzufügen: Alle Bonusaktien und Splits sind bereits in Ihren Aktivitäten.",
+    "already_recorded_one": "{{count}} Maßnahme bereits erfasst.",
+    "already_recorded_other": "{{count}} Maßnahmen bereits erfasst.",
+    "kind_bonus": "Bonus",
+    "kind_split": "Split",
+    "kind_review": "Prüfen",
+    "bonus_detail": "{{quantity}} Bonusaktien auf {{held}} gehaltene",
+    "split_detail": "Aus {{held}} Aktien werden {{after}}",
+    "review_detail": "Bitte manuell erfassen: Die NSE nennt keine Kostenaufteilung.",
+    "add_selected_one": "{{count}} Aktivität hinzufügen",
+    "add_selected_other": "{{count}} Aktivitäten hinzufügen",
+    "retry": "Erneut prüfen"
   }
 }
