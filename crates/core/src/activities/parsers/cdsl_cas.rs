@@ -163,7 +163,8 @@ pub const MF_ACCOUNT: &str = "MF FOLIOS";
 /// (a bonus, split or merger, or an unknown credit or debit). The import
 /// wizard pairs a corporate-action debit and credit of different ISINs on one
 /// day into a conversion (`pairCorporateActionConversions` in the frontend),
-/// which carries cost and date to the new ISIN.
+/// which carries cost and date to the new ISIN, and turns a credit whose
+/// particulars say bonus into a buy at a price of 0.
 pub const LABEL_BUY: &str = "BUY";
 pub const LABEL_SELL: &str = "SELL";
 pub const LABEL_TRANSFER_IN: &str = "TRANSFER IN";
