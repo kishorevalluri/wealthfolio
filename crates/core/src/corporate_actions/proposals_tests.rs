@@ -265,3 +265,44 @@ fn bonus_fractions_are_dropped() {
         propose_corporate_actions(&accounts, &assets, &activities, &actions, d("2026-11-23"));
     assert_eq!(proposals[0].bonus_quantity, Some(dec!(3)));
 }
+
+/// NSE's reply for HDFCAMC as a browser received it on 23 Nov 2026 (public
+/// market data, trimmed to four rows).
+const NSE_HDFCAMC_REPLY: &str = r#"[
+{"bcEndDate":"-","bcStartDate":"-","caBroadcastDate":null,"comp":"HDFC Asset Management Company Limited","exDate":"05-Jun-2026","faceVal":"5","ind":"-","isin":"INE127D01025","ndEndDate":"-","ndStartDate":"-","recDate":"05-Jun-2026","series":"EQ","subject":"Dividend - Rs 54 Per Share","symbol":"HDFCAMC"},
+{"bcEndDate":"-","bcStartDate":"-","caBroadcastDate":null,"comp":"HDFC Asset Management Company Limited","exDate":"26-Nov-2025","faceVal":"5","ind":"-","isin":"INE127D01025","ndEndDate":"-","ndStartDate":"-","recDate":"26-Nov-2025","series":"EQ","subject":"Bonus 1:1","symbol":"HDFCAMC"},
+{"bcEndDate":"29-Jun-2022","bcStartDate":"11-Jun-2022","caBroadcastDate":null,"comp":"HDFC Asset Management Company Limited","exDate":"09-Jun-2022","faceVal":"5","ind":"-","isin":"INE127D01025","ndEndDate":"-","ndStartDate":"-","recDate":"-","series":"EQ","subject":"Annual General Meeting/Dividend - Rs 42 Per Share","symbol":"HDFCAMC"},
+{"bcEndDate":"-","bcStartDate":"-","caBroadcastDate":null,"comp":"HDFC Asset Management Company Limited","exDate":"06-Mar-2019","faceVal":"5","ind":"-","isin":"INE127D01025","ndEndDate":"-","ndStartDate":"-","recDate":"07-Mar-2019","series":"EQ","subject":" Interim Dividend - Rs 12 Per Share","symbol":"HDFCAMC"}
+]"#;
+
+#[test]
+fn reads_a_real_nse_reply_and_proposes_its_bonus() {
+    let body: serde_json::Value = serde_json::from_str(NSE_HDFCAMC_REPLY).unwrap();
+    let rows = parse_nse_actions(&body, "HDFCAMC");
+    assert_eq!(rows.len(), 4);
+    let bonus = rows.iter().find(|r| r.subject == "Bonus 1:1").unwrap();
+    assert_eq!(bonus.ex_date, d("2025-11-26"));
+    assert_eq!(bonus.record_date, Some(d("2025-11-26")));
+    assert_eq!(rows[2].record_date, None);
+
+    let accounts = vec![account("z")];
+    let assets = vec![asset("amc", "HDFCAMC")];
+    let mut activities = vec![
+        act("z", "amc", "BUY", "2024-01-10", "17", "3000"),
+        act("z", "amc", "BUY", "2025-12-24", "1", "2669.6"),
+    ];
+    let actions = HashMap::from([("HDFCAMC".to_string(), rows)]);
+    let (proposals, recorded) =
+        propose_corporate_actions(&accounts, &assets, &activities, &actions, d("2026-11-23"));
+    assert_eq!(recorded, 0);
+    assert_eq!(proposals.len(), 1);
+    assert_eq!(proposals[0].bonus_quantity, Some(dec!(17)));
+    assert_eq!(proposals[0].activity_date, d("2025-11-26"));
+
+    // Once the bonus is in, nothing is proposed.
+    activities.push(act("z", "amc", "BUY", "2025-11-27", "17", "0"));
+    let (proposals, recorded) =
+        propose_corporate_actions(&accounts, &assets, &activities, &actions, d("2026-11-23"));
+    assert!(proposals.is_empty());
+    assert_eq!(recorded, 1);
+}
