@@ -14,6 +14,13 @@ import {
   EmptyDescription,
 } from "@wealthfolio/ui/components/ui/empty";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@wealthfolio/ui/components/ui/select";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { AccountScopeSelector } from "@/components/account-filter-selector";
@@ -33,16 +40,67 @@ import {
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Cell, Pie, PieChart } from "recharts";
+import { financialYearLabel, financialYearStart } from "./financial-year";
 import { IncomeHistoryChart } from "./income-history-chart";
 import { UnconvertedCurrenciesNotice } from "./unconverted-currencies-notice";
 
-type IncomePeriod = "ALL" | "YTD" | "LAST_YEAR";
+type CalendarPeriod = "ALL" | "YTD" | "LAST_YEAR";
+/** An Indian financial year (April to March) by its start year: "FY2025" is 2025-26. */
+type FinancialYearPeriod = `FY${number}`;
+type IncomePeriod = CalendarPeriod | FinancialYearPeriod;
+
+const NO_FINANCIAL_YEAR = "calendar";
+
+const FinancialYearSelector: React.FC<{
+  financialYears: FinancialYearPeriod[];
+  selectedPeriod: IncomePeriod;
+  onPeriodSelect: (period: IncomePeriod) => void;
+  className?: string;
+}> = ({ financialYears, selectedPeriod, onPeriodSelect, className }) => {
+  const { t } = useTranslation();
+  if (financialYears.length === 0) return null;
+  const label = (period: FinancialYearPeriod) =>
+    t("income:financial_year", { year: financialYearLabel(financialYearStart(period) ?? 0) });
+  const value = financialYearStart(selectedPeriod) === null ? NO_FINANCIAL_YEAR : selectedPeriod;
+  return (
+    <Select
+      value={value}
+      items={{
+        [NO_FINANCIAL_YEAR]: t("income:financial_year_pick"),
+        ...Object.fromEntries(financialYears.map((fy) => [fy, label(fy)])),
+      }}
+      onValueChange={(next) => {
+        if (next && next !== NO_FINANCIAL_YEAR) onPeriodSelect(next as FinancialYearPeriod);
+      }}
+    >
+      <SelectTrigger
+        aria-label={t("income:financial_year_pick")}
+        className={`h-8 w-auto text-sm ${className ?? ""}`}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_FINANCIAL_YEAR} disabled>
+          {t("income:financial_year_pick")}
+        </SelectItem>
+        {financialYears.map((fy) => (
+          <SelectItem key={fy} value={fy}>
+            {label(fy)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+};
 
 const IncomePeriodSelector: React.FC<{
   selectedPeriod: IncomePeriod;
   onPeriodSelect: (period: IncomePeriod) => void;
 }> = ({ selectedPeriod, onPeriodSelect }) => {
   const { t } = useTranslation();
+  // A financial year is picked from its own list; no calendar button is on then.
+  const calendarValue: CalendarPeriod | null =
+    financialYearStart(selectedPeriod) === null ? (selectedPeriod as CalendarPeriod) : null;
 
   const periods = [
     { value: "YTD" as const, label: t("income:year_to_date") },
@@ -63,7 +121,7 @@ const IncomePeriodSelector: React.FC<{
           variant="secondary"
           size="sm"
           items={periods}
-          value={selectedPeriod}
+          value={calendarValue}
           onValueChange={onPeriodSelect}
         />
       </div>
@@ -72,7 +130,7 @@ const IncomePeriodSelector: React.FC<{
           variant="secondary"
           size="xs"
           items={mobilePeriods}
-          value={selectedPeriod}
+          value={calendarValue}
           onValueChange={onPeriodSelect}
         />
       </div>
@@ -99,16 +157,31 @@ export default function IncomePage() {
     queryFn: () => getIncomeSummary(accountFilter),
   });
 
+  const financialYears = (incomeData ?? [])
+    .map((summary) => summary.period)
+    .filter((period): period is FinancialYearPeriod => financialYearStart(period) !== null)
+    .sort((a, b) => b.localeCompare(a));
+
   // Keep the selector mounted as queries change so multi-selection can continue
   // through loading, empty, populated and error states.
   const filters = (
     <>
       <div className="pointer-events-auto fixed end-2 top-4 z-20 hidden items-center gap-2 md:flex lg:end-4">
         <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
+        <FinancialYearSelector
+          financialYears={financialYears}
+          selectedPeriod={selectedPeriod}
+          onPeriodSelect={setSelectedPeriod}
+        />
         <IncomePeriodSelector selectedPeriod={selectedPeriod} onPeriodSelect={setSelectedPeriod} />
       </div>
       <div className="mb-6 flex items-center justify-end gap-2 md:hidden">
         <IncomePeriodSelector selectedPeriod={selectedPeriod} onPeriodSelect={setSelectedPeriod} />
+        <FinancialYearSelector
+          financialYears={financialYears}
+          selectedPeriod={selectedPeriod}
+          onPeriodSelect={setSelectedPeriod}
+        />
         <AccountScopeSelector value={accountFilter} onChange={setAccountScope} />
       </div>
     </>
@@ -169,12 +242,14 @@ export default function IncomePage() {
     .slice(selectedPeriod === "ALL" ? 0 : -12)
     .map(([month, income]) => [month, Number(income) || 0]);
 
+  const selectedFinancialYear = financialYearStart(selectedPeriod);
+
   const getPreviousPeriodData = (currentMonth: string): number => {
     const [year, month] = currentMonth.split("-");
     const previousYear = parseInt(year) - 1;
     const previousMonth = month;
 
-    if (selectedPeriod === "YTD") {
+    if (selectedPeriod === "YTD" || selectedFinancialYear !== null) {
       return totalSummary.byMonth[`${previousYear}-${month}`] || 0;
     } else if (selectedPeriod === "LAST_YEAR") {
       return (
@@ -196,11 +271,13 @@ export default function IncomePage() {
 
   // Compare the server-computed monthly averages. All Time has no previous period.
   const previousPeriod =
-    selectedPeriod === "YTD"
-      ? "LAST_YEAR"
-      : selectedPeriod === "LAST_YEAR"
-        ? "TWO_YEARS_AGO"
-        : null;
+    selectedFinancialYear !== null
+      ? `FY${selectedFinancialYear - 1}`
+      : selectedPeriod === "YTD"
+        ? "LAST_YEAR"
+        : selectedPeriod === "LAST_YEAR"
+          ? "TWO_YEARS_AGO"
+          : null;
   const previousMonthlyAverage =
     Number(incomeData.find((summary) => summary.period === previousPeriod)?.monthlyAverage) || 0;
 
@@ -215,9 +292,11 @@ export default function IncomePage() {
   // with: no income, only income without an exchange rate, or an average that
   // rounds to zero.
   const noComparisonLabel =
-    selectedPeriod === "LAST_YEAR"
-      ? t("income:no_comparison_year_before")
-      : t("income:no_comparison_last_year");
+    selectedFinancialYear !== null
+      ? t("income:no_comparison_previous_financial_year")
+      : selectedPeriod === "LAST_YEAR"
+        ? t("income:no_comparison_year_before")
+        : t("income:no_comparison_last_year");
 
   // Only converted income gets a slice: income without an exchange rate has
   // none, and a zero-sized slice would still add padding to the pie.
@@ -241,11 +320,15 @@ export default function IncomePage() {
           <Card className="border-warning/10 bg-warning/10">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                {selectedPeriod === "ALL"
-                  ? t("income:all_time_income")
-                  : selectedPeriod === "LAST_YEAR"
-                    ? t("income:last_year_income")
-                    : t("income:this_year_income")}
+                {selectedFinancialYear !== null
+                  ? t("income:financial_year_income", {
+                      year: financialYearLabel(selectedFinancialYear),
+                    })
+                  : selectedPeriod === "ALL"
+                    ? t("income:all_time_income")
+                    : selectedPeriod === "LAST_YEAR"
+                      ? t("income:last_year_income")
+                      : t("income:this_year_income")}
               </CardTitle>
               <Icons.DollarSign className="text-muted-foreground h-4 w-4" />
             </CardHeader>

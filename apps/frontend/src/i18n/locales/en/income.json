@@ -78,5 +78,9 @@
   "previous": "Previous",
   "cumulative": "Cumulative",
   "unconverted_currencies_one": "Income in {{currencies}} is left out of the totals because there is no exchange rate to {{baseCurrency}}.",
-  "unconverted_currencies_other": "Income in {{currencies}} is left out of the totals because there are no exchange rates to {{baseCurrency}}."
+  "unconverted_currencies_other": "Income in {{currencies}} is left out of the totals because there are no exchange rates to {{baseCurrency}}.",
+  "financial_year": "FY {{year}}",
+  "financial_year_pick": "Financial year",
+  "financial_year_income": "FY {{year}} Income",
+  "no_comparison_previous_financial_year": "No comparison with the previous financial year"
 }

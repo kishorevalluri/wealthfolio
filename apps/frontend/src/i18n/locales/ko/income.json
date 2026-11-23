@@ -78,5 +78,9 @@
   "previous": "이전",
   "cumulative": "누적",
   "unconverted_currencies_one": "{{baseCurrency}}(으)로 환산할 환율이 없어 {{currencies}} 소득은 합계에서 제외되었습니다.",
-  "unconverted_currencies_other": "{{baseCurrency}}(으)로 환산할 환율이 없어 {{currencies}} 소득은 합계에서 제외되었습니다."
+  "unconverted_currencies_other": "{{baseCurrency}}(으)로 환산할 환율이 없어 {{currencies}} 소득은 합계에서 제외되었습니다.",
+  "financial_year": "{{year}} 회계연도",
+  "financial_year_pick": "회계연도",
+  "financial_year_income": "{{year}} 회계연도 소득",
+  "no_comparison_previous_financial_year": "이전 회계연도와 비교할 수 없습니다"
 }

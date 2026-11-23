@@ -78,5 +78,9 @@
   "previous": "前期",
   "cumulative": "累計",
   "unconverted_currencies_one": "{{baseCurrency}}への為替レートがないため、{{currencies}}の収入は合計に含まれていません。",
-  "unconverted_currencies_other": "{{baseCurrency}}への為替レートがないため、{{currencies}}の収入は合計に含まれていません。"
+  "unconverted_currencies_other": "{{baseCurrency}}への為替レートがないため、{{currencies}}の収入は合計に含まれていません。",
+  "financial_year": "{{year}}年度",
+  "financial_year_pick": "会計年度",
+  "financial_year_income": "{{year}}年度の収入",
+  "no_comparison_previous_financial_year": "前会計年度との比較はありません"
 }

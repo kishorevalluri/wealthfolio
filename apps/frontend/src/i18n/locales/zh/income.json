@@ -78,5 +78,9 @@
   "previous": "上一期",
   "cumulative": "累计",
   "unconverted_currencies_one": "由于没有换算为 {{baseCurrency}} 的汇率，{{currencies}} 收入未计入合计。",
-  "unconverted_currencies_other": "由于没有换算为 {{baseCurrency}} 的汇率，{{currencies}} 收入未计入合计。"
+  "unconverted_currencies_other": "由于没有换算为 {{baseCurrency}} 的汇率，{{currencies}} 收入未计入合计。",
+  "financial_year": "{{year}} 财年",
+  "financial_year_pick": "财年",
+  "financial_year_income": "{{year}} 财年收入",
+  "no_comparison_previous_financial_year": "无法与上一财年比较"
 }

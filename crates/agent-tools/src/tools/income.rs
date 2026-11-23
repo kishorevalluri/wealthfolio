@@ -13,7 +13,8 @@ use crate::tool::{AgentTool, AgentToolAccess, AgentToolError, AgentToolResult};
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetIncomeArgs {
-    /// Period to show: "YTD", "LAST_YEAR", or "ALL" (default: "YTD").
+    /// Period to show: "YTD", "LAST_YEAR", "ALL", or an Indian financial year
+    /// (April to March) by its start year, such as "FY2025" (default: "YTD").
     pub period: Option<String>,
 }
 
@@ -45,7 +46,7 @@ pub struct GetIncomeOutput {
     pub top_assets: Vec<TopAssetDto>,
     /// Monthly income breakdown (YYYY-MM -> amount).
     pub by_month: HashMap<String, f64>,
-    /// Period label (YTD, LAST_YEAR, ALL).
+    /// Period label (YTD, LAST_YEAR, ALL, FY2025, ...).
     pub period: String,
     /// Currencies with income but no exchange rate to the base currency, in
     /// this period or the one `yoy_growth` compares against. That income is
@@ -73,8 +74,7 @@ impl AgentTool for GetIncome {
             "properties": {
                 "period": {
                     "type": "string",
-                    "enum": ["YTD", "LAST_YEAR", "ALL"],
-                    "description": "Time period for income summary: YTD (year to date), LAST_YEAR, or ALL (all time). Defaults to YTD."
+                    "description": "Time period for income summary: YTD (year to date), LAST_YEAR, ALL (all time), or an Indian financial year (April to March) by its start year, e.g. FY2025 for 2025-26. Defaults to YTD."
                 }
             },
             "required": []

@@ -86,5 +86,9 @@
   "year_over_year": "النمو على أساس سنوي",
   "year_over_year_growth": "النمو من سنة إلى سنة",
   "year_to_date": "منذ بداية السنة",
-  "ytd": "منذ بداية السنة"
+  "ytd": "منذ بداية السنة",
+  "financial_year": "السنة المالية {{year}}",
+  "financial_year_pick": "السنة المالية",
+  "financial_year_income": "دخل السنة المالية {{year}}",
+  "no_comparison_previous_financial_year": "لا توجد مقارنة بالسنة المالية السابقة"
 }
