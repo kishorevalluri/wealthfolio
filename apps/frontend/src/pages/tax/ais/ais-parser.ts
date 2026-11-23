@@ -19,8 +19,10 @@ export interface AisDividend {
   code: string;
   /** The company that paid it (the reporting source or deductor). */
   company: string;
-  /** YYYY-MM-DD, when the AIS gives one. */
+  /** YYYY-MM-DD of the payment, when the AIS gives one (TDS-194 does). */
   date?: string;
+  /** YYYY-MM-DD the company filed it (SFT-015). Not the payment date. */
+  reportedOn?: string;
   amount: number;
   tds: number;
 }
@@ -40,6 +42,13 @@ export interface AisSale {
   cost?: number;
   /** Who reported it: a depository, broker or registrar. */
   reportedBy?: string;
+  /** "Long term" or "Short term", as the reporter saw it. */
+  term?: string;
+  /** How the shares left and arrived: "Market", "Off market", "AMC (redemption)". */
+  debitType?: string;
+  creditType?: string;
+  /** 31 Jan 2018 fair market value the reporter used, when it gave one. */
+  fmv?: number;
 }
 
 export interface AisStatement {
@@ -47,7 +56,7 @@ export interface AisStatement {
   fyStartYear?: number;
   dividends: AisDividend[];
   sales: AisSale[];
-  /** Tables that looked relevant but could not be read, for the person to see. */
+  /** Rows AIS marks inactive (withdrawn after feedback), left out. */
   skipped: number;
 }
 
@@ -443,10 +452,122 @@ function dedupe(statement: AisStatement): AisStatement {
   return statement;
 }
 
+// ── Portal JSON (AIS utility export, decrypted) ─────────────────────────
+
+interface PortalTable {
+  columnLabel?: ({ field?: string; name?: string } | string)[];
+  columnData?: (string | null)[][] | null;
+}
+
+interface PortalElement {
+  title?: string;
+  l1?: PortalTable;
+  l2?: PortalTable;
+}
+
+interface PortalAis {
+  header?: PortalTable;
+  partB?: { sections?: { elements?: PortalElement[] }[] };
+}
+
+/** "TIPS INDUSTRIES LIMITED (AAACT5284A.AZ428)" → "TIPS INDUSTRIES LIMITED". */
+function withoutId(source: string): string {
+  return source.replace(/\s*\([^()]*\)\s*$/, "").trim();
+}
+
+/** "KAYNES TECHNOLOGY INDIA LIMITED # EQUITY SHARES(INE918Z01012)" → name and ISIN. */
+export function splitSecurityName(text: string): { name: string; isin?: string } {
+  const m = /\((IN[A-Z0-9]{10})\)\s*$/i.exec(text);
+  const isin = m?.[1].toUpperCase();
+  const name = (m ? text.slice(0, m.index) : text).split(" # ")[0].trim();
+  return { name, isin };
+}
+
+function isPortalAis(data: unknown): data is PortalAis {
+  return isPlainObject(data) && isPlainObject(data.partB) && Array.isArray(data.partB.sections);
+}
+
+/**
+ * The utility's layout: Part B has sections of elements, one per information
+ * code and reporter. `l2` is the summary row (category, code, description,
+ * source, count, amount); `l1` lists the transactions, its rows lined up with
+ * `columnLabel` fields.
+ */
+function parsePortalAis(data: PortalAis): AisStatement {
+  const out = emptyStatement();
+  const labels = (data.header?.columnLabel ?? []).map((l) => (typeof l === "string" ? l : l.name));
+  const fyAt = labels.findIndex((l) => /financial year/i.test(l ?? ""));
+  const fyCell: unknown = fyAt >= 0 ? (data.header?.columnData as unknown[] | null)?.[fyAt] : "";
+  const fyText = typeof fyCell === "string" ? fyCell : "";
+  out.fyStartYear = /^(20\d{2})-\d{2}/.exec(fyText) ? Number(fyText.slice(0, 4)) : undefined;
+  for (const section of data.partB?.sections ?? []) {
+    for (const element of section.elements ?? []) {
+      const summary = element.l2?.columnData?.[0] ?? [];
+      const code = (summary[1] ?? "").trim();
+      const source = withoutId(summary[3] ?? "");
+      const fields = (element.l1?.columnLabel ?? []).map((c) =>
+        typeof c === "string" ? norm(c) : (c.field ?? ""),
+      );
+      const isDividend = /^(TDS-194|SFT-015)\b/i.test(code);
+      const isSale = /^SFT-1[78]-/i.test(code);
+      if (!isDividend && !isSale) continue;
+      for (const cells of element.l1?.columnData ?? []) {
+        const get = (field: string) => {
+          const i = fields.indexOf(field);
+          const v = i >= 0 ? cells[i] : undefined;
+          return v === null || v === undefined || v.trim() === "" || v.trim() === "-"
+            ? undefined
+            : v.trim();
+        };
+        if ((get("status") ?? "Active").toLowerCase() !== "active") {
+          out.skipped += 1;
+          continue;
+        }
+        if (isDividend) {
+          const amount = parseAmount(get("amtPaid"));
+          if (amount === undefined) continue;
+          out.dividends.push({
+            code: code.toUpperCase(),
+            company: source,
+            date: parseAisDate(get("transactionDate")),
+            reportedOn: parseAisDate(get("reportedOn")),
+            amount,
+            tds: parseAmount(get("amountDeducted")) ?? 0,
+          });
+          continue;
+        }
+        const date = parseAisDate(get("transferDate"));
+        const consideration = parseAmount(get("salesConsideration"));
+        if (!date || consideration === undefined) continue;
+        const { name, isin } = splitSecurityName(get("securityName") ?? "");
+        const fmv = parseAmount(get("fmvValue"));
+        out.sales.push({
+          code: code.toUpperCase(),
+          date,
+          name,
+          isin,
+          quantity: parseAmount(get("quantity")),
+          unitPrice: parseAmount(get("sellPricePerUnit")),
+          consideration,
+          cost: parseAmount(get("costOfAcquisition")),
+          reportedBy: source,
+          term: get("assetType"),
+          debitType: get("debitType"),
+          creditType: get("creditType"),
+          fmv: fmv ? fmv : undefined,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 /** Reads an AIS file by its contents: JSON if it parses as JSON, else CSV. */
 export function parseAisFile(text: string, fileName = ""): AisStatement {
   const trimmed = text.trimStart();
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    const data: unknown = JSON.parse(trimmed);
+    if (isPortalAis(data)) return parsePortalAis(data);
     return parseAisJson(trimmed);
   }
   return parseAisCsv(text, fileName);

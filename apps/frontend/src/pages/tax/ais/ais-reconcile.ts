@@ -308,17 +308,22 @@ function saleHints(row: SaleRow): string[] {
   }
   if (row.status === "ais-only") {
     hints.push(
-      "Not in the app for this day. Either the sale was not imported, or AIS shows an off-market transfer, a buyback or a delisting as a sale.",
+      /-04-0[1-7]$/.test(row.date)
+        ? "AIS dates sales by settlement, so a sale traded in the last days of March (the previous year in the app) can show up here. Check the previous year's sales."
+        : "Not in the app for this day. Either the sale was not imported, or AIS shows an off-market transfer, a buyback or a delisting as a sale.",
     );
   }
   if (row.status === "app-only") {
     hints.push(
       app?.intraday
         ? "Intraday trade. Brokers often leave these out of AIS."
-        : "AIS does not list this sale. The broker or depository may not have reported it, or reported it under another date or year.",
+        : /-03-(2[4-9]|3[01])$/.test(row.date)
+          ? "Settled in April, so AIS may list it in next year's statement."
+          : "AIS does not list this sale. The broker or depository may not have reported it, or reported it under another date or year.",
     );
   }
-  if (ais && app && row.aisDate && row.aisDate !== row.date) {
+  // One day later is the normal settlement gap; only a longer one is worth a note.
+  if (ais && app && row.aisDate && Math.abs(daysBetween(row.date, row.aisDate)) > 1) {
     hints.push(
       `AIS dates this ${Math.abs(daysBetween(row.date, row.aisDate))} day(s) ${
         row.aisDate > row.date ? "later" : "earlier"
@@ -408,22 +413,39 @@ export function reconcileSales(aisSales: AisSale[], app: AppSale[]): ScripTotals
     const rows: SaleRow[] = [];
     const left = [...scrip.sales];
     const aisGroups = aisByScrip.get(key) ?? [];
-    const pending: AisSaleGroup[] = [];
-    // Same day first, then the nearest day within a week with the same quantity.
-    for (const g of aisGroups) {
-      const i = left.findIndex((a) => a.date === g.date);
-      if (i >= 0) rows.push(toRow(g, left.splice(i, 1)[0]));
-      else pending.push(g);
+    // Depositories report the day the shares left the demat account, usually
+    // the trade day plus one settlement day (more over holidays), so pair each
+    // AIS sale with the app sale it fits best: same quantity and value first,
+    // then the shortest gap from the trade day forward.
+    const pairs: { g: number; a: number; score: number }[] = [];
+    aisGroups.forEach((g, gi) => {
+      left.forEach((a, ai) => {
+        const gap = daysBetween(a.date, g.date);
+        if (gap < -1 || gap > 7) return;
+        const sameQty = sameQuantity(g.quantity, a.quantity);
+        const sameValue = sameAmount(g.consideration, a.consideration);
+        // A different quantity only pairs on the same day: otherwise it is
+        // more likely another sale.
+        if (!sameQty && gap !== 0) return;
+        const fit = sameQty && sameValue ? 0 : sameQty ? 1 : 2;
+        pairs.push({ g: gi, a: ai, score: fit * 100 + (gap >= 0 ? gap : 5) });
+      });
+    });
+    pairs.sort((x, y) => x.score - y.score);
+    const usedG = new Set<number>();
+    const usedA = new Set<number>();
+    for (const p of pairs) {
+      if (usedG.has(p.g) || usedA.has(p.a)) continue;
+      usedG.add(p.g);
+      usedA.add(p.a);
+      rows.push(toRow(aisGroups[p.g], left[p.a]));
     }
-    for (const g of pending) {
-      let best = -1;
-      for (let i = 0; i < left.length; i++) {
-        const gap = Math.abs(daysBetween(left[i].date, g.date));
-        if (gap > 7 || !sameQuantity(g.quantity, left[i].quantity)) continue;
-        if (best < 0 || gap < Math.abs(daysBetween(left[best].date, g.date))) best = i;
-      }
-      rows.push(toRow(g, best >= 0 ? left.splice(best, 1)[0] : undefined));
-    }
+    aisGroups.forEach((g, gi) => {
+      if (!usedG.has(gi)) rows.push(toRow(g, undefined));
+    });
+    const unpaired = left.filter((_, ai) => !usedA.has(ai));
+    left.length = 0;
+    left.push(...unpaired);
     for (const a of left) {
       const row: SaleRow = {
         status: "app-only",
@@ -485,6 +507,8 @@ export interface DividendRow {
   /** The company as the app names it, or as AIS does when only AIS has it. */
   name: string;
   aisCompany?: string;
+  /** The AIS names folded into this row (more than one after a rename). */
+  aisCompanies?: string[];
   ais?: {
     gross: number;
     tds: number;
@@ -595,27 +619,35 @@ export function reconcileDividends(
     const key = nameTokens(d.company).join(" ") || d.company;
     companies.set(key, [...(companies.get(key) ?? []), d]);
   }
-  const appLeft = new Map(app.map((a) => [a.assetId, a]));
-  const rows: DividendRow[] = [];
+  const byId = new Map(app.map((a) => [a.assetId, a]));
+  // Each AIS company goes to one app asset. Several can go to the same one:
+  // AIS keeps a renamed company's old name (Jubilant Life Sciences, now
+  // Jubilant Pharmova) next to the new one.
+  const toAsset = new Map<string, AisDividend[][]>();
+  const unmatched: AisDividend[][] = [];
   for (const entries of companies.values()) {
     const company = entries[0].company;
-    let match: AppDividend | undefined;
-    const manualId = manual[company];
-    if (manualId) match = appLeft.get(manualId);
+    let match = manual[company] ? byId.get(manual[company]) : undefined;
     if (!match) {
       let bestScore = NAME_THRESHOLD;
-      for (const a of appLeft.values()) {
+      for (const a of app) {
         const score = Math.max(
           nameScore(company, a.name),
           a.symbol ? nameScore(company, a.symbol) : 0,
         );
-        if (score >= bestScore) {
+        if (score > bestScore || (score === bestScore && !match)) {
           match = a;
           bestScore = score;
         }
       }
     }
-    if (match) appLeft.delete(match.assetId);
+    if (match) toAsset.set(match.assetId, [...(toAsset.get(match.assetId) ?? []), entries]);
+    else unmatched.push(entries);
+  }
+  const rows: DividendRow[] = [];
+  const addRow = (groups: AisDividend[][], match: AppDividend | undefined) => {
+    const entries = groups.flat();
+    const names = groups.map((g) => g[0].company);
     const totals = aisCompanyTotals(entries);
     const row: DividendRow = {
       status: !match
@@ -623,15 +655,24 @@ export function reconcileDividends(
         : sameAmount(totals.gross, match.gross) && sameAmount(totals.tds, match.tds)
           ? "match"
           : "different",
-      name: match?.name ?? company,
-      aisCompany: company,
+      name: match?.name ?? names[0],
+      aisCompany: names.join(" / "),
+      aisCompanies: names,
       ais: { ...totals, entries },
       app: match,
       hints: [],
     };
     row.hints = dividendHints(row);
+    if (names.length > 1) {
+      row.hints.unshift(
+        `AIS lists this under ${names.length} names (${names.join(", ")}), usually after a rename. Each source is counted once across them.`,
+      );
+    }
     rows.push(row);
-  }
+  };
+  for (const [assetId, groups] of toAsset) addRow(groups, byId.get(assetId));
+  for (const entries of unmatched) addRow([entries], undefined);
+  const appLeft = new Map(app.filter((a) => !toAsset.has(a.assetId)).map((a) => [a.assetId, a]));
   for (const a of appLeft.values()) {
     if (a.gross === 0 && a.tds === 0) continue;
     const row: DividendRow = { status: "app-only", name: a.name, app: a, hints: [] };

@@ -116,7 +116,7 @@ function DividendTable({
 }: {
   rows: DividendRow[];
   appOptions: { id: string; name: string }[];
-  onPair: (aisCompany: string, assetId: string | null) => void;
+  onPair: (aisCompanies: string[], assetId: string | null) => void;
 }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   if (!rows.length)
@@ -173,7 +173,12 @@ function DividendTable({
                           row.ais.entries.map((e, i) => (
                             <div key={i} className="flex justify-between gap-3">
                               <span className="text-muted-foreground">
-                                {e.code} · {date(e.date)}
+                                {e.code} ·{" "}
+                                {e.date
+                                  ? `paid ${date(e.date)}`
+                                  : e.reportedOn
+                                    ? `filed ${date(e.reportedOn)}`
+                                    : "no date"}
                               </span>
                               <span>
                                 {inr(e.amount)} {e.tds ? `(TDS ${inr(e.tds)})` : ""}
@@ -206,7 +211,7 @@ function DividendTable({
                             <span className="text-muted-foreground">Same company as</span>
                             <Select
                               value={row.app?.assetId ?? ""}
-                              onValueChange={(v) => onPair(row.aisCompany!, v || null)}
+                              onValueChange={(v) => onPair(row.aisCompanies ?? [], v || null)}
                             >
                               <SelectTrigger className="h-7 w-56 text-xs">
                                 <SelectValue placeholder="Pick a holding" />
@@ -262,6 +267,8 @@ function SaleDetail({ row }: { row: SaleRow }) {
                   {e.code}
                   {e.reportedBy ? ` from ${e.reportedBy}` : ""}: {qty(e.quantity)} ×{" "}
                   {e.unitPrice !== undefined ? `₹${e.unitPrice}` : "–"} = {inr(e.consideration)}
+                  {e.term ? ` · ${e.term}` : ""}
+                  {e.debitType ? ` · ${e.debitType} → ${e.creditType ?? "?"}` : ""}
                 </p>
               ))}
             </>
@@ -461,10 +468,12 @@ export function AisReconciliationCard({ summary }: { summary: IndianTaxYearSumma
     }
   };
 
-  const onPair = (company: string, assetId: string | null) => {
+  const onPair = (companies: string[], assetId: string | null) => {
     const next = { ...manual };
-    if (assetId) next[company] = assetId;
-    else delete next[company];
+    for (const company of companies) {
+      if (assetId) next[company] = assetId;
+      else delete next[company];
+    }
     setManual(next);
     saveManual(next);
   };

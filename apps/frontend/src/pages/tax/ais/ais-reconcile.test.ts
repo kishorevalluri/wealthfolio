@@ -144,7 +144,7 @@ describe("AIS reconciliation", () => {
     const [scrip] = result.scrips;
     expect(scrip.status).toBe("match");
     expect(scrip.rows[0].aisDate).toBe("2025-07-16");
-    expect(scrip.rows[0].hints.join(" ")).toMatch(/1 day\(s\) later/);
+    expect(scrip.rows[0].hints.join(" ")).not.toMatch(/day\(s\) later/);
     expect(scrip.rows[0].hints.join(" ")).toMatch(/cost as ₹0/);
   });
 
@@ -218,5 +218,122 @@ describe("AIS reconciliation", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("match");
+  });
+
+  it("folds a renamed company's two AIS names into one row", () => {
+    const rows = reconcileDividends(
+      [
+        { code: "SFT-015", company: "JUBILANT LIFE SCIENCES LIMITED", amount: 250, tds: 0 },
+        { code: "TDS-194", company: "JUBILANT PHARMOVA LIMITED", amount: 250, tds: 0 },
+      ],
+      [{ assetId: "JUBLPHARMA", name: "Jubilant Pharmova Ltd", gross: 250, tds: 0, payments: [] }],
+      { "JUBILANT LIFE SCIENCES LIMITED": "JUBLPHARMA" },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("match");
+    expect(rows[0].aisCompanies).toHaveLength(2);
+    expect(rows[0].hints[0]).toMatch(/2 names/);
+  });
+
+  it("reads the portal's AIS utility layout", () => {
+    const label = (field: string) => ({ field, name: field });
+    const json = JSON.stringify({
+      header: { columnLabel: ["Financial Year"], columnData: ["2025-26"] },
+      partB: {
+        sections: [
+          {
+            sectionKey: "sft",
+            elements: [
+              {
+                title: "Dividend",
+                l2: {
+                  columnData: [
+                    [
+                      "Dividend",
+                      "SFT-015",
+                      "Dividend income",
+                      "ACME LIMITED (AAAAA0000A.AZ000)",
+                    ],
+                  ],
+                },
+                l1: {
+                  columnLabel: ["tsnId", "reportedOn", "amtPaid", "status"].map(label),
+                  columnData: [
+                    ["1", "29/05/2026", "1,200.00", "Active"],
+                    ["2", "29/05/2026", "100.00", "Inactive"],
+                  ],
+                },
+              },
+              {
+                title: "Sale of securities and units of mutual fund",
+                l2: {
+                  columnData: [
+                    [
+                      "Sale",
+                      "SFT-17-LES(M)",
+                      "Sale of listed equity share",
+                      "CENTRAL DEPOSITORY SERVICES(I) LIMITED (AAAAA0000A)",
+                    ],
+                  ],
+                },
+                l1: {
+                  columnLabel: [
+                    "tsnId",
+                    "transferDate",
+                    "securityName",
+                    "debitType",
+                    "creditType",
+                    "assetType",
+                    "quantity",
+                    "sellPricePerUnit",
+                    "salesConsideration",
+                    "costOfAcquisition",
+                    "status",
+                  ].map(label),
+                  columnData: [
+                    [
+                      "3",
+                      "10/02/2026",
+                      "INFOSYS LIMITED # EQUITY SHARES(INE009A01021)",
+                      "Market",
+                      "Market",
+                      "Long term",
+                      "1.00",
+                      "1,500.00",
+                      "1,500.00",
+                      "1,000.00",
+                      "Active",
+                    ],
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const s = parseAisFile(json);
+    expect(s.fyStartYear).toBe(2025);
+    expect(s.skipped).toBe(1);
+    expect(s.dividends).toEqual([
+      expect.objectContaining({
+        company: "ACME LIMITED",
+        amount: 1200,
+        reportedOn: "2026-05-29",
+      }),
+    ]);
+    expect(s.dividends[0].date).toBeUndefined();
+    expect(s.sales[0]).toEqual(
+      expect.objectContaining({
+        name: "INFOSYS LIMITED",
+        isin: "INE009A01021",
+        date: "2026-02-10",
+        quantity: 1,
+        consideration: 1500,
+        cost: 1000,
+        term: "Long term",
+        reportedBy: "CENTRAL DEPOSITORY SERVICES(I) LIMITED",
+      }),
+    );
   });
 });
