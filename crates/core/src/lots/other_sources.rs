@@ -19,6 +19,25 @@ use crate::activities::{
 #[serde(rename_all = "camelCase")]
 pub struct IndianDividendByAsset {
     pub asset_id: String,
+    /// Filled in by the tax service from the asset, for matching against AIS.
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub symbol: Option<String>,
+    #[serde(default)]
+    pub isin: Option<String>,
+    pub gross: Decimal,
+    pub tds: Decimal,
+    /// Each dividend (or separate TDS row) of the year, in date order.
+    #[serde(default)]
+    pub payments: Vec<IndianDividendPayment>,
+}
+
+/// One dividend credit: its date, the gross before TDS, and the TDS.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndianDividendPayment {
+    pub date: NaiveDate,
     pub gross: Decimal,
     pub tds: Decimal,
 }
@@ -112,6 +131,11 @@ pub fn summarize_other_sources(
             row.asset_id = asset_id;
             row.gross += gross;
             row.tds += tax;
+            row.payments.push(IndianDividendPayment {
+                date,
+                gross,
+                tds: tax,
+            });
             continue;
         }
         match activity.effective_type() {
@@ -124,6 +148,11 @@ pub fn summarize_other_sources(
                 row.asset_id = asset_id;
                 row.gross += gross;
                 row.tds += tax;
+                row.payments.push(IndianDividendPayment {
+                    date,
+                    gross,
+                    tds: tax,
+                });
             }
             ACTIVITY_TYPE_INTEREST => {
                 summary.interest_gross += amount + tax;
@@ -142,12 +171,23 @@ pub fn summarize_other_sources(
                     let row = by_asset.entry(asset_id.clone()).or_default();
                     row.asset_id = asset_id;
                     row.tds += amount;
+                    row.payments.push(IndianDividendPayment {
+                        date,
+                        gross: Decimal::ZERO,
+                        tds: amount,
+                    });
                 }
             }
             _ => {}
         }
     }
-    summary.dividends_by_asset = by_asset.into_values().collect();
+    summary.dividends_by_asset = by_asset
+        .into_values()
+        .map(|mut row| {
+            row.payments.sort_by_key(|p| p.date);
+            row
+        })
+        .collect();
     summary
 }
 
@@ -174,6 +214,30 @@ mod tests {
         a.amount = Some(amount);
         a.tax = tax;
         a
+    }
+
+    #[test]
+    fn dividends_by_asset_list_each_payment_in_date_order() {
+        let later = activity("DIVIDEND", "2025-09-20", dec!(900), Some(dec!(100)));
+        let earlier = activity("DIVIDEND", "2025-06-30", dec!(450), Some(dec!(50)));
+        let s = summarize_other_sources(&[later, earlier], 2025);
+        let row = &s.dividends_by_asset[0];
+        assert_eq!(row.gross, dec!(1500));
+        assert_eq!(
+            row.payments,
+            vec![
+                IndianDividendPayment {
+                    date: NaiveDate::from_ymd_opt(2025, 6, 30).unwrap(),
+                    gross: dec!(500),
+                    tds: dec!(50),
+                },
+                IndianDividendPayment {
+                    date: NaiveDate::from_ymd_opt(2025, 9, 20).unwrap(),
+                    gross: dec!(1000),
+                    tds: dec!(100),
+                },
+            ]
+        );
     }
 
     #[test]

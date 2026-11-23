@@ -3166,7 +3166,24 @@ export interface IndianOtherSourcesSummary {
   interestTds: string;
   /** Up to 15 Jun, 16 Jun-15 Sep, 16 Sep-15 Dec, 16 Dec-15 Mar, 16 Mar-31 Mar. */
   dividendsByPeriod: string[];
-  dividendsByAsset: { assetId: string; gross: string; tds: string }[];
+  dividendsByAsset: IndianDividendByAsset[];
+}
+
+export interface IndianDividendPayment {
+  /** YYYY-MM-DD */
+  date: string;
+  gross: string;
+  tds: string;
+}
+
+export interface IndianDividendByAsset {
+  assetId: string;
+  name?: string;
+  symbol?: string | null;
+  isin?: string | null;
+  gross: string;
+  tds: string;
+  payments?: IndianDividendPayment[];
 }
 
 export interface IndianSpeculativeTrade {
