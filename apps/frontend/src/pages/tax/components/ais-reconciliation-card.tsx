@@ -3,6 +3,7 @@ import { Badge } from "@wealthfolio/ui/components/ui/badge";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
+import { Input } from "@wealthfolio/ui/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -20,6 +21,7 @@ import {
 } from "@wealthfolio/ui/components/ui/table";
 import { AnimatedToggleGroup } from "@wealthfolio/ui";
 import React, { useMemo, useRef, useState } from "react";
+import { decryptAis, isEncryptedAis } from "../ais/ais-decrypt";
 import { parseAisFile, type AisStatement } from "../ais/ais-parser";
 import {
   appDividends,
@@ -393,6 +395,11 @@ export function AisReconciliationCard({ summary }: { summary: IndianTaxYearSumma
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("differences");
   const [manual, setManual] = useState<Record<string, string>>(loadManual);
+  // An encrypted export waits here for the PAN and date of birth.
+  const [locked, setLocked] = useState<{ name: string; text: string } | null>(null);
+  const [pan, setPan] = useState("");
+  const [dob, setDob] = useState("");
+  const [opening, setOpening] = useState(false);
 
   const result = useMemo(
     () => (statement ? reconcileAis(statement, summary, manual) : null),
@@ -403,26 +410,54 @@ export function AisReconciliationCard({ summary }: { summary: IndianTaxYearSumma
     [summary],
   );
 
+  const load = (text: string, name: string) => {
+    const parsed = parseAisFile(text, name);
+    if (!parsed.dividends.length && !parsed.sales.length) {
+      throw new Error("No dividends or sales of securities found in this file.");
+    }
+    setStatement(parsed);
+    setFileName(name);
+  };
+
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     setError(null);
+    setLocked(null);
     try {
       if (/\.pdf$/i.test(file.name)) {
         throw new Error(
           "PDF is not read yet. On the AIS page, use Download → JSON, or download the CSV of each category.",
         );
       }
-      const parsed = parseAisFile(await file.text(), file.name);
-      if (!parsed.dividends.length && !parsed.sales.length) {
-        throw new Error("No dividends or sales of securities found in this file.");
+      const text = await file.text();
+      if (isEncryptedAis(text)) {
+        setStatement(null);
+        setLocked({ name: file.name, text });
+        return;
       }
-      setStatement(parsed);
-      setFileName(file.name);
+      load(text, file.name);
     } catch (err) {
       setStatement(null);
       setError(err instanceof Error ? err.message : "Could not read the file.");
     } finally {
       if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const onUnlock = async () => {
+    if (!locked) return;
+    setError(null);
+    setOpening(true);
+    try {
+      load(await decryptAis(locked.text, pan, dob), locked.name);
+      setLocked(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open the file.");
+    } finally {
+      setOpening(false);
+      // The PAN and date of birth are not kept once the file is open.
+      setPan("");
+      setDob("");
     }
   };
 
@@ -478,7 +513,7 @@ export function AisReconciliationCard({ summary }: { summary: IndianTaxYearSumma
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!statement && !error && (
+        {!statement && !error && !locked && (
           <p className="text-muted-foreground text-sm">
             Load the AIS from the income-tax portal (Download → JSON, or the CSV of the Dividend and
             Sale of securities categories). Each dividend and sale is checked against the activities
@@ -486,6 +521,43 @@ export function AisReconciliationCard({ summary }: { summary: IndianTaxYearSumma
             the app is wrong. The file is read in this window only; nothing from it is saved or
             imported.
           </p>
+        )}
+        {locked && (
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onUnlock();
+            }}
+          >
+            <p className="text-muted-foreground w-full text-sm">
+              {locked.name} is encrypted. Enter the PAN and date of birth it was downloaded for.
+              They open the file here and are not saved.
+            </p>
+            <Input
+              className="h-8 w-36 text-sm uppercase"
+              placeholder="PAN"
+              autoComplete="off"
+              value={pan}
+              onChange={(e) => setPan(e.target.value)}
+            />
+            <Input
+              className="h-8 w-36 text-sm"
+              placeholder="DD/MM/YYYY"
+              autoComplete="off"
+              value={dob}
+              onChange={(e) => setDob(e.target.value)}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              className="gap-1.5 text-xs"
+              disabled={opening || pan.trim().length !== 10 || !dob.trim()}
+            >
+              {opening && <Icons.Loader className="h-3.5 w-3.5 animate-spin" />}
+              Open
+            </Button>
+          </form>
         )}
         {error && <p className="text-destructive text-sm">{error}</p>}
         {result && (
