@@ -103,7 +103,7 @@ fn reads_nse_subjects() {
     );
     assert_eq!(
         parse_subject("Interim Dividend - Rs 7 Per Share"),
-        ActionKind::Ignored
+        ActionKind::Dividend { per_share: dec!(7) }
     );
     assert_eq!(parse_subject("Annual General Meeting"), ActionKind::Ignored);
     assert_eq!(parse_subject("Buyback"), ActionKind::Ignored);
@@ -167,8 +167,14 @@ fn proposes_missing_bonuses_and_splits_for_shares_held_at_the_ex_date() {
             vec![action("OLD", "Bonus 1:1", "2022-01-01")],
         ),
     ]);
-    let (proposals, recorded) =
-        propose_corporate_actions(&accounts, &assets, &activities, &actions, d("2026-11-23"));
+    let (proposals, recorded) = propose_corporate_actions(
+        &accounts,
+        &assets,
+        &activities,
+        &actions,
+        d("2026-11-23"),
+        None,
+    );
     assert_eq!(recorded, 0);
     assert_eq!(proposals.len(), 2, "{proposals:#?}");
     assert_eq!(proposals[0].kind, ProposalKind::Bonus);
@@ -179,7 +185,7 @@ fn proposes_missing_bonuses_and_splits_for_shares_held_at_the_ex_date() {
     assert_eq!(proposals[1].split_ratio, Some(dec!(5)));
     assert_eq!(proposals[1].held_quantity, dec!(70));
 
-    let symbols = symbols_to_check(&accounts, &assets, &activities, d("2026-11-23"));
+    let symbols = symbols_to_check(&accounts, &assets, &activities, d("2026-11-23"), None);
     assert_eq!(symbols, vec!["AMC".to_string(), "BLD".to_string()]);
 }
 
@@ -220,8 +226,14 @@ fn skips_actions_already_recorded() {
             )],
         ),
     ]);
-    let (proposals, recorded) =
-        propose_corporate_actions(&accounts, &assets, &activities, &actions, d("2026-11-23"));
+    let (proposals, recorded) = propose_corporate_actions(
+        &accounts,
+        &assets,
+        &activities,
+        &actions,
+        d("2026-11-23"),
+        None,
+    );
     assert!(proposals.is_empty(), "{proposals:#?}");
     assert_eq!(recorded, 3);
 }
@@ -244,8 +256,14 @@ fn flags_demergers_and_leaves_holdings_mode_accounts_alone() {
             "2025-05-01",
         )],
     )]);
-    let (proposals, _) =
-        propose_corporate_actions(&accounts, &assets, &activities, &actions, d("2026-11-23"));
+    let (proposals, _) = propose_corporate_actions(
+        &accounts,
+        &assets,
+        &activities,
+        &actions,
+        d("2026-11-23"),
+        None,
+    );
     assert_eq!(proposals.len(), 1);
     assert_eq!(proposals[0].kind, ProposalKind::Review);
     assert_eq!(proposals[0].account_id, "z");
@@ -261,8 +279,14 @@ fn bonus_fractions_are_dropped() {
         "FRAC".to_string(),
         vec![action("FRAC", "Bonus 1:2", "2025-01-01")],
     )]);
-    let (proposals, _) =
-        propose_corporate_actions(&accounts, &assets, &activities, &actions, d("2026-11-23"));
+    let (proposals, _) = propose_corporate_actions(
+        &accounts,
+        &assets,
+        &activities,
+        &actions,
+        d("2026-11-23"),
+        None,
+    );
     assert_eq!(proposals[0].bonus_quantity, Some(dec!(3)));
 }
 
@@ -292,8 +316,14 @@ fn reads_a_real_nse_reply_and_proposes_its_bonus() {
         act("z", "amc", "BUY", "2025-12-24", "1", "2669.6"),
     ];
     let actions = HashMap::from([("HDFCAMC".to_string(), rows)]);
-    let (proposals, recorded) =
-        propose_corporate_actions(&accounts, &assets, &activities, &actions, d("2026-11-23"));
+    let (proposals, recorded) = propose_corporate_actions(
+        &accounts,
+        &assets,
+        &activities,
+        &actions,
+        d("2026-11-23"),
+        None,
+    );
     assert_eq!(recorded, 0);
     assert_eq!(proposals.len(), 1);
     assert_eq!(proposals[0].bonus_quantity, Some(dec!(17)));
@@ -301,8 +331,106 @@ fn reads_a_real_nse_reply_and_proposes_its_bonus() {
 
     // Once the bonus is in, nothing is proposed.
     activities.push(act("z", "amc", "BUY", "2025-11-27", "17", "0"));
-    let (proposals, recorded) =
-        propose_corporate_actions(&accounts, &assets, &activities, &actions, d("2026-11-23"));
+    let (proposals, recorded) = propose_corporate_actions(
+        &accounts,
+        &assets,
+        &activities,
+        &actions,
+        d("2026-11-23"),
+        None,
+    );
     assert!(proposals.is_empty());
     assert_eq!(recorded, 1);
+}
+
+#[test]
+fn reads_dividend_subjects() {
+    for (subject, rate) in [
+        ("Dividend - Rs 54 Per Share", dec!(54)),
+        (
+            "Annual General Meeting/Dividend - Rs 42 Per Share",
+            dec!(42),
+        ),
+        (" Annual General Meeting/Dividend - Rs 28 Per Sh", dec!(28)),
+        ("Final Dividend - Re 0.50 Per Share", dec!(0.5)),
+        (
+            "Interim Dividend - Rs 5 Per Share / Special Dividend - Rs 3 Per Share",
+            dec!(8),
+        ),
+    ] {
+        assert_eq!(
+            parse_subject(subject),
+            ActionKind::Dividend { per_share: rate },
+            "{subject}"
+        );
+    }
+    assert_eq!(parse_subject("Dividend"), ActionKind::Ignored);
+}
+
+#[test]
+fn proposes_dividends_from_a_date_including_shares_sold_since() {
+    let body: serde_json::Value = serde_json::from_str(NSE_HDFCAMC_REPLY).unwrap();
+    let mut rows = parse_nse_actions(&body, "HDFCAMC");
+    rows.push(action(
+        "HDFCAMC",
+        "Dividend - Rs 90 Per Share",
+        "2025-06-06",
+    ));
+    let accounts = vec![account("z")];
+    let assets = vec![asset("amc", "HDFCAMC"), asset("gone", "GONE")];
+    let mut activities = vec![
+        act("z", "amc", "BUY", "2024-01-10", "17", "3000"),
+        act("z", "amc", "BUY", "2025-11-27", "17", "0"),
+        act("z", "gone", "BUY", "2024-01-10", "10", "100"),
+        act("z", "gone", "SELL", "2025-09-01", "10", "120"),
+    ];
+    let actions = HashMap::from([
+        ("HDFCAMC".to_string(), rows),
+        (
+            "GONE".to_string(),
+            vec![action(
+                "GONE",
+                "Final Dividend - Rs 2.5 Per Share",
+                "2025-07-01",
+            )],
+        ),
+    ]);
+    let since = Some(d("2025-04-01"));
+    let today = d("2026-11-23");
+    assert_eq!(
+        symbols_to_check(&accounts, &assets, &activities, today, since),
+        vec!["GONE".to_string(), "HDFCAMC".to_string()]
+    );
+    assert_eq!(
+        symbols_to_check(&accounts, &assets, &activities, today, None),
+        vec!["HDFCAMC".to_string()]
+    );
+    let (proposals, _) =
+        propose_corporate_actions(&accounts, &assets, &activities, &actions, today, since);
+    let dividends: Vec<_> = proposals
+        .iter()
+        .filter(|p| p.kind == ProposalKind::Dividend)
+        .map(|p| (p.symbol.as_str(), p.activity_date, p.dividend_amount))
+        .collect();
+    assert_eq!(
+        dividends,
+        vec![
+            ("HDFCAMC", d("2025-06-06"), Some(dec!(1530))),
+            ("GONE", d("2025-07-01"), Some(dec!(25))),
+            ("HDFCAMC", d("2026-06-05"), Some(dec!(1836))),
+        ]
+    );
+    // Without a start date no dividends are proposed.
+    let (proposals, _) =
+        propose_corporate_actions(&accounts, &assets, &activities, &actions, today, None);
+    assert!(proposals.iter().all(|p| p.kind != ProposalKind::Dividend));
+
+    // A dividend recorded on its payment date counts as recorded.
+    let mut paid = act("z", "amc", "DIVIDEND", "2026-07-02", "0", "0");
+    paid.quantity = None;
+    paid.amount = Some(dec!(1836));
+    activities.push(paid);
+    let (proposals, _) =
+        propose_corporate_actions(&accounts, &assets, &activities, &actions, today, since);
+    assert!(!proposals.iter().any(|p| p.activity_date == d("2026-06-05")));
 }

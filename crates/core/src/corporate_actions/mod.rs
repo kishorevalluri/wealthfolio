@@ -33,8 +33,9 @@ pub async fn nse_corporate_action_proposals(
     assets: &[Asset],
     activities: &[Activity],
     today: NaiveDate,
+    dividends_since: Option<NaiveDate>,
 ) -> CorporateActionProposals {
-    let symbols = symbols_to_check(accounts, assets, activities, today);
+    let symbols = symbols_to_check(accounts, assets, activities, today, dividends_since);
     let mut actions: HashMap<String, Vec<ExchangeAction>> = HashMap::new();
     let mut failed = Vec::new();
     let mut fetched = 0usize;
@@ -61,8 +62,14 @@ pub async fn nse_corporate_action_proposals(
             }
         }
     }
-    let (proposals, already_recorded) =
-        propose_corporate_actions(accounts, assets, activities, &actions, today);
+    let (proposals, already_recorded) = propose_corporate_actions(
+        accounts,
+        assets,
+        activities,
+        &actions,
+        today,
+        dividends_since,
+    );
     CorporateActionProposals {
         proposals,
         already_recorded,
@@ -76,6 +83,7 @@ pub async fn nse_corporate_action_proposals_for_active_accounts(
     account_service: &dyn crate::accounts::AccountServiceTrait,
     asset_service: &dyn crate::assets::AssetServiceTrait,
     activity_service: &dyn crate::activities::ActivityServiceTrait,
+    dividends_since: Option<NaiveDate>,
 ) -> crate::Result<CorporateActionProposals> {
     let accounts = account_service.get_active_accounts()?;
     let ids: Vec<String> = accounts.iter().map(|a| a.id.clone()).collect();
@@ -92,7 +100,15 @@ pub async fn nse_corporate_action_proposals_for_active_accounts(
     let assets = asset_service.get_assets_by_asset_ids(&asset_ids).await?;
     let client = NseClient::new()?;
     let today = chrono::Local::now().date_naive();
-    Ok(nse_corporate_action_proposals(&client, &accounts, &assets, &activities, today).await)
+    Ok(nse_corporate_action_proposals(
+        &client,
+        &accounts,
+        &assets,
+        &activities,
+        today,
+        dividends_since,
+    )
+    .await)
 }
 
 #[cfg(test)]

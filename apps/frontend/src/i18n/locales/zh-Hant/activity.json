@@ -1460,7 +1460,7 @@
   "corporate_actions": {
     "menu": "NSE 公司行動",
     "title": "NSE 公司行動",
-    "description": "NSE 為您持有的股票公布的送股和拆股，已與您的交易記錄核對。請選擇要新增的項目。",
+    "description": "NSE 為您持有的股票公布的送股、拆股和股息，已與您的交易記錄核對。請選擇要新增的項目。",
     "loading": "正在向 NSE 查詢您持有的股票…",
     "failed_all": "NSE 拒絕了請求。它有時會攔截自動請求，請幾分鐘後再試。",
     "failed_some": "NSE 未回傳 {{symbols}} 的資料。",
@@ -1473,6 +1473,11 @@
     "split_detail": "{{held}} 股變為 {{after}} 股",
     "review_detail": "請手動新增：NSE 不提供成本分攤。",
     "add_selected_other": "新增 {{count}} 筆記錄",
-    "retry": "重新檢查"
+    "retry": "重新檢查",
+    "dividends_from": "股息起始財年",
+    "dividends_none": "不含股息",
+    "financial_year": "{{year}} 財年",
+    "kind_dividend": "股息",
+    "dividend_detail": "{{held}} 股 × ₹{{rate}} = ₹{{amount}}（扣稅前）"
   }
 }

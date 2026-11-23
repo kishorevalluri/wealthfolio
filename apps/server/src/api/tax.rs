@@ -252,14 +252,25 @@ async fn export_cleartax_post(
 /// POST /corporate-actions/nse/proposals
 ///
 /// Asks NSE for the corporate actions of every share the active accounts
-/// hold and returns the bonuses and splits still missing from them.
+/// hold and returns the bonuses, splits and (from `dividendsSince`)
+/// dividends still missing from them.
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NseProposalsBody {
+    /// Propose dividends with ex-dates from this day (YYYY-MM-DD).
+    pub dividends_since: Option<chrono::NaiveDate>,
+}
+
 async fn get_nse_corporate_action_proposals(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
+    body: Option<Json<NseProposalsBody>>,
 ) -> ApiResult<Json<CorporateActionProposals>> {
+    let body = body.map(|Json(b)| b).unwrap_or_default();
     let proposals = nse_corporate_action_proposals_for_active_accounts(
         state.account_service.as_ref(),
         state.asset_service.as_ref(),
         state.activity_service.as_ref(),
+        body.dividends_since,
     )
     .await?;
     Ok(Json(proposals))

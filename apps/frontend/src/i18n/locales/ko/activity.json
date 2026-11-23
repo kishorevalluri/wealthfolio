@@ -1441,7 +1441,7 @@
   "corporate_actions": {
     "menu": "NSE 기업 행동",
     "title": "NSE 기업 행동",
-    "description": "보유 주식에 대해 NSE가 공시한 무상증자와 액면분할을 거래 내역과 대조했습니다. 추가할 항목을 선택하세요.",
+    "description": "보유 주식에 대해 NSE가 공시한 무상증자, 액면분할, 배당을 거래 내역과 대조했습니다. 추가할 항목을 선택하세요.",
     "loading": "보유 주식에 대해 NSE에 조회 중…",
     "failed_all": "NSE가 요청을 거부했습니다. 자동 요청을 차단할 때가 있으니 몇 분 후 다시 시도하세요.",
     "failed_some": "{{symbols}}에 대해 NSE가 응답하지 않았습니다.",
@@ -1454,6 +1454,11 @@
     "split_detail": "{{held}}주가 {{after}}주로",
     "review_detail": "직접 추가하세요. NSE는 취득가 배분을 제공하지 않습니다.",
     "add_selected_other": "거래 {{count}}건 추가",
-    "retry": "다시 확인"
+    "retry": "다시 확인",
+    "dividends_from": "배당 시작 회계연도",
+    "dividends_none": "배당 제외",
+    "financial_year": "{{year}} 회계연도",
+    "kind_dividend": "배당",
+    "dividend_detail": "{{held}}주 × ₹{{rate}} = ₹{{amount}} (원천징수 전)"
   }
 }

@@ -59,8 +59,12 @@ export const getIndianTaxSummary = async (
   });
 };
 
-export const getNseCorporateActionProposals = async (): Promise<CorporateActionProposals> => {
-  return invoke<CorporateActionProposals>("get_nse_corporate_action_proposals", {});
+export const getNseCorporateActionProposals = async (
+  dividendsSince?: string,
+): Promise<CorporateActionProposals> => {
+  return invoke<CorporateActionProposals>("get_nse_corporate_action_proposals", {
+    ...(dividendsSince ? { dividendsSince } : {}),
+  });
 };
 
 export const getHistoricalValuations = async (

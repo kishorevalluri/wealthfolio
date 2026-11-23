@@ -5,6 +5,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Spinner } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Checkbox } from "@wealthfolio/ui/components/ui/checkbox";
+import { Label } from "@wealthfolio/ui/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@wealthfolio/ui/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -45,8 +53,26 @@ export function proposalToActivity(p: CorporateActionProposal): ActivityCreate |
   if (p.kind === "SPLIT" && p.splitRatio) {
     return { ...base, activityType: ActivityType.SPLIT, amount: p.splitRatio };
   }
+  if (p.kind === "DIVIDEND" && p.dividendAmount) {
+    return { ...base, activityType: ActivityType.DIVIDEND, amount: p.dividendAmount };
+  }
   return null;
 }
+
+const NO_DIVIDENDS = "none";
+
+/** Start year of the Indian financial year (April to March) `date` falls in. */
+export function financialYearOf(date: Date): number {
+  return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
+}
+
+/** Financial years to offer as the start of dividends, newest first. */
+function financialYearOptions(today = new Date()): number[] {
+  const current = financialYearOf(today);
+  return Array.from({ length: 9 }, (_, i) => current - i);
+}
+
+const fyLabel = (start: number) => `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
 
 function trimNumber(value?: string | null): string {
   if (!value) return "";
@@ -62,9 +88,13 @@ export interface CorporateActionsDialogProps {
 export function CorporateActionsDialog({ open, onOpenChange }: CorporateActionsDialogProps) {
   const { t } = useTranslation();
   const { saveActivitiesMutation } = useActivityMutations();
+  const years = useMemo(() => financialYearOptions(), []);
+  // Last financial year by default: the one being filed.
+  const [dividendsFrom, setDividendsFrom] = useState<string>(String(years[1]));
+  const dividendsSince = dividendsFrom === NO_DIVIDENDS ? undefined : `${dividendsFrom}-04-01`;
   const query = useQuery({
-    queryKey: CORPORATE_ACTIONS_QUERY_KEY,
-    queryFn: getNseCorporateActionProposals,
+    queryKey: [...CORPORATE_ACTIONS_QUERY_KEY, dividendsSince ?? NO_DIVIDENDS],
+    queryFn: () => getNseCorporateActionProposals(dividendsSince),
     enabled: open,
     staleTime: 0,
     gcTime: 0,
@@ -120,6 +150,13 @@ export function CorporateActionsDialog({ open, onOpenChange }: CorporateActionsD
         after: trimNumber(String(after)),
       });
     }
+    if (p.kind === "DIVIDEND") {
+      return t("activity:corporate_actions.dividend_detail", {
+        amount: trimNumber(p.dividendAmount),
+        held: trimNumber(p.heldQuantity),
+        rate: trimNumber(p.dividendPerShare),
+      });
+    }
     return t("activity:corporate_actions.review_detail");
   };
 
@@ -132,6 +169,41 @@ export function CorporateActionsDialog({ open, onOpenChange }: CorporateActionsD
           <DialogTitle>{t("activity:corporate_actions.title")}</DialogTitle>
           <DialogDescription>{t("activity:corporate_actions.description")}</DialogDescription>
         </DialogHeader>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Label htmlFor="dividends-from" className="text-sm">
+            {t("activity:corporate_actions.dividends_from")}
+          </Label>
+          <Select
+            value={dividendsFrom}
+            items={{
+              [NO_DIVIDENDS]: t("activity:corporate_actions.dividends_none"),
+              ...Object.fromEntries(
+                years.map((y) => [
+                  String(y),
+                  t("activity:corporate_actions.financial_year", { year: fyLabel(y) }),
+                ]),
+              ),
+            }}
+            onValueChange={(value) => {
+              if (value !== null) setDividendsFrom(value);
+            }}
+          >
+            <SelectTrigger id="dividends-from" className="h-8 w-auto text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_DIVIDENDS}>
+                {t("activity:corporate_actions.dividends_none")}
+              </SelectItem>
+              {years.map((y) => (
+                <SelectItem key={y} value={String(y)}>
+                  {t("activity:corporate_actions.financial_year", { year: fyLabel(y) })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         {query.isFetching ? (
           <div className="text-muted-foreground flex items-center gap-2 py-6 text-sm">

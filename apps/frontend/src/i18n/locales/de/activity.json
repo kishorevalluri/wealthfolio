@@ -1460,7 +1460,7 @@
   "corporate_actions": {
     "menu": "Kapitalmaßnahmen von der NSE",
     "title": "Kapitalmaßnahmen von der NSE",
-    "description": "Bonusaktien und Splits, die die NSE für Ihre Aktien meldet, abgeglichen mit Ihren Aktivitäten. Wählen Sie aus, was hinzugefügt werden soll.",
+    "description": "Bonusaktien, Splits und Dividenden, die die NSE für Ihre Aktien meldet, abgeglichen mit Ihren Aktivitäten. Wählen Sie aus, was hinzugefügt werden soll.",
     "loading": "NSE wird zu Ihren Aktien abgefragt…",
     "failed_all": "Die NSE hat die Anfrage abgelehnt. Sie blockiert zeitweise automatische Anfragen; versuchen Sie es in ein paar Minuten erneut.",
     "failed_some": "Keine Antwort der NSE für {{symbols}}.",
@@ -1475,6 +1475,11 @@
     "review_detail": "Bitte manuell erfassen: Die NSE nennt keine Kostenaufteilung.",
     "add_selected_one": "{{count}} Aktivität hinzufügen",
     "add_selected_other": "{{count}} Aktivitäten hinzufügen",
-    "retry": "Erneut prüfen"
+    "retry": "Erneut prüfen",
+    "dividends_from": "Dividenden ab",
+    "dividends_none": "Keine Dividenden",
+    "financial_year": "GJ {{year}}",
+    "kind_dividend": "Dividende",
+    "dividend_detail": "₹{{amount}} auf {{held}} Aktien zu je ₹{{rate}}, vor Quellensteuer"
   }
 }

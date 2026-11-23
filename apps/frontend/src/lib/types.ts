@@ -3223,7 +3223,7 @@ export interface IndianTaxYearSummary {
 
 /** A corporate action NSE lists for a share an account held on its ex-date. */
 export interface CorporateActionProposal {
-  kind: "BONUS" | "SPLIT" | "REVIEW";
+  kind: "BONUS" | "SPLIT" | "DIVIDEND" | "REVIEW";
   accountId: string;
   accountName: string;
   assetId: string;
@@ -3236,6 +3236,9 @@ export interface CorporateActionProposal {
   heldQuantity: string;
   bonusQuantity?: string | null;
   splitRatio?: string | null;
+  dividendPerShare?: string | null;
+  /** Before TDS: shares held × the rate. */
+  dividendAmount?: string | null;
 }
 
 export interface CorporateActionProposals {

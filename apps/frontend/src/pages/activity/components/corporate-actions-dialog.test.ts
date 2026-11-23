@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ActivityType } from "@/lib/constants";
 import type { CorporateActionProposal } from "@/lib/types";
-import { proposalToActivity } from "./corporate-actions-dialog";
+import { financialYearOf, proposalToActivity } from "./corporate-actions-dialog";
 
 const base: CorporateActionProposal = {
   kind: "BONUS",
@@ -40,6 +40,28 @@ describe("NSE corporate action proposals as activities", () => {
     });
     expect(split).toMatchObject({ activityType: ActivityType.SPLIT, amount: "5" });
     expect(split?.quantity).toBeUndefined();
+  });
+
+  it("adds a dividend with its amount before TDS", () => {
+    const dividend = proposalToActivity({
+      ...base,
+      kind: "DIVIDEND",
+      subject: "Final Dividend - Rs 90 Per Share",
+      bonusQuantity: null,
+      dividendPerShare: "90",
+      dividendAmount: "1530",
+    });
+    expect(dividend).toMatchObject({
+      activityType: ActivityType.DIVIDEND,
+      amount: "1530",
+      currency: "INR",
+    });
+    expect(dividend?.quantity).toBeUndefined();
+  });
+
+  it("reads the Indian financial year a date falls in", () => {
+    expect(financialYearOf(new Date(2026, 2, 31))).toBe(2025);
+    expect(financialYearOf(new Date(2026, 3, 1))).toBe(2026);
   });
 
   it("adds nothing for an action that needs review", () => {
