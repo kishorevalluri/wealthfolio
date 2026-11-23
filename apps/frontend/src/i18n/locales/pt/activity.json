@@ -1509,7 +1509,7 @@
   "corporate_actions": {
     "menu": "Eventos corporativos da NSE",
     "title": "Eventos corporativos da NSE",
-    "description": "Bonificações e desdobramentos que a NSE publica para as suas ações, comparados com as suas atividades. Escolha quais adicionar.",
+    "description": "Bonificações, desdobramentos e dividendos que a NSE publica para as suas ações, comparados com as suas atividades. Escolha quais adicionar.",
     "loading": "Consultando a NSE sobre as suas ações…",
     "failed_all": "A NSE recusou o pedido. Às vezes bloqueia pedidos automáticos; tente de novo em alguns minutos.",
     "failed_some": "A NSE não respondeu para {{symbols}}.",
@@ -1526,6 +1526,11 @@
     "add_selected_one": "Adicionar {{count}} atividade",
     "add_selected_other": "Adicionar {{count}} atividades",
     "add_selected_many": "Adicionar {{count}} atividades",
-    "retry": "Verificar de novo"
+    "retry": "Verificar de novo",
+    "dividends_from": "Dividendos desde",
+    "dividends_none": "Sem dividendos",
+    "financial_year": "Exercício {{year}}",
+    "kind_dividend": "Dividendo",
+    "dividend_detail": "₹{{amount}} sobre {{held}} ações a ₹{{rate}} cada, antes da retenção"
   }
 }

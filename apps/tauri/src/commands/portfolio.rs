@@ -1721,12 +1721,19 @@ pub async fn delete_snapshot(
 #[tauri::command]
 pub async fn get_nse_corporate_action_proposals(
     state: ProfileAccess,
+    dividends_since: Option<String>,
 ) -> Result<wealthfolio_core::corporate_actions::CorporateActionProposals, String> {
     let context = state.context()?;
+    let dividends_since = dividends_since
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d"))
+        .transpose()
+        .map_err(|e| format!("Invalid dividends start date: {e}"))?;
     wealthfolio_core::corporate_actions::nse_corporate_action_proposals_for_active_accounts(
         context.account_service().as_ref(),
         context.asset_service().as_ref(),
         context.activity_service().as_ref(),
+        dividends_since,
     )
     .await
     .map_err(|e| e.to_string())

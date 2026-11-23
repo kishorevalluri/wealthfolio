@@ -1460,7 +1460,7 @@
   "corporate_actions": {
     "menu": "Corporate actions from NSE",
     "title": "Corporate actions from NSE",
-    "description": "Bonuses and splits that NSE lists for the shares you hold, checked against your activities. Pick the ones to add.",
+    "description": "Bonuses, splits and dividends that NSE lists for your shares, checked against your activities. Pick the ones to add.",
     "loading": "Asking NSE about the shares you hold…",
     "failed_all": "NSE refused the request. It blocks automated requests at times, so try again in a few minutes.",
     "failed_some": "NSE didn't answer for {{symbols}}.",
@@ -1475,6 +1475,11 @@
     "review_detail": "Add this one by hand: NSE doesn't give the cost split.",
     "add_selected_one": "Add {{count}} activity",
     "add_selected_other": "Add {{count}} activities",
-    "retry": "Check again"
+    "retry": "Check again",
+    "dividends_from": "Dividends from",
+    "dividends_none": "No dividends",
+    "financial_year": "FY {{year}}",
+    "kind_dividend": "Dividend",
+    "dividend_detail": "₹{{amount}} on {{held}} shares at ₹{{rate}} each, before TDS"
   }
 }

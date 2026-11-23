@@ -1441,7 +1441,7 @@
   "corporate_actions": {
     "menu": "NSEのコーポレートアクション",
     "title": "NSEのコーポレートアクション",
-    "description": "保有株についてNSEが公表した無償交付と株式分割を、取引履歴と照合しました。追加するものを選んでください。",
+    "description": "保有株についてNSEが公表した無償交付・株式分割・配当を、取引履歴と照合しました。追加するものを選んでください。",
     "loading": "保有株についてNSEに問い合わせ中…",
     "failed_all": "NSEがリクエストを拒否しました。自動リクエストをブロックすることがあるため、数分後にもう一度お試しください。",
     "failed_some": "{{symbols}} についてNSEから応答がありませんでした。",
@@ -1454,6 +1454,11 @@
     "split_detail": "{{held}} 株が {{after}} 株に",
     "review_detail": "手動で追加してください。NSEは取得費の配分を示しません。",
     "add_selected_other": "{{count}} 件の取引を追加",
-    "retry": "再確認"
+    "retry": "再確認",
+    "dividends_from": "配当の対象期間",
+    "dividends_none": "配当を含めない",
+    "financial_year": "{{year}} 年度",
+    "kind_dividend": "配当",
+    "dividend_detail": "{{held}} 株 × ₹{{rate}} = ₹{{amount}}（源泉徴収前）"
   }
 }

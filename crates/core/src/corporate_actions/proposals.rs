@@ -38,10 +38,12 @@ pub enum ActionKind {
     Bonus { new: Decimal, held: Decimal },
     /// Each share becomes `ratio` shares (below 1 for a consolidation).
     Split { ratio: Decimal },
+    /// A cash dividend of `per_share` rupees on each share held.
+    Dividend { per_share: Decimal },
     /// Changes holdings or cost in a way the announcement doesn't spell out
     /// (demerger, merger, scheme of arrangement, capital reduction).
     NeedsReview,
-    /// Doesn't change the shares held (dividends, AGMs, rights, buybacks).
+    /// Doesn't change the shares held or pay cash (AGMs, rights, buybacks).
     Ignored,
 }
 
@@ -56,9 +58,29 @@ static FACE_VALUE: Lazy<Regex> = Lazy::new(|| {
     .expect("hard-coded regex is valid")
 });
 
+static DIVIDEND: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)dividend[^/]*?(?:rs\.?|re\.?|inr|₹)\s*(\d+(?:\.\d+)?)")
+        .expect("hard-coded regex is valid")
+});
+
 /// Reads the exchange's subject line.
 pub fn parse_subject(subject: &str) -> ActionKind {
     let lower = subject.to_lowercase();
+    if lower.contains("dividend") && !lower.contains("bonus") {
+        // "Interim Dividend - Rs 5 Per Share / Special Dividend - Rs 3 Per
+        // Share" pays both.
+        let per_share: Decimal = DIVIDEND
+            .captures_iter(subject)
+            .filter_map(|caps| Decimal::from_str(&caps[1]).ok())
+            .sum();
+        return if per_share > Decimal::ZERO {
+            ActionKind::Dividend {
+                per_share: per_share.normalize(),
+            }
+        } else {
+            ActionKind::Ignored
+        };
+    }
     if lower.contains("bonus") {
         if let Some(caps) = BONUS.captures(subject) {
             let new = Decimal::from_str(&caps[1]).ok();
@@ -111,6 +133,7 @@ pub fn parse_subject(subject: &str) -> ActionKind {
 pub enum ProposalKind {
     Bonus,
     Split,
+    Dividend,
     Review,
 }
 
@@ -135,6 +158,10 @@ pub struct CorporateActionProposal {
     pub bonus_quantity: Option<Decimal>,
     /// Split ratio: shares after for each share before.
     pub split_ratio: Option<Decimal>,
+    /// Dividend per share, in rupees.
+    pub dividend_per_share: Option<Decimal>,
+    /// Dividend before TDS: shares held × the rate.
+    pub dividend_amount: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -153,6 +180,11 @@ pub struct CorporateActionProposals {
 /// the action already being recorded (allotment can trail the record date by
 /// a few days, and a hand-entered date may differ).
 const RECORDED_WINDOW_DAYS: i64 = 15;
+
+/// A dividend is paid up to 30 days after its record date, and a dividend
+/// recorded from a bank or broker statement carries the payment date.
+const DIVIDEND_WINDOW_BEFORE_DAYS: i64 = 5;
+const DIVIDEND_WINDOW_AFTER_DAYS: i64 = 45;
 
 fn day(activity: &Activity) -> NaiveDate {
     activity.activity_date.date_naive()
@@ -196,6 +228,13 @@ fn is_recorded(kind: &ActionKind, activities: &[&Activity], ex_date: NaiveDate) 
     let kind_of = |a: &Activity| {
         effective_activity_type(&a.activity_type, a.activity_type_override.as_deref()).to_string()
     };
+    if matches!(kind, ActionKind::Dividend { .. }) {
+        return activities.iter().any(|a| {
+            let offset = (day(a) - ex_date).num_days();
+            kind_of(a) == crate::activities::ACTIVITY_TYPE_DIVIDEND
+                && (-DIVIDEND_WINDOW_BEFORE_DAYS..=DIVIDEND_WINDOW_AFTER_DAYS).contains(&offset)
+        });
+    }
     activities.iter().filter(near).any(|a| {
         let ty = kind_of(a);
         let converted = ty == ACTIVITY_TYPE_ADJUSTMENT
@@ -213,6 +252,7 @@ fn is_recorded(kind: &ActionKind, activities: &[&Activity], ex_date: NaiveDate) 
             // conversion out of the old ISIN.
             ActionKind::Split { .. } => ty == ACTIVITY_TYPE_SPLIT || converted,
             ActionKind::NeedsReview => converted,
+            ActionKind::Dividend { .. } => unreachable!("handled above"),
             ActionKind::Ignored => true,
         }
     })
@@ -236,19 +276,25 @@ pub(crate) fn nse_symbol(asset: &Asset) -> Option<String> {
     })
 }
 
-/// The NSE symbols to look up: each share a transactions account holds today.
-/// Shares sold before are left out; their past actions are in the history
-/// they were imported with.
+/// The NSE symbols to look up: each share a transactions account holds today
+/// and, when dividends are wanted from `dividends_since`, each share it held
+/// at any time from that day.
 pub fn symbols_to_check(
     accounts: &[Account],
     assets: &[Asset],
     activities: &[Activity],
     today: NaiveDate,
+    dividends_since: Option<NaiveDate>,
 ) -> Vec<String> {
     let assets_by_id: HashMap<&str, &Asset> = assets.iter().map(|a| (a.id.as_str(), a)).collect();
     let mut symbols: Vec<String> = holdings(accounts, activities)
         .into_iter()
-        .filter(|(_, list)| held_before(list, today + Duration::days(1)) > Decimal::ZERO)
+        .filter(|(_, list)| {
+            held_before(list, today + Duration::days(1)) > Decimal::ZERO
+                || dividends_since.is_some_and(|since| {
+                    held_before(list, since) > Decimal::ZERO || list.iter().any(|a| day(a) >= since)
+                })
+        })
         .filter_map(|((_, asset_id), _)| assets_by_id.get(asset_id).copied())
         .filter(|asset| asset.is_equity_like())
         .filter_map(nse_symbol)
@@ -290,13 +336,15 @@ fn holdings<'a>(
 
 /// The actions each transactions account still needs: for every share it held
 /// at an ex-date on or before `today`, a bonus or split not yet among its
-/// activities, or an action that needs the user's input.
+/// activities, or an action that needs the user's input; and, for ex-dates
+/// from `dividends_since`, each dividend not yet recorded (before TDS).
 pub fn propose_corporate_actions(
     accounts: &[Account],
     assets: &[Asset],
     activities: &[Activity],
     actions: &HashMap<String, Vec<ExchangeAction>>,
     today: NaiveDate,
+    dividends_since: Option<NaiveDate>,
 ) -> (Vec<CorporateActionProposal>, usize) {
     let assets_by_id: HashMap<&str, &Asset> = assets.iter().map(|a| (a.id.as_str(), a)).collect();
     let by_holding = holdings(accounts, activities);
@@ -328,6 +376,11 @@ pub fn propose_corporate_actions(
                 if kind == ActionKind::Ignored {
                     continue;
                 }
+                if matches!(kind, ActionKind::Dividend { .. })
+                    && dividends_since.is_none_or(|since| action.ex_date < since)
+                {
+                    continue;
+                }
                 let held = held_before(list, action.ex_date);
                 if held <= Decimal::ZERO {
                     continue;
@@ -336,6 +389,7 @@ pub fn propose_corporate_actions(
                     recorded += 1;
                     continue;
                 }
+                let mut dividend = None;
                 let (proposal_kind, bonus_quantity, split_ratio) = match kind {
                     ActionKind::Bonus { new, held: per } => {
                         let shares = (held * new / per).floor();
@@ -345,6 +399,10 @@ pub fn propose_corporate_actions(
                         (ProposalKind::Bonus, Some(shares), None)
                     }
                     ActionKind::Split { ratio } => (ProposalKind::Split, None, Some(ratio)),
+                    ActionKind::Dividend { per_share } => {
+                        dividend = Some((per_share, (held * per_share).round_dp(2)));
+                        (ProposalKind::Dividend, None, None)
+                    }
                     _ => (ProposalKind::Review, None, None),
                 };
                 proposals.push(CorporateActionProposal {
@@ -361,6 +419,8 @@ pub fn propose_corporate_actions(
                     held_quantity: held.normalize(),
                     bonus_quantity,
                     split_ratio,
+                    dividend_per_share: dividend.map(|(rate, _)| rate),
+                    dividend_amount: dividend.map(|(_, amount)| amount.normalize()),
                 });
             }
         }

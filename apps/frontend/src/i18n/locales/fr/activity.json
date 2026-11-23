@@ -1509,7 +1509,7 @@
   "corporate_actions": {
     "menu": "Opérations sur titres (NSE)",
     "title": "Opérations sur titres (NSE)",
-    "description": "Actions gratuites et divisions publiées par la NSE pour vos actions, comparées à vos activités. Choisissez celles à ajouter.",
+    "description": "Actions gratuites, divisions et dividendes publiés par la NSE pour vos actions, comparés à vos activités. Choisissez ceux à ajouter.",
     "loading": "Interrogation de la NSE sur vos actions…",
     "failed_all": "La NSE a refusé la demande. Elle bloque parfois les requêtes automatiques ; réessayez dans quelques minutes.",
     "failed_some": "Pas de réponse de la NSE pour {{symbols}}.",
@@ -1526,6 +1526,11 @@
     "add_selected_one": "Ajouter {{count}} activité",
     "add_selected_other": "Ajouter {{count}} activités",
     "add_selected_many": "Ajouter {{count}} activités",
-    "retry": "Vérifier à nouveau"
+    "retry": "Vérifier à nouveau",
+    "dividends_from": "Dividendes depuis",
+    "dividends_none": "Aucun dividende",
+    "financial_year": "Exercice {{year}}",
+    "kind_dividend": "Dividende",
+    "dividend_detail": "₹{{amount}} sur {{held}} actions à ₹{{rate}} chacune, avant retenue à la source"
   }
 }
