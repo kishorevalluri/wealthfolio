@@ -1505,5 +1505,27 @@
     "external": "Trasferimento esterno",
     "direction": "Direzione del trasferimento",
     "mode": "Modalità di trasferimento"
+  },
+  "corporate_actions": {
+    "menu": "Operazioni societarie dalla NSE",
+    "title": "Operazioni societarie dalla NSE",
+    "description": "Azioni gratuite e frazionamenti pubblicati dalla NSE per le tue azioni, confrontati con le tue attività. Scegli quali aggiungere.",
+    "loading": "Interrogazione della NSE sulle tue azioni…",
+    "failed_all": "La NSE ha rifiutato la richiesta. A volte blocca le richieste automatiche; riprova tra qualche minuto.",
+    "failed_some": "Nessuna risposta dalla NSE per {{symbols}}.",
+    "none": "Niente da aggiungere: tutte le azioni gratuite e i frazionamenti sono già nelle tue attività.",
+    "already_recorded_one": "{{count}} operazione già registrata.",
+    "already_recorded_other": "{{count}} operazioni già registrate.",
+    "already_recorded_many": "{{count}} operazioni già registrate.",
+    "kind_bonus": "Gratuite",
+    "kind_split": "Frazionamento",
+    "kind_review": "Da verificare",
+    "bonus_detail": "{{quantity}} azioni gratuite su {{held}} possedute",
+    "split_detail": "{{held}} azioni diventano {{after}}",
+    "review_detail": "Inseriscila a mano: la NSE non indica la ripartizione del costo.",
+    "add_selected_one": "Aggiungi {{count}} attività",
+    "add_selected_other": "Aggiungi {{count}} attività",
+    "add_selected_many": "Aggiungi {{count}} attività",
+    "retry": "Ricontrolla"
   }
 }

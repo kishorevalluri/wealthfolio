@@ -1437,5 +1437,23 @@
     "external": "外部转账",
     "direction": "转账方向",
     "mode": "转账模式"
+  },
+  "corporate_actions": {
+    "menu": "NSE 公司行动",
+    "title": "NSE 公司行动",
+    "description": "NSE 为您持有的股票公布的送股和拆股，已与您的交易记录核对。请选择要添加的项目。",
+    "loading": "正在向 NSE 查询您持有的股票…",
+    "failed_all": "NSE 拒绝了请求。它有时会拦截自动请求，请几分钟后再试。",
+    "failed_some": "NSE 未返回 {{symbols}} 的数据。",
+    "none": "无需添加：所有送股和拆股都已在您的交易记录中。",
+    "already_recorded_other": "{{count}} 项已记录。",
+    "kind_bonus": "送股",
+    "kind_split": "拆股",
+    "kind_review": "需复核",
+    "bonus_detail": "持有 {{held}} 股，送 {{quantity}} 股",
+    "split_detail": "{{held}} 股变为 {{after}} 股",
+    "review_detail": "请手动添加：NSE 不提供成本分摊。",
+    "add_selected_other": "添加 {{count}} 条记录",
+    "retry": "重新检查"
   }
 }

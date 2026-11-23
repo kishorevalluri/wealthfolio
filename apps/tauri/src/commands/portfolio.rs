@@ -1719,6 +1719,20 @@ pub async fn delete_snapshot(
 }
 
 #[tauri::command]
+pub async fn get_nse_corporate_action_proposals(
+    state: ProfileAccess,
+) -> Result<wealthfolio_core::corporate_actions::CorporateActionProposals, String> {
+    let context = state.context()?;
+    wealthfolio_core::corporate_actions::nse_corporate_action_proposals_for_active_accounts(
+        context.account_service().as_ref(),
+        context.asset_service().as_ref(),
+        context.activity_service().as_ref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_indian_tax_summary(
     state: ProfileAccess,
     filter: Option<AccountScopeInput>,

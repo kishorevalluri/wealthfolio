@@ -36,6 +36,7 @@ import ActivityTableMobile from "./components/activity-table/activity-table-mobi
 import { ActivityViewControls, type ActivityViewMode } from "./components/activity-view-controls";
 import { NeedsReviewBanner } from "./components/needs-review-banner";
 import { BulkHoldingsModal } from "./components/forms/bulk-holdings-modal";
+import { CorporateActionsDialog } from "./components/corporate-actions-dialog";
 import { MobileActivityForm } from "./components/mobile-forms/mobile-activity-form";
 import { TransferMatchDialog } from "./components/transfer-match-dialog";
 import { useActivityActionDialogs } from "./hooks/use-activity-action-dialogs";
@@ -95,6 +96,7 @@ const ActivityPage = ({ initialAction }: ActivityPageProps) => {
     initialAction === "transfer-holdings",
   );
   const [showAlternativeAssetModal, setShowAlternativeAssetModal] = useState(false);
+  const [showCorporateActions, setShowCorporateActions] = useState(false);
   const [transferMatchDialog, setTransferMatchDialog] = useState<{
     open: boolean;
     mode: "link" | "unlink";
@@ -602,6 +604,12 @@ const ActivityPage = ({ initialAction }: ActivityPageProps) => {
             onClick: () => setShowBulkHoldingsForm(true),
           },
           {
+            icon: Icons.Split,
+            label: t("activity:corporate_actions.menu"),
+            testId: "nse-corporate-actions-action",
+            onClick: () => setShowCorporateActions(true),
+          },
+          {
             icon: Icons.House,
             label: t("activity:page.add_personal_asset"),
             testId: "add-personal-asset-action",
@@ -900,6 +908,12 @@ const ActivityPage = ({ initialAction }: ActivityPageProps) => {
         onClose={closeBulkHoldings}
         onSuccess={closeBulkHoldings}
       />
+      {showCorporateActions && (
+        <CorporateActionsDialog
+          open={showCorporateActions}
+          onOpenChange={setShowCorporateActions}
+        />
+      )}
       <AlternativeAssetQuickAddModal
         open={showAlternativeAssetModal}
         onOpenChange={setShowAlternativeAssetModal}

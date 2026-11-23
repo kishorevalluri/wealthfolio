@@ -18,6 +18,7 @@ import type {
   SnapshotInfo,
   AssetLotView,
   IndianTaxYearSummary,
+  CorporateActionProposals,
 } from "@/lib/types";
 
 import { invoke, logger } from "./platform";
@@ -56,6 +57,10 @@ export const getIndianTaxSummary = async (
     filter,
     financialYear,
   });
+};
+
+export const getNseCorporateActionProposals = async (): Promise<CorporateActionProposals> => {
+  return invoke<CorporateActionProposals>("get_nse_corporate_action_proposals", {});
 };
 
 export const getHistoricalValuations = async (

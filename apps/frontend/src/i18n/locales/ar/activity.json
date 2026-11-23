@@ -1652,5 +1652,33 @@
     "external": "تحويل خارجي",
     "direction": "اتجاه التحويل",
     "mode": "وضع التحويل"
+  },
+  "corporate_actions": {
+    "menu": "إجراءات الشركات من NSE",
+    "title": "إجراءات الشركات من NSE",
+    "description": "أسهم المنحة والتجزئة التي تنشرها NSE لأسهمك، مقارنةً بأنشطتك. اختر ما تريد إضافته.",
+    "loading": "جارٍ سؤال NSE عن أسهمك…",
+    "failed_all": "رفضت NSE الطلب. فهي تحظر الطلبات الآلية أحيانًا؛ حاول مرة أخرى بعد بضع دقائق.",
+    "failed_some": "لم ترد NSE بخصوص {{symbols}}.",
+    "none": "لا شيء للإضافة: كل أسهم المنحة والتجزئة موجودة في أنشطتك.",
+    "already_recorded_zero": "{{count}} إجراء مسجل بالفعل.",
+    "already_recorded_one": "{{count}} إجراء مسجل بالفعل.",
+    "already_recorded_two": "{{count}} إجراء مسجل بالفعل.",
+    "already_recorded_few": "{{count}} إجراءات مسجلة بالفعل.",
+    "already_recorded_many": "{{count}} إجراءً مسجلًا بالفعل.",
+    "already_recorded_other": "{{count}} إجراء مسجل بالفعل.",
+    "kind_bonus": "منحة",
+    "kind_split": "تجزئة",
+    "kind_review": "يحتاج مراجعة",
+    "bonus_detail": "{{quantity}} سهم منحة على {{held}} سهم مملوك",
+    "split_detail": "{{held}} سهم تصبح {{after}}",
+    "review_detail": "أضفه يدويًا: لا تذكر NSE توزيع التكلفة.",
+    "add_selected_zero": "إضافة {{count}} نشاط",
+    "add_selected_one": "إضافة {{count}} نشاط",
+    "add_selected_two": "إضافة {{count}} نشاط",
+    "add_selected_few": "إضافة {{count}} أنشطة",
+    "add_selected_many": "إضافة {{count}} نشاطًا",
+    "add_selected_other": "إضافة {{count}} نشاط",
+    "retry": "تحقق مرة أخرى"
   }
 }

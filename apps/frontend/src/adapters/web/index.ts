@@ -196,6 +196,7 @@ export {
   getHoldingsByAllocation,
   getIncomeSummary,
   getIndianTaxSummary,
+  getNseCorporateActionProposals,
   getCurrentValuation,
   getLatestValuations,
   getPortfolioAllocations,

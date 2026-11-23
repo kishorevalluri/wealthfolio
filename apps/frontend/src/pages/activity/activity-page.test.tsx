@@ -31,6 +31,7 @@ vi.mock("./components/activity-data-grid/activity-data-grid", () => ({
   ActivityDataGrid: () => null,
 }));
 vi.mock("./components/activity-delete-modal", () => ({ ActivityDeleteModal: () => null }));
+vi.mock("./components/corporate-actions-dialog", () => ({ CorporateActionsDialog: () => null }));
 vi.mock("./components/activity-form", () => ({ ActivityForm: () => null }));
 vi.mock("./components/activity-mobile-controls", () => ({ ActivityMobileControls: () => null }));
 vi.mock("./components/activity-pagination", () => ({ ActivityPagination: () => null }));

@@ -1505,5 +1505,27 @@
     "external": "Transfert externe",
     "direction": "Sens du transfert",
     "mode": "Mode de transfert"
+  },
+  "corporate_actions": {
+    "menu": "Opérations sur titres (NSE)",
+    "title": "Opérations sur titres (NSE)",
+    "description": "Actions gratuites et divisions publiées par la NSE pour vos actions, comparées à vos activités. Choisissez celles à ajouter.",
+    "loading": "Interrogation de la NSE sur vos actions…",
+    "failed_all": "La NSE a refusé la demande. Elle bloque parfois les requêtes automatiques ; réessayez dans quelques minutes.",
+    "failed_some": "Pas de réponse de la NSE pour {{symbols}}.",
+    "none": "Rien à ajouter : toutes les actions gratuites et divisions figurent déjà dans vos activités.",
+    "already_recorded_one": "{{count}} opération déjà enregistrée.",
+    "already_recorded_other": "{{count}} opérations déjà enregistrées.",
+    "already_recorded_many": "{{count}} opérations déjà enregistrées.",
+    "kind_bonus": "Actions gratuites",
+    "kind_split": "Division",
+    "kind_review": "À vérifier",
+    "bonus_detail": "{{quantity}} actions gratuites pour {{held}} détenues",
+    "split_detail": "{{held}} actions deviennent {{after}}",
+    "review_detail": "À saisir à la main : la NSE ne donne pas la répartition du coût.",
+    "add_selected_one": "Ajouter {{count}} activité",
+    "add_selected_other": "Ajouter {{count}} activités",
+    "add_selected_many": "Ajouter {{count}} activités",
+    "retry": "Vérifier à nouveau"
   }
 }

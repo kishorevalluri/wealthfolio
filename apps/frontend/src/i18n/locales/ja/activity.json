@@ -1437,5 +1437,23 @@
     "external": "外部振替",
     "direction": "振替方向",
     "mode": "振替モード"
+  },
+  "corporate_actions": {
+    "menu": "NSEのコーポレートアクション",
+    "title": "NSEのコーポレートアクション",
+    "description": "保有株についてNSEが公表した無償交付と株式分割を、取引履歴と照合しました。追加するものを選んでください。",
+    "loading": "保有株についてNSEに問い合わせ中…",
+    "failed_all": "NSEがリクエストを拒否しました。自動リクエストをブロックすることがあるため、数分後にもう一度お試しください。",
+    "failed_some": "{{symbols}} についてNSEから応答がありませんでした。",
+    "none": "追加するものはありません。無償交付と株式分割はすべて記録済みです。",
+    "already_recorded_other": "{{count}} 件は記録済みです。",
+    "kind_bonus": "無償交付",
+    "kind_split": "株式分割",
+    "kind_review": "要確認",
+    "bonus_detail": "保有 {{held}} 株に対し無償交付 {{quantity}} 株",
+    "split_detail": "{{held}} 株が {{after}} 株に",
+    "review_detail": "手動で追加してください。NSEは取得費の配分を示しません。",
+    "add_selected_other": "{{count}} 件の取引を追加",
+    "retry": "再確認"
   }
 }
