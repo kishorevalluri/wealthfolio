@@ -248,12 +248,7 @@ describe("AIS reconciliation", () => {
                 title: "Dividend",
                 l2: {
                   columnData: [
-                    [
-                      "Dividend",
-                      "SFT-015",
-                      "Dividend income",
-                      "ACME LIMITED (AAAAA0000A.AZ000)",
-                    ],
+                    ["Dividend", "SFT-015", "Dividend income", "ACME LIMITED (AAAAA0000A.AZ000)"],
                   ],
                 },
                 l1: {
