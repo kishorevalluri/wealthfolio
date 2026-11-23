@@ -80,5 +80,9 @@
   "cumulative": "Cumulé",
   "unconverted_currencies_one": "Les revenus en {{currencies}} ne sont pas inclus dans les totaux, faute de taux de change vers {{baseCurrency}}.",
   "unconverted_currencies_other": "Les revenus en {{currencies}} ne sont pas inclus dans les totaux, faute de taux de change vers {{baseCurrency}}.",
-  "unconverted_currencies_many": "Les revenus en {{currencies}} ne sont pas inclus dans les totaux, faute de taux de change vers {{baseCurrency}}."
+  "unconverted_currencies_many": "Les revenus en {{currencies}} ne sont pas inclus dans les totaux, faute de taux de change vers {{baseCurrency}}.",
+  "financial_year": "EF {{year}}",
+  "financial_year_pick": "Exercice fiscal",
+  "financial_year_income": "Revenus EF {{year}}",
+  "no_comparison_previous_financial_year": "Aucune comparaison avec l'exercice précédent"
 }

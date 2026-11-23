@@ -78,5 +78,9 @@
   "year_over_year_growth": "Wachstum zum Vorjahr",
   "cumulative_since_inception": "Kumuliert seit Beginn",
   "unconverted_currencies_one": "Einkommen in {{currencies}} ist in den Summen nicht enthalten, da kein Wechselkurs zu {{baseCurrency}} vorhanden ist.",
-  "unconverted_currencies_other": "Einkommen in {{currencies}} ist in den Summen nicht enthalten, da keine Wechselkurse zu {{baseCurrency}} vorhanden sind."
+  "unconverted_currencies_other": "Einkommen in {{currencies}} ist in den Summen nicht enthalten, da keine Wechselkurse zu {{baseCurrency}} vorhanden sind.",
+  "financial_year": "GJ {{year}}",
+  "financial_year_pick": "Geschäftsjahr",
+  "financial_year_income": "Einkommen GJ {{year}}",
+  "no_comparison_previous_financial_year": "Kein Vergleich mit dem vorherigen Geschäftsjahr"
 }

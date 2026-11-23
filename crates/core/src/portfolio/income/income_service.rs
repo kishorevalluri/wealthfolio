@@ -4,7 +4,7 @@ use crate::{
     activities::{ActivityError, ActivityRepositoryTrait, IncomeData},
     Error, Result,
 };
-use chrono::Datelike;
+use chrono::{Datelike, NaiveDate};
 use chrono_tz::Tz;
 
 use super::IncomeSummary;
@@ -12,6 +12,7 @@ use crate::fx::FxServiceTrait;
 use log::{debug, error};
 use num_traits::Zero;
 use rust_decimal::Decimal;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
 // Define the trait for the income service
 pub trait IncomeServiceTrait: Send + Sync {
@@ -147,6 +148,14 @@ impl IncomeServiceTrait for IncomeService {
         let mut ytd_summary = IncomeSummary::new("YTD", base_currency.clone());
         let mut last_year_summary = IncomeSummary::new("LAST_YEAR", base_currency.clone());
         let mut two_years_ago_summary = IncomeSummary::new("TWO_YEARS_AGO", base_currency.clone());
+        // One summary per Indian financial year (April to March), keyed by the
+        // year it starts in: "FY2025" runs 1 Apr 2025 to 31 Mar 2026.
+        let mut financial_years: BTreeMap<i32, IncomeSummary> = BTreeMap::new();
+        let current_fy = financial_year_of(current_date);
+        financial_years.insert(
+            current_fy,
+            IncomeSummary::new(&financial_year_period(current_fy), base_currency.clone()),
+        );
 
         for activity in activities {
             // Income counts toward the month and year of the day it was
@@ -193,6 +202,10 @@ impl IncomeServiceTrait for IncomeService {
                 None => summary.add_unconverted_income(&activity_copy),
             };
             add(&mut total_summary);
+            let fy = financial_year_of(date);
+            add(financial_years.entry(fy).or_insert_with(|| {
+                IncomeSummary::new(&financial_year_period(fy), base_currency.clone())
+            }));
 
             if date.year() == current_year {
                 add(&mut ytd_summary);
@@ -233,13 +246,35 @@ impl IncomeServiceTrait for IncomeService {
             .unconverted_currencies
             .extend(two_years_ago_summary.unconverted_currencies.iter().cloned());
 
+        // A financial year's average counts its months from the first
+        // activity (if later) to today (if earlier); growth compares it with
+        // the financial year before.
+        let fy_totals: BTreeMap<i32, (Decimal, BTreeSet<String>)> = financial_years
+            .iter()
+            .map(|(fy, s)| (*fy, (s.total_income, s.unconverted_currencies.clone())))
+            .collect();
+        for (fy, summary) in financial_years.iter_mut() {
+            summary.calculate_monthly_average(Some(financial_year_months(
+                *fy,
+                oldest_date,
+                current_date,
+            )));
+            let (previous_total, previous_unconverted) =
+                fy_totals.get(&(fy - 1)).cloned().unwrap_or_default();
+            summary.yoy_growth =
+                IncomeService::calculate_yoy_growth(summary.total_income, previous_total);
+            summary.unconverted_currencies.extend(previous_unconverted);
+        }
+
         // Round monetary values before returning, not the ratios formatted as percentages.
-        let summaries = vec![
+        let mut summaries = vec![
             total_summary,
             ytd_summary,
             last_year_summary,
             two_years_ago_summary,
         ];
+        // Newest financial year first.
+        summaries.extend(financial_years.into_values().rev());
 
         let rounded_summaries = summaries
             .into_iter()
@@ -275,4 +310,28 @@ impl IncomeServiceTrait for IncomeService {
         debug!("Income summary calculation and rounding completed successfully");
         Ok(rounded_summaries)
     }
+}
+
+/// Start year of the Indian financial year (April to March) `date` falls in.
+pub(crate) fn financial_year_of(date: NaiveDate) -> i32 {
+    if date.month() >= 4 {
+        date.year()
+    } else {
+        date.year() - 1
+    }
+}
+
+/// The period name of the financial year starting in April of `start_year`.
+pub(crate) fn financial_year_period(start_year: i32) -> String {
+    format!("FY{start_year}")
+}
+
+/// Months of the financial year starting in `start_year` that count toward
+/// its monthly average: from the later of April and the first activity's
+/// month to the earlier of March and today's month, both included.
+pub(crate) fn financial_year_months(start_year: i32, oldest: NaiveDate, today: NaiveDate) -> u32 {
+    let index = |year: i32, month: u32| year * 12 + month as i32 - 1;
+    let start = index(start_year, 4).max(index(oldest.year(), oldest.month()));
+    let end = index(start_year + 1, 3).min(index(today.year(), today.month()));
+    (end - start + 1).max(1) as u32
 }

@@ -1,3 +1,4 @@
+import { financialYearLabel, financialYearStart } from "./financial-year";
 import type { IncomeByAccount } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AnimatedToggleGroup, useAmountFormatting, useDateFormatting } from "@wealthfolio/ui";
@@ -60,7 +61,8 @@ function getAlignedTicks(maxValue: number, tickCount: number): number[] {
 interface IncomeHistoryChartProps {
   monthlyIncomeData: [string, number][];
   previousMonthlyIncomeData: [string, number][];
-  selectedPeriod: "ALL" | "YTD" | "LAST_YEAR";
+  /** "ALL", "YTD", "LAST_YEAR", or a financial year such as "FY2025". */
+  selectedPeriod: string;
   currency: string;
   isBalanceHidden: boolean;
   byAccount?: Record<string, IncomeByAccount>;
@@ -150,12 +152,15 @@ export const IncomeHistoryChart: React.FC<IncomeHistoryChartProps> = ({
     [accounts],
   );
 
+  const financialYear = financialYearStart(selectedPeriod);
   const periodDescription =
-    selectedPeriod === "ALL"
-      ? t("income:all_time")
-      : selectedPeriod === "YTD"
-        ? t("income:year_to_date")
-        : t("income:last_year");
+    financialYear !== null
+      ? t("income:financial_year", { year: financialYearLabel(financialYear) })
+      : selectedPeriod === "ALL"
+        ? t("income:all_time")
+        : selectedPeriod === "YTD"
+          ? t("income:year_to_date")
+          : t("income:last_year");
 
   // Render evenly-spaced labels (every Nth month) instead of letting Recharts
   // auto-thin, which produced irregular 2-then-3-month gaps.

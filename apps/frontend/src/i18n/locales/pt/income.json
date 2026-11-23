@@ -80,5 +80,9 @@
   "cumulative": "Acumulado",
   "unconverted_currencies_one": "Os rendimentos em {{currencies}} não estão incluídos nos totais porque não há taxa de câmbio para {{baseCurrency}}.",
   "unconverted_currencies_other": "Os rendimentos em {{currencies}} não estão incluídos nos totais porque não há taxas de câmbio para {{baseCurrency}}.",
-  "unconverted_currencies_many": "Os rendimentos em {{currencies}} não estão incluídos nos totais porque não há taxas de câmbio para {{baseCurrency}}."
+  "unconverted_currencies_many": "Os rendimentos em {{currencies}} não estão incluídos nos totais porque não há taxas de câmbio para {{baseCurrency}}.",
+  "financial_year": "AF {{year}}",
+  "financial_year_pick": "Ano fiscal",
+  "financial_year_income": "Rendimentos AF {{year}}",
+  "no_comparison_previous_financial_year": "Sem comparação com o ano fiscal anterior"
 }

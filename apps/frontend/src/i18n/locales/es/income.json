@@ -80,5 +80,9 @@
   "cumulative": "Acumulado",
   "unconverted_currencies_one": "Los ingresos en {{currencies}} no se incluyen en los totales porque no hay tipo de cambio a {{baseCurrency}}.",
   "unconverted_currencies_other": "Los ingresos en {{currencies}} no se incluyen en los totales porque no hay tipos de cambio a {{baseCurrency}}.",
-  "unconverted_currencies_many": "Los ingresos en {{currencies}} no se incluyen en los totales porque no hay tipos de cambio a {{baseCurrency}}."
+  "unconverted_currencies_many": "Los ingresos en {{currencies}} no se incluyen en los totales porque no hay tipos de cambio a {{baseCurrency}}.",
+  "financial_year": "AF {{year}}",
+  "financial_year_pick": "Año fiscal",
+  "financial_year_income": "Ingresos AF {{year}}",
+  "no_comparison_previous_financial_year": "Sin comparación con el año fiscal anterior"
 }

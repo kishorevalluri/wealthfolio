@@ -1,5 +1,6 @@
 //! Unit tests for the income service.
 
+use super::income_service::{financial_year_months, financial_year_of};
 use super::*;
 use crate::activities::{
     Activity, ActivityBulkMutationResult, ActivityRepositoryTrait, ActivitySearchResponse,
@@ -560,4 +561,79 @@ fn income_counts_toward_its_month_in_the_users_timezone() {
     let last_year = summary(&summaries, "LAST_YEAR");
     assert_eq!(last_year.total_income, dec!(0));
     assert!(last_year.by_month.is_empty());
+}
+
+#[test]
+fn income_is_summed_by_indian_financial_year() {
+    // 15 Jun 2026: FY2026 (Apr 2026 - Mar 2027) has run three months.
+    let _clock = clock::freeze(Utc.with_ymd_and_hms(2026, 6, 15, 12, 0, 0).unwrap());
+    let fx = FxService::new(Arc::new(InMemoryFxRepository::new(Vec::new())));
+    fx.initialize().unwrap();
+    let service = IncomeService::new(
+        Arc::new(fx),
+        Arc::new(MockActivityRepository {
+            income: Mutex::new(vec![
+                // FY2024: first income in July 2024.
+                income("2024-07-10", "DIVIDEND", "A", "INR", dec!(900), "acc"),
+                // FY2025: 31 Mar 2026 is its last day.
+                income("2025-06-06", "DIVIDEND", "A", "INR", dec!(1530), "acc"),
+                income(
+                    "2026-03-31",
+                    "INTEREST",
+                    "CASH:INR",
+                    "INR",
+                    dec!(270),
+                    "acc",
+                ),
+                // FY2026: 1 Apr 2026 is its first day.
+                income("2026-04-01", "DIVIDEND", "B", "INR", dec!(600), "acc"),
+            ]),
+            first_activity_date: Utc.with_ymd_and_hms(2024, 7, 1, 0, 0, 0).unwrap(),
+        }),
+        Arc::new(RwLock::new("INR".to_string())),
+    );
+
+    let summaries = service.get_income_summary(None).unwrap();
+    let periods: Vec<&str> = summaries
+        .iter()
+        .map(|s| s.period.as_str())
+        .filter(|p| p.starts_with("FY"))
+        .collect();
+    assert_eq!(periods, ["FY2026", "FY2025", "FY2024"]);
+
+    let fy2025 = summary(&summaries, "FY2025");
+    assert_eq!(fy2025.total_income, dec!(1800));
+    assert_eq!(fy2025.by_type.get("DIVIDEND"), Some(&dec!(1530)));
+    assert_eq!(fy2025.by_type.get("INTEREST"), Some(&dec!(270)));
+    assert_eq!(fy2025.monthly_average, dec!(150));
+    assert_eq!(fy2025.yoy_growth, Some(dec!(1)));
+
+    // July 2024 to March 2025: nine months.
+    let fy2024 = summary(&summaries, "FY2024");
+    assert_eq!(fy2024.monthly_average, dec!(100));
+    assert_eq!(fy2024.yoy_growth, None);
+
+    // April to June 2026.
+    let fy2026 = summary(&summaries, "FY2026");
+    assert_eq!(fy2026.total_income, dec!(600));
+    assert_eq!(fy2026.monthly_average, dec!(200));
+}
+
+#[test]
+fn financial_year_months_count_from_first_activity_to_today() {
+    let d = |y, m, day| NaiveDate::from_ymd_opt(y, m, day).unwrap();
+    assert_eq!(financial_year_of(d(2026, 3, 31)), 2025);
+    assert_eq!(financial_year_of(d(2026, 4, 1)), 2026);
+    assert_eq!(
+        financial_year_months(2024, d(2020, 1, 1), d(2026, 6, 15)),
+        12
+    );
+    assert_eq!(
+        financial_year_months(2026, d(2020, 1, 1), d(2026, 6, 15)),
+        3
+    );
+    assert_eq!(
+        financial_year_months(2025, d(2025, 11, 3), d(2026, 6, 15)),
+        5
+    );
 }
