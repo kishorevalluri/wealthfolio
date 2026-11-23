@@ -159,3 +159,64 @@ describe("CDSL corporate actions with an ISIN change", () => {
     expect(drafts.every((d) => d.sourceGroupId === undefined)).toBe(true);
   });
 });
+
+describe("CDSL bonus credits", () => {
+  const withParticulars = [...headers, "Particulars"];
+  const bonusMapping = {
+    ...mapping,
+    fieldMappings: { ...mapping.fieldMappings, [ImportFormat.COMMENT]: "Particulars" },
+  };
+  const drafts = (rows: string[][]) =>
+    createDraftActivities(
+      rows,
+      withParticulars,
+      bonusMapping,
+      parseConfig,
+      "acc-1",
+      new Set(["acc-1", "acc-2"]),
+    );
+
+  it("imports a bonus credit as a buy at a price of 0", () => {
+    const [, bonus] = drafts([
+      [...row("10-03-2026", "BUY", "EXAMPLE STEEL LTD", "INE000A01011", "17"), "Buy"],
+      [
+        ...row("27-11-2026", "CORPORATE ACTION CREDIT", "EXAMPLE STEEL LTD", "INE000A01011", "17"),
+        "CA-Bonus00123456 Cr CurrentBalance",
+      ],
+    ]);
+    expect(bonus.activityType).toBe(ActivityType.BUY);
+    expect(bonus.unitPrice).toBe("0");
+    expect(bonus.status).not.toBe("error");
+    expect(draftToActivityImport(bonus).amount).toBe("0");
+  });
+
+  it("leaves a credit that is not called a bonus for the user to map", () => {
+    const [credit] = drafts([
+      [
+        ...row("27-11-2026", "CORPORATE ACTION CREDIT", "EXAMPLE STEEL LTD", "INE000A01011", "17"),
+        "CA-Demerger00123456 Cr",
+      ],
+    ]);
+    expect(credit.activityType).toBeFalsy();
+  });
+
+  it("still pairs a split that the statement describes alongside a bonus", () => {
+    const [leaving, arriving, bonus] = drafts([
+      [
+        ...row("09-10-2026", "CORPORATE ACTION DEBIT", "EXAMPLE STEEL LTD", "INE000A01011", "70"),
+        "CA-Split00787978 Db",
+      ],
+      [
+        ...row("09-10-2026", "CORPORATE ACTION CREDIT", "EXAMPLE STEEL LTD", "INE000A01029", "350"),
+        "CA-Split00787978 Cr",
+      ],
+      [
+        ...row("09-10-2026", "CORPORATE ACTION CREDIT", "EXAMPLE PAINTS LTD", "INE111B01015", "5"),
+        "CA-Bonus00111111 Cr",
+      ],
+    ]);
+    expect(leaving.subtype).toBe(ACTIVITY_SUBTYPES.CONVERSION_OUT);
+    expect(arriving.subtype).toBe(ACTIVITY_SUBTYPES.CONVERSION_IN);
+    expect(bonus.activityType).toBe(ActivityType.BUY);
+  });
+});

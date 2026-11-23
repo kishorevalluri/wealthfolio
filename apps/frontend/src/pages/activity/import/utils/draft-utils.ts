@@ -1033,8 +1033,9 @@ function indianIssuerCode(isin: string | undefined): string | undefined {
  * Rows pair only within one account and day, for different ISINs. A debit
  * and a credit of the same issuer pair first; if exactly one debit and one
  * credit are then left, they pair too (a merger into another company). Rows
- * the user mapped to a type, and anything left over (a bonus, a buyback or
- * redemption debit, a demerger credit), stay as they are.
+ * the user mapped to a type, and anything left over (a buyback or redemption
+ * debit, a demerger credit), stay as they are, except a credit the statement
+ * calls a bonus, which becomes a buy at a price of 0.
  */
 export function pairCorporateActionConversions(
   drafts: DraftActivity[],
@@ -1082,9 +1083,39 @@ export function pairCorporateActionConversions(
       pairs.push([openDebits[0], openCredits[0]]);
     }
   }
-  if (pairs.length === 0) return drafts;
+  // A bonus is a credit of the shares already held, with nothing debited: it
+  // becomes a buy at a price of 0 on the allotment date (cost nil, held from
+  // that day), which is how Indian tax treats bonus shares.
+  const paired = new Set(pairs.flat());
+  const bonuses: number[] = [];
+  for (const { credits } of groups.values()) {
+    for (const credit of credits) {
+      if (!paired.has(credit) && /BONUS/i.test(drafts[credit].comment ?? "")) {
+        bonuses.push(credit);
+      }
+    }
+  }
+  if (pairs.length === 0 && bonuses.length === 0) return drafts;
 
   const result = [...drafts];
+  for (const index of bonuses) {
+    const draft: Partial<DraftActivity> = {
+      ...drafts[index],
+      activityType: ActivityType.BUY,
+      unitPrice: "0",
+      amount: "0",
+      fee: undefined,
+      tax: undefined,
+    };
+    const validation = validateDraft(draft, accountTypeById);
+    result[index] = {
+      ...draft,
+      status: validation.status,
+      errors: validation.errors,
+      localErrorMessages: validation.localErrorMessages,
+      warnings: validation.warnings,
+    } as DraftActivity;
+  }
   for (const [debit, credit] of pairs) {
     const leaving = drafts[debit];
     const arriving = drafts[credit];
