@@ -2007,4 +2007,6 @@ mod migration_backup_tests;
 mod account_delete_cleanup_tests;
 
 #[cfg(test)]
+mod india_default_cost_basis_tests;
+#[cfg(test)]
 mod signature_default_theme_tests;

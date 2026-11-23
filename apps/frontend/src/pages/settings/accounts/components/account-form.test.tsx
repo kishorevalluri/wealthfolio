@@ -147,6 +147,21 @@ describe("AccountForm cost basis method", () => {
     expect(screen.getByLabelText(METHOD_LABEL)).toHaveValue("FIFO");
   });
 
+  it("defaults an Indian (INR) account to same-day trades first, collapsed", () => {
+    renderForm({ currency: "INR", meta: undefined });
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(toggle()).toHaveTextContent("FIFO_SAME_DAY");
+  });
+
+  it("opens on its own for an INR account kept on plain FIFO", () => {
+    renderForm({
+      currency: "INR",
+      meta: JSON.stringify({ accounting: { costBasisMethod: "FIFO" } }),
+    });
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText(METHOD_LABEL)).toHaveValue("FIFO");
+  });
+
   it("opens on its own for an account on another method", () => {
     renderForm({ meta: JSON.stringify({ accounting: { costBasisMethod: "WAC" } }) });
     expect(toggle()).toHaveAttribute("aria-expanded", "true");

@@ -292,4 +292,43 @@ mod tests {
             tracking_mode,
         }
     }
+
+    // ==================== Default cost basis by currency ====================
+
+    fn account_in(currency: &str, meta: Option<&str>) -> Account {
+        Account {
+            id: "acc".to_string(),
+            currency: currency.to_string(),
+            meta: meta.map(str::to_string),
+            ..Account::default()
+        }
+    }
+
+    #[test]
+    fn inr_accounts_default_to_same_day_fifo() {
+        use crate::accounts::CostBasisMethod;
+        for meta in [
+            None,
+            Some("{}"),
+            Some(r#"{"accounting":{"poolingScope":"ACCOUNT"}}"#),
+        ] {
+            let settings = account_in("INR", meta).accounting_settings().unwrap();
+            assert_eq!(settings.cost_basis_method, CostBasisMethod::FifoSameDay);
+            let settings = account_in("USD", meta).accounting_settings().unwrap();
+            assert_eq!(settings.cost_basis_method, CostBasisMethod::Fifo);
+        }
+    }
+
+    #[test]
+    fn an_explicit_method_wins_over_the_currency_default() {
+        use crate::accounts::CostBasisMethod;
+        let settings = account_in("INR", Some(r#"{"accounting":{"costBasisMethod":"FIFO"}}"#))
+            .accounting_settings()
+            .unwrap();
+        assert_eq!(settings.cost_basis_method, CostBasisMethod::Fifo);
+        assert_eq!(
+            AccountAccountingSettings::default_for_account_in("acc", " inr ").cost_basis_method,
+            CostBasisMethod::FifoSameDay
+        );
+    }
 }

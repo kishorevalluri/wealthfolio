@@ -296,12 +296,14 @@ An account's settings name its method, and the engine alone says which methods
 it computes: an account set to another is refused (`UNSUPPORTED_COST_BASIS`) and
 its results are not written; where another account needs it folded (a transfer
 partner), it is folded FIFO. Each account's settings are read on their own. An
-account with none (no meta, or no `accounting` entry in it) takes the defaults,
-FIFO. Settings this version cannot read are refused the same way and never read
-as the defaults: meta that is not JSON, an `accounting` entry that is not an
-object, or a code it does not know, such as one a newer version wrote. Only a
-failed database read fails the whole job. Changing an account's method refolds
-it (§5). Fixtures: every other fixture is FIFO.
+account with none (no meta, or no `accounting` entry in it) takes the defaults:
+FIFO_SAME_DAY for an INR account (Indian tax treats a same-day buy and sell as
+intraday), FIFO for every other currency. Settings this version cannot read are
+refused the same way and never read as the defaults: meta that is not JSON, an
+`accounting` entry that is not an object, or a code it does not know, such as
+one a newer version wrote. Only a failed database read fails the whole job.
+Changing an account's method refolds it (§5). Fixtures: every other fixture is
+FIFO.
 
 **R7.3 What a new method must respect.**
 
