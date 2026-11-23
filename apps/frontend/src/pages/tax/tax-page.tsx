@@ -29,6 +29,7 @@ import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAccounts } from "@/hooks/use-accounts";
 import type { Account } from "@/lib/types";
+import { AisReconciliationCard } from "./components/ais-reconciliation-card";
 import { DualRegimeOptimizer } from "./components/dual-regime-optimizer";
 import { parseSpecialRateGains, sectionNumber } from "./indian-income-tax";
 
@@ -771,7 +772,8 @@ export default function TaxPage() {
           <OtherSourcesCard summary={summary} />
 
           <IntradayCard summary={summary} />
-          <IntradayCard summary={summary} />
+
+          <AisReconciliationCard summary={summary} />
 
           {/* Dual-Regime Optimizer */}
           <DualRegimeOptimizer fyStartYear={parseInt(selectedFY)} stcgSlabTotal={0} />
@@ -855,6 +857,8 @@ export default function TaxPage() {
         <CarryForwardCard summary={summary} />
 
         <OtherSourcesCard summary={summary} />
+
+        <AisReconciliationCard summary={summary} />
 
         {/* Dual-Regime Optimizer */}
         <DualRegimeOptimizer

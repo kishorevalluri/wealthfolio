@@ -438,10 +438,17 @@ pub async fn compute_indian_tax_summary(
     losses.retain(|l| l.year > fy_start_year - LOSS_CARRY_YEARS);
     summary.stcl_carried_forward = losses.iter().map(|l| l.stcl).sum();
     summary.ltcl_carried_forward = losses.iter().map(|l| l.ltcl).sum();
-    let other_sources = summarize_other_sources(
+    let mut other_sources = summarize_other_sources(
         &activity_service.get_activities_by_account_ids(account_ids)?,
         fy_start_year,
     );
+    for row in &mut other_sources.dividends_by_asset {
+        if let Some(info) = asset_info_map.get(&row.asset_id) {
+            row.name = info.name.clone();
+            row.symbol = info.symbol.clone();
+            row.isin = info.isin.clone();
+        }
+    }
     if disposals.is_empty()
         && summary.stcl_carried_forward.is_zero()
         && summary.ltcl_carried_forward.is_zero()
