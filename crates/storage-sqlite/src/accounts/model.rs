@@ -53,8 +53,9 @@ pub struct AccountDB {
 // Conversion implementations
 impl AccountDB {
     pub fn ensure_default_accounting_meta(&mut self) -> Result<()> {
-        self.meta = AccountAccountingSettings::default_for_account(self.id.clone())
-            .merge_into_meta(self.meta.as_deref())?;
+        self.meta =
+            AccountAccountingSettings::default_for_account_in(self.id.clone(), &self.currency)
+                .merge_into_meta(self.meta.as_deref())?;
         Ok(())
     }
 }

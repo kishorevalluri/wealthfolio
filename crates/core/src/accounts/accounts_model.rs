@@ -59,6 +59,17 @@ impl CostBasisMethod {
         }
     }
 
+    /// The method an account in `currency` uses until one is chosen. Indian
+    /// (INR) accounts match same-day trades first, as Indian tax treats them
+    /// as intraday; every other account uses plain FIFO.
+    pub fn default_for_currency(currency: &str) -> Self {
+        if currency.trim().eq_ignore_ascii_case("INR") {
+            Self::FifoSameDay
+        } else {
+            Self::Fifo
+        }
+    }
+
     /// Whether the portfolio engine computes this method: the engine alone
     /// says which methods it computes (engine rules §7).
     pub fn ensure_supported_for_calculation(self, account_id: &str) -> Result<()> {
@@ -189,12 +200,18 @@ pub struct AccountAccountingSettings {
 
 impl AccountAccountingSettings {
     pub fn default_for_account(account_id: impl Into<String>) -> Self {
+        Self::default_for_account_in(account_id, "")
+    }
+
+    /// The defaults for an account held in `currency`: its method is
+    /// [`CostBasisMethod::default_for_currency`].
+    pub fn default_for_account_in(account_id: impl Into<String>, currency: &str) -> Self {
         let now = chrono::Utc::now()
             .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string();
         Self {
             account_id: account_id.into(),
-            cost_basis_method: CostBasisMethod::Fifo,
+            cost_basis_method: CostBasisMethod::default_for_currency(currency),
             cost_basis_profile: CostBasisProfile::Generic,
             pooling_scope: PoolingScope::Account,
             lot_selection_strategy: None,
@@ -299,8 +316,12 @@ impl AccountAccountingSettingsMeta {
         }
     }
 
-    fn into_settings(self, account_id: String) -> Result<AccountAccountingSettings> {
-        let mut settings = AccountAccountingSettings::default_for_account(account_id);
+    fn into_settings(
+        self,
+        account_id: String,
+        currency: &str,
+    ) -> Result<AccountAccountingSettings> {
+        let mut settings = AccountAccountingSettings::default_for_account_in(account_id, currency);
 
         if let Some(cost_basis_method) = self.cost_basis_method {
             settings.cost_basis_method = cost_basis_method;
@@ -374,7 +395,7 @@ impl Account {
 
     /// The account's accounting settings, read from its `meta` (engine rules
     /// R7.2). An account without any (no meta, or no `accounting` entry in it)
-    /// takes the defaults. Settings this version cannot read (meta that is not
+    /// takes the defaults for its currency. Settings this version cannot read (meta that is not
     /// JSON, an `accounting` entry that is not an object, a code it does not
     /// know) are an error for this account, never the defaults.
     pub fn accounting_settings(&self) -> Result<AccountAccountingSettings> {
@@ -384,8 +405,9 @@ impl Account {
             .map(str::trim)
             .filter(|v| !v.is_empty())
         else {
-            return Ok(AccountAccountingSettings::default_for_account(
+            return Ok(AccountAccountingSettings::default_for_account_in(
                 self.id.clone(),
+                &self.currency,
             ));
         };
         // Failures are logged, so the reason names what could not be read and
@@ -400,8 +422,9 @@ impl Account {
         let meta = serde_json::from_str::<Value>(raw_meta)
             .map_err(|_| unreadable("its meta is not JSON"))?;
         let Some(accounting) = meta.get(ACCOUNTING_META_KEY) else {
-            return Ok(AccountAccountingSettings::default_for_account(
+            return Ok(AccountAccountingSettings::default_for_account_in(
                 self.id.clone(),
+                &self.currency,
             ));
         };
         if !accounting.is_object() {
@@ -411,7 +434,7 @@ impl Account {
             .map_err(|_| {
                 unreadable("its accounting entry holds a value this version does not know")
             })?
-            .into_settings(self.id.clone())
+            .into_settings(self.id.clone(), &self.currency)
     }
 }
 

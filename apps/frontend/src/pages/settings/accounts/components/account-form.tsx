@@ -91,9 +91,13 @@ function getSelectableCashCategoryFromMeta(meta?: string | null): string {
 }
 
 // The methods the portfolio engine computes (CostBasisMethod::ALL); an account
-// without a method in its meta uses FIFO.
+// without a method in its meta uses its currency's default
+// (CostBasisMethod::default_for_currency): FIFO_SAME_DAY for INR, else FIFO.
 const COST_BASIS_METHODS: readonly string[] = ["FIFO", "LIFO", "HIFO", "WAC", "FIFO_SAME_DAY"];
-const DEFAULT_COST_BASIS_METHOD = "FIFO";
+
+function defaultCostBasisMethod(currency?: string | null): string {
+  return currency?.trim().toUpperCase() === "INR" ? "FIFO_SAME_DAY" : "FIFO";
+}
 
 function asObject(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -116,10 +120,10 @@ function getAccountingFromMeta(meta?: string | null): Record<string, unknown> {
 
 // The stored code as core reads it: exactly, without trimming or case folding,
 // so a code core refuses reads as unsupported here too.
-function getCostBasisMethodFromMeta(meta?: string | null): string {
+function getCostBasisMethodFromMeta(meta?: string | null, currency?: string | null): string {
   const accounting = getAccountingFromMeta(meta);
   const method = accounting.costBasisMethod ?? accounting.cost_basis_method;
-  return typeof method === "string" ? method : DEFAULT_COST_BASIS_METHOD;
+  return typeof method === "string" ? method : defaultCostBasisMethod(currency);
 }
 
 function setCostBasisMethodInMeta(meta: string | null | undefined, method: string): string {
@@ -204,12 +208,16 @@ export function AccountForm({
     currentTrackingMode === "TRANSACTIONS" && !isCashAccount && !isCreditCardAccount;
 
   const currentMeta = form.watch("meta");
-  const costBasisMethod = getCostBasisMethodFromMeta(currentMeta);
-  const savedCostBasisMethod = getCostBasisMethodFromMeta(defaultValues?.meta);
+  const currentCurrency = form.watch("currency");
+  const costBasisMethod = getCostBasisMethodFromMeta(currentMeta, currentCurrency);
+  const savedCostBasisMethod = getCostBasisMethodFromMeta(
+    defaultValues?.meta,
+    defaultValues?.currency,
+  );
   // Collapsed while the account uses the default; open when it does not, so
   // a non-default method is never hidden.
   const [costBasisOpen, setCostBasisOpen] = useState(
-    savedCostBasisMethod !== DEFAULT_COST_BASIS_METHOD,
+    savedCostBasisMethod !== defaultCostBasisMethod(defaultValues?.currency),
   );
   const costBasisChanged = !!defaultValues?.id && costBasisMethod !== savedCostBasisMethod;
   const costBasisDescription = COST_BASIS_METHODS.includes(costBasisMethod)
